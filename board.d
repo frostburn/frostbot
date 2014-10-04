@@ -656,6 +656,8 @@ void examine_state_playout()
     }
 }
 
+static State!Board8 offending_state;
+
 class GameState(T)
 {
     State!T state;
@@ -721,22 +723,24 @@ class GameState(T)
         moves ~= T();
     }
 
-    void make_children()
+    void make_children(GameState!T[State!T] state_pool=null)
     {
         auto state_children = state.children(moves);
         children = [];
         foreach(child_state; state_children){
-            children ~= new GameState!T(child_state, moves);
+            if (state_pool && child_state in state_pool){
+                children ~= state_pool[child_state];
+            }
+            else{
+                children ~= new GameState!T(child_state, moves);
+            }
         }
     }
 
     void hook(GameState!T other, State!T key)
     {
-        debug(calculate_minimax_value){
-            writeln("Hooking GameState:");
-            writeln(other);
-            writeln("with key:");
-            writeln(key);
+        if (key == offending_state){
+            writeln("Hooking to offender!");
         }
         if (!(key in hooks)){
             hooks[key] = [];
@@ -751,21 +755,16 @@ class GameState(T)
     }
 
     void release_hooks(State!T key){
-        debug(calculate_minimax_value){
-            writeln("Releasing hooks with key:");
-            writeln(key);
+        if (key == offending_state){
+            writeln("Releasing offender hooks!");
         }
-
         if (key in hooks){
+            if (key == offending_state) writeln("yep!");
             foreach(hook; hooks[key]){
-                debug(calculate_minimax_value) {
-                    writeln("Hook:");
-                    writeln(hook);
-                }
                 hook.update_value;
                 hook.dependencies.remove(key);
                 hook.release_hooks(key);
-                if (!hook.dependencies){
+                if (!hook.dependencies.length){
                     hook.release_hooks;
                 }
             }
@@ -778,8 +777,6 @@ class GameState(T)
     }
 
     void update_value(){
-        debug(calculate_minimax_value) writeln("Updating values for ", &this, " :");
-        debug(calculate_minimax_value) writeln(this);
         if (!is_leaf){
             float sign;
             if (state.black_to_play){
@@ -791,8 +788,6 @@ class GameState(T)
             low_value = -sign * float.infinity;
             high_value = -sign * float.infinity;
             foreach(child; children){
-                debug(calculate_minimax_value) writeln("Updating values with child ", &child, " :");
-                debug(calculate_minimax_value) writeln(child);
                 if (child.low_value * sign > low_value * sign){
                     low_value = child.low_value;
                 }
@@ -804,18 +799,23 @@ class GameState(T)
         else{
             low_value = high_value = state.liberty_score;
         }
-        debug(calculate_minimax_value) writeln("Values updated. Current state:");
-        debug(calculate_minimax_value) writeln(this);
     }
 
-    void calculate_minimax_value(bool[State!T] history){
+    void calculate_minimax_value(bool[State!T] history=null, GameState!T[State!T] state_pool=null){
+        if (state_pool is null){
+            GameState!T[State!T] empty;
+            state_pool = empty;
+        }
+        if (!(state in state_pool)){
+            state_pool[state] = this;
+        }
         if (is_leaf){
             return;
         }
 
-        make_children;
+        make_children(state_pool);
 
-        if (!history){
+        if (history is null){
             history = [state : true];
         }
         else{
@@ -826,11 +826,10 @@ class GameState(T)
         foreach (child; children){
             if (!child.is_leaf){
                 if (child.state in history){
-                    debug(calculate_minimax_value) writeln("Hooking because child state in history.");
                     child.hook(this);
                 }
                 else{
-                    child.calculate_minimax_value(history);
+                    child.calculate_minimax_value(history, state_pool);
                     foreach (dependency; child.dependencies.byKey){
                         if (dependency != state){
                             child.hook(this, dependency);
@@ -842,7 +841,7 @@ class GameState(T)
 
         update_value;
 
-        if (!dependencies){
+        if (!dependencies.length){
             release_hooks;
         }
     }
@@ -863,12 +862,15 @@ class GameState(T)
         );
     }
 
-    GameState!T[] principal_path(string type)()
+    GameState!T[] principal_path(string type)(int max_depth=100)
     {
+        if (max_depth <= 0){
+            return [];
+        }
         GameState!T[] result = [this];
         foreach(child; children){
             if (mixin("child." ~ type ~ "_value == " ~ type ~ "_value")){
-                result ~= child.principal_path!type;
+                result ~= child.principal_path!type(max_depth - 1);
                 break;
             }
         }
@@ -896,19 +898,20 @@ unittest
     assert(gs.high_value == 2);
 }
 
-/*
+
 unittest
 {
     auto gs = new GameState!Board8(rectangle!Board8(2, 1));
     gs.calculate_minimax_value;
     foreach (p; gs.principal_path!"high"){
+        assert(!p.dependencies.length);
         auto c = p.copy;
         c.calculate_minimax_value;
         assert(c.low_value == p.low_value);
         assert(c.high_value == p.high_value);
     }
 }
-*/
+
 
 /*
 void main()
@@ -927,15 +930,22 @@ void main()
 
 void main()
 {
+    offending_state = State!Board8(rectangle!Board8(2, 1));
+    offending_state.opponent = Board8(0, 0);
+    offending_state.ko = Board8(1, 0);
+    offending_state.black_to_play = false;
+
+
     auto gs = new GameState!Board8(rectangle!Board8(2, 1));
     gs.calculate_minimax_value;
-    foreach (p; gs.principal_path!"high"){
+    foreach (p; gs.principal_path!"high"(5)){
         writeln(p);
         foreach (dependency, dummy; p.dependencies){
             writeln("-----------dependency-----------");
             writeln(dependency);
+            assert(dependency == offending_state);
         }
-        writeln("*********");
+        if (p.dependencies.length) writeln("*********");
         writeln;
     }
     //writeln(gs);
