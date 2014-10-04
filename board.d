@@ -118,9 +118,9 @@ struct Board8
         return bits == rhs.bits;
     }
 
-    size_t toHash() const nothrow @safe
+    hash_t toHash() const nothrow @safe
     {
-        return cast(size_t)bits;
+        return typeid(bits).getHash(&bits);
     }
 
     Board8 liberties(in Board8 playing_area) const
@@ -328,22 +328,27 @@ struct State(T)
     T playing_area = full8;
     T ko;
     bool black_to_play = true;
+    int passes;
+
+    this(T playing_area)
+    {
+        this.playing_area = playing_area;
+    }
 
     this(T player, T opponent)
     {
         this.player = player;
         this.opponent = opponent;
-        playing_area.fill;
-        ko.clear;
     }
 
-    this(T player, T opponent, T playing_area, T ko, bool black_to_play)
+    this(T player, T opponent, T playing_area, T ko, bool black_to_play, int passes)
     {
         this.player = player;
         this.opponent = opponent;
         this.playing_area = playing_area;
         this.ko = ko;
         this.black_to_play = black_to_play;
+        this.passes = passes;
     }
 
     invariant
@@ -352,6 +357,7 @@ struct State(T)
         assert(opponent.valid);
         assert(playing_area.valid);
         assert(ko.valid);
+        assert(ko.popcount <= 1);
 
         assert(!(player & opponent));
         assert(!(player & ko));
@@ -369,20 +375,23 @@ struct State(T)
             (opponent == rhs.opponent) &&
             (playing_area == rhs.playing_area) &&
             (ko == rhs.ko) &&
-            (black_to_play == rhs.black_to_play)
+            (black_to_play == rhs.black_to_play) &&
+            (passes == rhs.passes)
         );
     }
 
-    size_t toHash() const nothrow @safe
+    hash_t toHash() const nothrow @safe
     {
-        size_t hash = player.toHash ^ opponent.toHash ^ playing_area.toHash ^ ko.toHash;
-        size_t nibble = (1UL << (size_t.sizeof * 8 - 1));
-        if (black_to_play){
-            return hash ^ nibble;
-        }
-        else{
-            return hash;
-        }
+        hash_t opponent_hash = opponent.toHash;
+        return (
+            player.toHash ^
+            (opponent_hash << (hash_t.sizeof * 4)) ^
+            (opponent_hash >> (hash_t.sizeof * 4)) ^
+            playing_area.toHash ^
+            ko.toHash ^
+            typeid(black_to_play).getHash(&black_to_play) ^
+            typeid(passes).getHash(&passes)
+        );
     }
 
     /// Kill opponent's stones with a move by player
@@ -476,10 +485,16 @@ struct State(T)
                 ko = old_ko;
                 return false;
             }
+            passes = 0;
         }
         // Pass
         else{
-            ko.clear;
+            if (ko){  // Clearing a ko is treated specially.
+                ko.clear;
+            }
+            else{
+                passes++;
+            }
         }
 
         temp = player;
@@ -567,11 +582,13 @@ struct State(T)
         }
 
         if (black_to_play){
-            r ~= "Black to play.";
+            r ~= "Black to play,";
         }
         else{
-            r ~= "White to play.";
+            r ~= "White to play,";
         }
+
+        r ~= format(" passes=%s", passes);
 
         return r;
     }
@@ -642,7 +659,6 @@ void examine_state_playout()
 class GameState(T)
 {
     State!T state;
-    int passes;
     float low_value = -float.infinity;
     float high_value = float.infinity;
     bool is_leaf;
@@ -657,15 +673,14 @@ class GameState(T)
 
     this(T playing_area)
     {
-        state = State!T(T(), T(), playing_area, T(), true);
+        state = State!T(playing_area);
         calculate_available_moves();
     }
 
-    this(State!T state, int passes=0, T[] moves=null)
+    this(State!T state, T[] moves=null)
     {
         this.state = state;
-        this.passes = passes;
-        if (this.passes >= 2){
+        if (state.passes >= 2){
             is_leaf = true;
             update_value;
         }
@@ -679,14 +694,18 @@ class GameState(T)
         }
     }
 
-    GameState!T copy(){
-        return new GameState!T(state, passes);
-    }
-
     invariant
     {
-        assert(passes <= 2);
-        assert(children.length <= state.playing_area.popcount + 1);
+        assert(state.passes <= 2);
+
+        if (is_leaf){
+            assert(!hooks);
+            assert(!dependencies);
+        }
+    }
+
+    GameState!T copy(){
+        return new GameState!T(state);
     }
 
     void calculate_available_moves()
@@ -703,25 +722,11 @@ class GameState(T)
     }
 
     void make_children()
-    out
-    {
-        foreach (child; children){
-            assert(child.state.playing_area == state.playing_area);
-        }
-    }
-    body
     {
         auto state_children = state.children(moves);
         children = [];
-        foreach(child_state; state_children[0 .. $ - 1]){
-            children ~= new GameState!T(child_state, 0, moves);
-        }
-        // Clearing a ko doesn't count as a pass.
-        if (state.ko){
-            children ~= new GameState!T(state_children[$ - 1], 0, moves);
-        }
-        else{
-            children ~= new GameState!T(state_children[$ - 1], passes + 1, moves);
+        foreach(child_state; state_children){
+            children ~= new GameState!T(child_state, moves);
         }
     }
 
@@ -760,6 +765,9 @@ class GameState(T)
                 hook.update_value;
                 hook.dependencies.remove(key);
                 hook.release_hooks(key);
+                if (!hook.dependencies){
+                    hook.release_hooks;
+                }
             }
             hooks.remove(key);
         }
@@ -801,7 +809,6 @@ class GameState(T)
     }
 
     void calculate_minimax_value(bool[State!T] history){
-        debug(calculate_minimax_value) writeln("passes=", passes);
         if (is_leaf){
             return;
         }
@@ -820,7 +827,6 @@ class GameState(T)
             if (!child.is_leaf){
                 if (child.state in history){
                     debug(calculate_minimax_value) writeln("Hooking because child state in history.");
-                    debug(calculate_minimax_value) writeln("Child passes=", child.passes);
                     child.hook(this);
                 }
                 else{
@@ -836,7 +842,9 @@ class GameState(T)
 
         update_value;
 
-        release_hooks;
+        if (!dependencies){
+            release_hooks;
+        }
     }
 
     void calculate_minimax_value(){
@@ -847,9 +855,8 @@ class GameState(T)
     override string toString()
     {
         return format(
-            "%s\npasses=%s low_value=%s high_value=%s number of children=%s",
+            "%s\nlow_value=%s high_value=%s number of children=%s",
             state,
-            passes,
             low_value,
             high_value,
             children.length
@@ -880,20 +887,30 @@ unittest
     gs.calculate_minimax_value;
     assert(gs.low_value == -2);
     assert(gs.high_value == 2);
+
+    gs = new GameState!Board8(rectangle!Board8(2, 1));
+    gs.state.opponent = Board8(0, 0);
+    gs.state.ko = Board8(1, 0);
+    gs.calculate_minimax_value;
+    assert(gs.low_value == -2);
+    assert(gs.high_value == 2);
 }
+
 /*
 unittest
 {
     auto gs = new GameState!Board8(rectangle!Board8(2, 1));
     gs.calculate_minimax_value;
-    foreach (p; gs.principal_path!"low"){
+    foreach (p; gs.principal_path!"high"){
         auto c = p.copy;
         c.calculate_minimax_value;
         assert(c.low_value == p.low_value);
         assert(c.high_value == p.high_value);
     }
-}*/
+}
+*/
 
+/*
 void main()
 {
     auto gs = new GameState!Board8(rectangle!Board8(2, 1));
@@ -903,6 +920,22 @@ void main()
     foreach (p; gs.principal_path!"low"){
         writeln(p);
         //writeln(p.dependencies);
+        writeln;
+    }
+}
+*/
+
+void main()
+{
+    auto gs = new GameState!Board8(rectangle!Board8(2, 1));
+    gs.calculate_minimax_value;
+    foreach (p; gs.principal_path!"high"){
+        writeln(p);
+        foreach (dependency, dummy; p.dependencies){
+            writeln("-----------dependency-----------");
+            writeln(dependency);
+        }
+        writeln("*********");
         writeln;
     }
     //writeln(gs);
