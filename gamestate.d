@@ -4,6 +4,7 @@ import std.stdio;
 import std.string;
 import std.algorithm;
 
+import board8;
 import state;
 
 
@@ -19,11 +20,13 @@ class GameState(T)
     GameState!T[] parents;
     bool complete;
 
-    private
+    public
     {
         T[] moves;
         bool[GameState!T][State!T] hooks;
         bool[State!T] dependencies;
+        State!T canonical_state;
+        bool canonical_state_available = false;
     }
 
     this(T playing_area)
@@ -80,12 +83,12 @@ class GameState(T)
         moves ~= T();
     }
 
-    void make_children(GameState!T[State!T] state_pool=null)
+    void make_children(ref GameState!T[State!T] state_pool)
     {
         auto state_children = state.children(moves);
         children = [];
         foreach (child_state; state_children){
-            if (!(state_pool is null) && child_state in state_pool){
+            if (child_state in state_pool){
                 auto child = state_pool[child_state];
                 bool parent_in_parents = false;
                 foreach(parent; child.parents){
@@ -102,9 +105,7 @@ class GameState(T)
             else{
                 auto child = new GameState!T(child_state, moves);
                 child.parents ~= this;
-                if (!(state_pool is null)){
-                    state_pool[child_state] = child;
-                }
+                state_pool[child_state] = child;
                 children ~= child;
             }
         }
@@ -118,7 +119,13 @@ class GameState(T)
         assert(state_children.length == children.length);
     }
 
-    void hook(GameState!T other, State!T key)
+    void make_children()
+    {
+        GameState!T[State!T] empty;
+        make_children(empty);
+    }
+
+    void hook(ref GameState!T other, State!T key)
     {
         if (!(key in hooks)){
             bool[GameState!T] empty;
@@ -128,7 +135,7 @@ class GameState(T)
         other.dependencies[key] = true;
     }
 
-    void hook(GameState!T other)
+    void hook(ref GameState!T other)
     {
         hook(other, state);
     }
@@ -166,6 +173,9 @@ class GameState(T)
     }
 
     void update_value(){
+        debug(update_value) {
+            writeln(this);
+        }
         if (!is_leaf){
             float sign;
             if (state.black_to_play){
@@ -176,7 +186,7 @@ class GameState(T)
             }
             low_value = -sign * float.infinity;
             high_value = -sign * float.infinity;
-            foreach(child; children){
+            foreach (child; children){
                 if (child.low_value * sign > low_value * sign){
                     low_value = child.low_value;
                 }
@@ -197,26 +207,51 @@ class GameState(T)
                 writeln(this);
             }
         }
+        debug(update_value) {
+            foreach (child; children){
+                writeln(" Child:");
+                writeln(" ", child.low_value, ", ", child.high_value);
+            }
+            writeln(low_value, ", ", high_value);
+        }
         
     }
 
-    void calculate_minimax_value(bool[State!T] history=null, GameState!T[State!T] state_pool=null){
+    void calculate_minimax_value(
+            bool use_transpositions,
+            ref GameState!T[State!T] transpositions,
+            ref bool[State!T] history,
+            ref GameState!T[State!T] state_pool
+        )
+    {
         debug(minimax) {
             if (state_pool.length > pool_size){
                 writeln("Minimaxing:");
                 writeln(state_pool.length);
                 pool_size = state_pool.length;
             }
+            writeln(this);
         }
 
         if (complete){
             return;
         }
 
-        if (state_pool is null){
-            GameState!T[State!T] empty;
-            state_pool = empty;
+        if (use_transpositions){
+            if (!canonical_state_available){
+                canonical_state = state;
+                canonical_state.canonize;
+                canonical_state_available = true;
+            }
+            if (canonical_state in transpositions){
+                auto transposition = transpositions[canonical_state];
+                low_value = transposition.low_value;
+                high_value = transposition.high_value;
+                complete = transposition.complete;
+                return;
+            }
         }
+
         if (!(state in state_pool)){
             state_pool[state] = this;
         }
@@ -228,13 +263,8 @@ class GameState(T)
 
         make_children(state_pool);
 
-        if (history is null){
-            history = [state : true];
-        }
-        else{
-            history = history.dup;
-            history[state] = true;
-        }
+        history = history.dup;
+        history[state] = true;
 
         foreach (child; children){
             if (!child.is_leaf){
@@ -242,7 +272,12 @@ class GameState(T)
                     child.hook(this);
                 }
                 else{
-                    child.calculate_minimax_value(history, state_pool);
+                    child.calculate_minimax_value(
+                        use_transpositions,
+                        transpositions,
+                        history,
+                        state_pool
+                    );
                     foreach (dependency; child.dependencies.byKey){
                         if (dependency != state){
                             child.hook(this, dependency);
@@ -254,16 +289,34 @@ class GameState(T)
 
         update_value;
 
-        release_hooks;
-
         if (!dependencies.length){
-            //release_hooks;
+            release_hooks;
             complete = true;
+            if (use_transpositions){
+                assert(canonical_state_available);
+                transpositions[canonical_state] = this;
+            }
             debug(complete){
                 writeln("Complete!");
                 writeln(this);
             }
         }
+
+        debug(minimax) {
+            writeln("Done minimaxing.");
+            writeln(low_value, ", ", high_value);
+        }
+    }
+    void calculate_minimax_value(bool use_transpositions=false){
+        GameState!T[State!T] transpositions;
+        bool[State!T] history;
+        GameState!T[State!T] state_pool;
+        calculate_minimax_value(
+            use_transpositions,
+            transpositions,
+            history,
+            state_pool
+        );
     }
 
     /*

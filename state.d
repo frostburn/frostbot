@@ -311,32 +311,30 @@ struct State(T)
         }
         snap;
         auto temp = this;
-        string compare_and_replace(){
-            return "
-                if (temp < this){
-                    this = temp;
-                }
-            ";
-        }
+        enum compare_and_replace = "
+            if (temp < this){
+                this = temp;
+            }
+        ";
         if (can_rotate){
             for (int i = 0; i < 3; i++){
                 temp.rotate;
-                mixin(compare_and_replace());
+                mixin(compare_and_replace);
             }
             temp.mirror_h;
             mixin(compare_and_replace);
             for (int i = 0; i < 3; i++){
                 temp.rotate;
-                mixin(compare_and_replace());
+                mixin(compare_and_replace);
             }
         }
         else{
             temp.mirror_v;
-            mixin(compare_and_replace());
+            mixin(compare_and_replace);
             temp.mirror_h;
-            mixin(compare_and_replace());
+            mixin(compare_and_replace);
             temp.mirror_v;
-            mixin(compare_and_replace());
+            mixin(compare_and_replace);
         }
     }
 

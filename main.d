@@ -2,8 +2,24 @@ import std.stdio;
 
 import board8;
 import state;
+import gamestate;
 
 void main()
 {
-    examine_state_playout(true);
+    //auto gs = new GameState!Board8(rectangle!Board8(4, 1));
+    //auto gs = new GameState!Board8(rectangle!Board8(2, 2));
+    //gs.calculate_minimax_value(false);
+    //writeln(gs);
+
+    auto gs = new GameState!Board8(rectangle!Board8(2, 1));
+    gs.calculate_minimax_value(false);
+    foreach (p; gs.principal_path!"high"(10)){
+        writeln(p);
+        writeln("Dependencies:");
+        foreach(dependency; p.dependencies.byKey){
+            writeln(dependency);
+        }
+        writeln("****************");
+    }
+    writeln(gs);
 }
