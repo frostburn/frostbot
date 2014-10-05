@@ -23,6 +23,9 @@ struct Board8
     enum V_SHIFT = 9;
     enum EMPTY = 0UL;
     enum FULL = 4602661192559623935UL;
+    enum WEST_WALL = 18049651735527937UL;
+    enum EAST_WALL = 2310355422147575936UL;
+    enum NORTH_WALL = 255UL;
     enum OUTSIDE = 13844082881149927680UL;
 
     static immutable Board8[28] FORAGE = [
@@ -198,6 +201,77 @@ struct Board8
 
     void fill(){
         bits = FULL;
+    }
+
+    void snap(out int westwards, out int northwards)
+    out
+    {
+        assert(westwards < WIDTH);
+        assert(northwards < HEIGHT);
+        assert(valid);
+    }
+    body
+    {
+        westwards = 0;
+        northwards = 0;
+        if (!this){
+            return;
+        }
+        while (!(bits & WEST_WALL)){
+            bits >>= H_SHIFT;
+            westwards++;
+        }
+        while (!(bits & NORTH_WALL)){
+            bits >>= V_SHIFT;
+            northwards++;
+        }
+    }
+
+    void fix(in int westwards, in int northwards)
+    in
+    {
+        assert(westwards < WIDTH);
+        assert(northwards < HEIGHT);
+    }
+    out
+    {
+        assert(valid);
+    }
+    body
+    {
+        version(assert){
+            auto old_bits = bits;
+        }
+        bits >>= H_SHIFT * westwards + V_SHIFT * northwards;
+        version(assert){
+            assert(old_bits.popcount == bits.popcount);
+        }
+    }
+
+    private ulong naive_rotate()
+    in
+    {
+        assert(valid);
+        assert(!(bits & EAST_WALL));
+    }
+    out(result)
+    {
+        assert(Board8(result).valid);
+        assert(result.popcount == bits.popcount);
+    }
+    body
+    {
+        auto result = EMPTY;
+        assert(HEIGHT <= WIDTH);
+        for (int y = 0; y < HEIGHT; y++){
+            for (int x = 0; x < HEIGHT; x++){
+                result |= (
+                    (1UL & ( bits >> (x * H_SHIFT + y * V_SHIFT))) <<
+                    ((HEIGHT - 1 - y) * H_SHIFT + x * V_SHIFT)
+                );
+            }
+        }
+        return result;
     }
 
     string toString()
@@ -1013,6 +1087,13 @@ unittest
         assert(c.low_value == p.low_value);
         assert(c.high_value == p.high_value);
     }
+    foreach (p; gs.principal_path!"low"){
+        assert(!p.dependencies.length);
+        auto c = p.copy;
+        c.calculate_minimax_value;
+        assert(c.low_value == p.low_value);
+        assert(c.high_value == p.high_value);
+    }
 }
 
 
@@ -1055,10 +1136,21 @@ void main()
 }
 */
 
+/*
 void main()
 {
-    //auto gs = new GameState!Board8(rectangle!Board8(4, 1));
-    auto gs = new GameState!Board8(rectangle!Board8(2, 2));
+    auto gs = new GameState!Board8(rectangle!Board8(4, 1));
+    //auto gs = new GameState!Board8(rectangle!Board8(2, 2));
     gs.calculate_minimax_value;
     writeln(gs);
+}
+*/
+
+void main()
+{
+    auto b = Board8(12398724987489237345UL & ~Board8.EAST_WALL & Board8.FULL);
+    writeln(b);
+    writeln;
+    auto r = Board8(b.naive_rotate);
+    writeln(r);
 }
