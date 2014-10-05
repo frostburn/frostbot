@@ -8,7 +8,19 @@ import board8;
 import state;
 
 
+// TODO: Move to utils
+bool member_in_list(T)(ref T member, ref T[] list){
+    foreach (list_member; list){
+        if (member is list_member){
+            return true;
+        }
+    }
+    return false;
+}
+
+
 debug(minimax) static size_t pool_size;
+
 
 class GameState(T)
 {
@@ -19,7 +31,7 @@ class GameState(T)
     GameState!T[] children;
     GameState!T[] parents;
 
-    public
+    private
     {
         T[] moves;
         State!T canonical_state;
@@ -41,11 +53,11 @@ class GameState(T)
             update_value;
         }
         else{
-            if (moves){
-                this.moves = moves;
+            if (moves is null){
+                calculate_available_moves();
             }
             else{
-                calculate_available_moves();
+                this.moves = moves;
             }
         }
     }
@@ -72,27 +84,40 @@ class GameState(T)
         moves ~= T();
     }
 
-    void make_children(ref GameState!T[State!T] state_pool)
+    void create_canonical_state(){
+        if (!canonical_state_available){
+            canonical_state = state;
+            canonical_state.canonize;
+            canonical_state_available = true;
+        }
+    }
+
+    void make_children(ref GameState!T[State!T] state_pool, bool use_transpositions)
     {
+        GameState!T child;
         auto state_children = state.children(moves);
         children = [];
         foreach (child_state; state_children){
+            if (use_transpositions){
+                child_state.canonize;
+            }
             if (child_state in state_pool){
-                auto child = state_pool[child_state];
-                bool parent_in_parents = false;
-                foreach(parent; child.parents){
-                    if (this is parent){
-                        parent_in_parents = true;
-                        break;
+                child = state_pool[child_state];
+                if (!(member_in_list!(GameState!T)(child, children))){
+                    if (!member_in_list!(GameState!T)(this, child.parents)){
+                        child.parents ~= this;
                     }
+                   children ~= child;
                 }
-                if (!parent_in_parents){
-                    child.parents ~= this;
-                }
-                children ~= child;
             }
             else{
-                auto child = new GameState!T(child_state, moves);
+                if (!use_transpositions){
+                    child = new GameState!T(child_state, moves);
+                }
+                else{
+                    child = new GameState!T(child_state);
+                    child.create_canonical_state;
+                }
                 child.parents ~= this;
                 state_pool[child_state] = child;
                 children ~= child;
@@ -105,13 +130,15 @@ class GameState(T)
 
         sort!more_novel(children);
 
-        assert(state_children.length == children.length);
+        if (!use_transpositions){
+            assert(state_children.length == children.length);
+        }
     }
 
     void make_children()
     {
         GameState!T[State!T] empty;
-        make_children(empty);
+        make_children(empty, false);
     }
 
     bool update_value(){
@@ -160,21 +187,29 @@ class GameState(T)
 
     void populate_game_tree(
         ref GameState!T[State!T] state_pool,
-        ref GameState!T[] leaf_queue
+        ref GameState!T[] leaf_queue,
+        bool use_transpositions
         )
     {
         if (!populated){
             populated = true;
-            assert(state_pool[state] == this);
+            if (use_transpositions){
+                assert(canonical_state_available);
+                assert(canonical_state in state_pool);
+                assert(state_pool[canonical_state] == this);
+            }
+            else{
+                assert(state_pool[state] == this);
+            }
             if (is_leaf){
                 leaf_queue ~= this;
                 return;
             }
 
-            make_children(state_pool);
+            make_children(state_pool, use_transpositions);
 
             foreach (child; children){
-                child.populate_game_tree(state_pool, leaf_queue);
+                child.populate_game_tree(state_pool, leaf_queue, use_transpositions);
             }
         }
     }
@@ -189,11 +224,20 @@ class GameState(T)
         }
     }
 
-    void calculate_minimax_value()
+    void calculate_minimax_value(bool use_transpositions=false)
     {
-        GameState!T[State!T] state_pool = [state: this];
+        GameState!T[State!T] state_pool;
         GameState!T[] leaf_queue;
-        populate_game_tree(state_pool, leaf_queue);
+
+        if (use_transpositions){
+            create_canonical_state;
+            state_pool[canonical_state] = this;
+        }
+        else{
+            state_pool[state] = this;
+        }
+
+        populate_game_tree(state_pool, leaf_queue, use_transpositions);
 
         foreach (leaf; leaf_queue){
             leaf.update_parents;

@@ -17,7 +17,7 @@ void main()
     gs.state.opponent = Board8(2, 0);
     */
     auto gs = new GameState!Board8(rectangle!Board8(3, 3));
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_value(false);
     
     foreach (p; gs.principal_path!"low"(20)){
         writeln(p);
