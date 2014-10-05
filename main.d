@@ -1,13 +1,9 @@
 import std.stdio;
 
 import board8;
+import state;
 
 void main()
 {
-    writeln(get_forage_table);
-    auto b = Board8(2398472897889789273UL & Board8.FULL);
-    writeln(b);
-    b.mirror_v;
-    writeln;
-    writeln(b);
+    examine_state_playout(true);
 }

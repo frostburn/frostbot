@@ -4,6 +4,7 @@ import std.stdio;
 import std.string;
 import board8;
 
+
 struct State(T)
 {
     T player;
@@ -61,6 +62,33 @@ struct State(T)
             (black_to_play == rhs.black_to_play) &&
             (passes == rhs.passes)
         );
+    }
+
+    int opCmp(in State!T rhs) const
+    {
+        string compare_member(string member){
+            return "
+                if (" ~ member ~ " != rhs." ~ member ~ "){
+                    return " ~ member ~".opCmp(rhs." ~ member ~ ");
+                }
+            ";
+        }
+
+        mixin(compare_member("player"));
+        mixin(compare_member("opponent"));
+        if (black_to_play < rhs.black_to_play){
+            return -1;
+        }
+        if (black_to_play > rhs.black_to_play){
+            return 1;
+        }
+        if (passes != rhs.passes){
+            return passes - rhs.passes;
+        }
+        mixin(compare_member("ko"));
+        mixin(compare_member("playing_area"));
+
+        return 0;
     }
 
     hash_t toHash() const nothrow @safe
@@ -146,9 +174,6 @@ struct State(T)
 
     void flip_colors()
     {
-        T temp = player;
-        player = opponent;
-        opponent = temp;
         black_to_play = !black_to_play;
     }
 
@@ -233,6 +258,88 @@ struct State(T)
         }
     }
 
+    void snap()
+    {
+        int westwards, northwards;
+        playing_area.snap(westwards, northwards);
+        player.fix(westwards, northwards);
+        opponent.fix(westwards, northwards);
+        ko.fix(westwards, northwards);
+    }
+
+    bool can_rotate()
+    {
+        return playing_area.can_rotate;
+    }
+
+    void rotate()
+    in
+    {
+        can_rotate;
+    }
+    body
+    {
+        player.rotate;
+        opponent.rotate;
+        ko.rotate;
+        playing_area.rotate;
+        snap;
+    }
+
+    void mirror_h()
+    {
+        player.mirror_h;
+        opponent.mirror_h;
+        ko.mirror_h;
+        playing_area.mirror_h;
+        snap;
+    }
+
+    void mirror_v()
+    {
+        player.mirror_v;
+        opponent.mirror_v;
+        ko.mirror_v;
+        playing_area.mirror_v;
+        snap;
+    }
+
+    void canonize()
+    {
+        if (!black_to_play){
+            flip_colors;
+        }
+        snap;
+        auto temp = this;
+        string compare_and_replace(){
+            return "
+                if (temp < this){
+                    this = temp;
+                }
+            ";
+        }
+        if (can_rotate){
+            for (int i = 0; i < 3; i++){
+                temp.rotate;
+                mixin(compare_and_replace());
+            }
+            temp.mirror_h;
+            mixin(compare_and_replace);
+            for (int i = 0; i < 3; i++){
+                temp.rotate;
+                mixin(compare_and_replace());
+            }
+        }
+        else{
+            temp.mirror_v;
+            mixin(compare_and_replace());
+            temp.mirror_h;
+            mixin(compare_and_replace());
+            temp.mirror_v;
+            mixin(compare_and_replace());
+        }
+    }
+
     string toString()
     {
         string r;
@@ -314,7 +421,21 @@ unittest
     assert(!s.ko);
 }
 
-void examine_state_playout()
+unittest
+{
+    auto a = State!Board8();
+    auto b = a;
+    a.player = Board8(1UL);
+    assert(a > b);
+    b.player = Board8(1UL);
+    assert(a == b);
+    a.opponent = Board8(2UL);
+    assert(a > b);
+    a.player = Board8(0UL);
+    assert(a < b);
+}
+
+void examine_state_playout(bool canonize=false)
 {
     import std.random;
     import core.thread;
@@ -330,8 +451,15 @@ void examine_state_playout()
         if (success){
             i++;
             j = 0;
-            writeln(s);
-            Thread.sleep(dur!("msecs")(250));
+            if (canonize){
+                auto t = s;
+                t.canonize;
+                writeln(t);
+            }
+            else{
+                writeln(s);
+            }
+            Thread.sleep(dur!("msecs")(1000));
         }
         else{
             j++;

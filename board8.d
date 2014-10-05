@@ -16,6 +16,16 @@ int popcount(ulong b)
      return cast(int)b;
 }
 
+int compare(in ulong a, in ulong b){
+    if (a < b){
+        return -1;
+    }
+    if (a > b){
+        return 1;
+    }
+    return 0;
+}
+
 struct Board8
 {
     enum WIDTH = 8;
@@ -94,6 +104,11 @@ struct Board8
     bool opEquals(in Board8 rhs) const
     {
         return bits == rhs.bits;
+    }
+
+    int opCmp(in Board8 rhs) const
+    {
+        return compare(bits, rhs.bits);
     }
 
     hash_t toHash() const nothrow @safe
