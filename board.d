@@ -656,8 +656,6 @@ void examine_state_playout()
     }
 }
 
-static State!Board8 offending_state;
-
 class GameState(T)
 {
     State!T state;
@@ -665,6 +663,7 @@ class GameState(T)
     float high_value = float.infinity;
     bool is_leaf;
     GameState!T[] children;
+    bool complete;
 
     private
     {
@@ -701,8 +700,8 @@ class GameState(T)
         assert(state.passes <= 2);
 
         if (is_leaf){
-            assert(!hooks);
-            assert(!dependencies);
+            assert(!hooks.length);
+            assert(!dependencies.length);
         }
     }
 
@@ -727,21 +726,21 @@ class GameState(T)
     {
         auto state_children = state.children(moves);
         children = [];
+        // Collect novel states first.
         foreach(child_state; state_children){
-            if (state_pool && child_state in state_pool){
-                children ~= state_pool[child_state];
-            }
-            else{
+            if (!(state_pool.length && child_state in state_pool)){
                 children ~= new GameState!T(child_state, moves);
+            }
+        }
+        foreach(child_state; state_children){
+            if (state_pool.length && child_state in state_pool){
+                children ~= state_pool[child_state];
             }
         }
     }
 
     void hook(GameState!T other, State!T key)
     {
-        if (key == offending_state){
-            writeln("Hooking to offender!");
-        }
         if (!(key in hooks)){
             hooks[key] = [];
         }
@@ -755,14 +754,15 @@ class GameState(T)
     }
 
     void release_hooks(State!T key){
-        if (key == offending_state){
-            writeln("Releasing offender hooks!");
+        debug(release_hooks) {
+            writeln("Releasing hooks with key:");
+            writeln(key);
         }
         if (key in hooks){
-            if (key == offending_state) writeln("yep!");
-            foreach(hook; hooks[key]){
+            foreach(hook; hooks[key].dup){
                 hook.update_value;
                 hook.dependencies.remove(key);
+                //hooks[key].remove(hook);
                 hook.release_hooks(key);
                 if (!hook.dependencies.length){
                     hook.release_hooks;
@@ -798,10 +798,16 @@ class GameState(T)
         }
         else{
             low_value = high_value = state.liberty_score;
+            complete = true;
         }
     }
 
     void calculate_minimax_value(bool[State!T] history=null, GameState!T[State!T] state_pool=null){
+        debug(minimax) {
+            writeln("Minimaxing:");
+            writeln(state_pool.length);
+            //writeln(this);
+        }
         if (state_pool is null){
             GameState!T[State!T] empty;
             state_pool = empty;
@@ -809,6 +815,11 @@ class GameState(T)
         if (!(state in state_pool)){
             state_pool[state] = this;
         }
+        else if(state_pool[state].complete){
+            assert(state_pool[state] == this);
+            return;
+        }
+
         if (is_leaf){
             return;
         }
@@ -822,7 +833,7 @@ class GameState(T)
             history = history.dup;
             history[state] = true;
         }
-        
+
         foreach (child; children){
             if (!child.is_leaf){
                 if (child.state in history){
@@ -842,14 +853,48 @@ class GameState(T)
         update_value;
 
         if (!dependencies.length){
-            release_hooks;
+            //release_hooks;
+            complete = true;
+            debug(complete){
+                writeln("Complete!");
+                writeln(this);
+            }
         }
     }
 
-    void calculate_minimax_value(){
-        bool[State!T] history;
-        calculate_minimax_value(history);
+    /*
+    void calculate_self_minimax_value(bool[State!T] history=null, GameState!T[State!T] state_pool=null)
+    {
+        if (is_leaf){
+            return;
+        }
+
+        make_children(state_pool);
+
+        if (history is null){
+            history = [state : true];
+        }
+        else{
+            history = history.dup;
+            history[state] = true;
+        }
+
+        foreach (child; children){
+            if (!child.is_leaf){
+                if (!(child.state in history)){
+                    child.calculate_minimax_value(history, state_pool);
+                    foreach (dependency; child.dependencies.byKey){
+                        if (dependency != state){
+                            child.hook(this, dependency);
+                        }
+                    }
+                }
+            }
+        }
+
+        update_value;
     }
+    */
 
     override string toString()
     {
@@ -896,9 +941,14 @@ unittest
     gs.calculate_minimax_value;
     assert(gs.low_value == -2);
     assert(gs.high_value == 2);
+
+    gs = new GameState!Board8(rectangle!Board8(3, 1));
+    gs.calculate_minimax_value;
+    assert(gs.low_value == 3);
+    assert(gs.high_value == 3);
 }
 
-
+/*
 unittest
 {
     auto gs = new GameState!Board8(rectangle!Board8(2, 1));
@@ -911,7 +961,7 @@ unittest
         assert(c.high_value == p.high_value);
     }
 }
-
+*/
 
 /*
 void main()
@@ -927,7 +977,7 @@ void main()
     }
 }
 */
-
+/*
 void main()
 {
     offending_state = State!Board8(rectangle!Board8(2, 1));
@@ -949,4 +999,13 @@ void main()
         writeln;
     }
     //writeln(gs);
+}
+*/
+
+void main()
+{
+    //auto gs = new GameState!Board8(rectangle!Board8(4, 1));
+    auto gs = new GameState!Board8(rectangle!Board8(2, 2));
+    gs.calculate_minimax_value;
+    writeln(gs);
 }
