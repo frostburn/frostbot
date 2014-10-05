@@ -18,15 +18,9 @@ void main()
     */
     auto gs = new GameState!Board8(rectangle!Board8(3, 3));
     gs.calculate_minimax_value;
-    /*
-    foreach (p; gs.principal_path!"high"(20)){
+    
+    foreach (p; gs.principal_path!"low"(20)){
         writeln(p);
-        writeln("Dependencies:");
-        foreach(dependency; p.dependencies.byKey){
-            writeln(dependency);
-        }
-        writeln("****************");
     }
-    */
     writeln(gs);
 }

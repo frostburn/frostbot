@@ -200,169 +200,6 @@ class GameState(T)
         }
     }
 
-    /*
-    void calculate_minimax_value(
-            float depth,
-            bool use_transpositions,
-            ref GameState!T[State!T] transpositions,
-            bool[State!T] history,
-            ref GameState!T[State!T] state_pool
-        )
-    {
-        debug(minimax) {
-            if (state_pool.length > pool_size){
-                writeln("Minimaxing:");
-                writeln(state_pool.length);
-                pool_size = state_pool.length;
-            }
-            writeln(this);
-        }
-
-        if (depth <= 0){
-            return;
-        }
-
-        if (complete){
-            return;
-        }
-
-        if (use_transpositions){
-            if (!canonical_state_available){
-                canonical_state = state;
-                canonical_state.canonize;
-                canonical_state_available = true;
-            }
-            if (canonical_state in transpositions){
-                auto transposition = transpositions[canonical_state];
-                assert(transposition.complete);
-                assert(transposition.canonical_state == canonical_state);
-                low_value = transposition.low_value;
-                high_value = transposition.high_value;
-                complete = true;
-                bool[State!T] empty;
-                dependencies = empty;
-                children = [];
-                release_all_hooks;
-                return;
-            }
-        }
-
-        if (!(state in state_pool)){
-            state_pool[state] = this;
-        }
-        assert(state_pool[state] is this);
-
-        if (is_leaf){
-            return;
-        }
-
-        make_children(state_pool);
-
-        history = history.dup;
-        history[state] = true;
-
-        foreach (child; children){
-            if (!child.is_leaf){
-                if (child.state in history){
-                    child.hook(this);
-                }
-                else{
-                    child.calculate_minimax_value(
-                        depth - 1,
-                        use_transpositions,
-                        transpositions,
-                        history,
-                        state_pool
-                    );
-                    foreach (dependency; child.dependencies.byKey){
-                        if (dependency in history){
-                            child.hook(this, dependency);
-                        }
-                    }
-                }
-            }
-        }
-
-        update_value;
-
-        if (!dependencies.length){
-            complete = true;
-        }
-
-        release_hooks(complete);
-
-        if (!dependencies.length){
-            //release_hooks;
-            complete = true;
-            if (use_transpositions){
-                assert(canonical_state_available);
-                debug(transpositions) {
-                    writeln("Saving transposition:");
-                    writeln(this);
-                }
-                transpositions[canonical_state] = this;
-            }
-            debug(complete){
-                writeln("Complete!");
-                writeln(this);
-            }
-        }
-
-        debug(minimax) {
-            writeln("Done minimaxing.");
-            writeln(low_value, ", ", high_value);
-        }
-    }
-
-    void calculate_minimax_value(bool use_transpositions=false)
-    {
-        GameState!T[State!T] transpositions;
-        bool[State!T] history;
-        GameState!T[State!T] state_pool;
-        calculate_minimax_value(
-            float.infinity,
-            use_transpositions,
-            transpositions,
-            history,
-            state_pool
-        );
-    }
-    */
-
-    /*
-    void calculate_self_minimax_value(bool[State!T] history=null, GameState!T[State!T] state_pool=null)
-    {
-        if (is_leaf){
-            return;
-        }
-
-        make_children(state_pool);
-
-        if (history is null){
-            history = [state : true];
-        }
-        else{
-            history = history.dup;
-            history[state] = true;
-        }
-
-        foreach (child; children){
-            if (!child.is_leaf){
-                if (!(child.state in history)){
-                    child.calculate_minimax_value(history, state_pool);
-                    foreach (dependency; child.dependencies.byKey){
-                        if (dependency != state){
-                            child.hook(this, dependency);
-                        }
-                    }
-                }
-            }
-        }
-
-        update_value;
-    }
-    */
-
     override string toString()
     {
         return format(
@@ -380,14 +217,7 @@ class GameState(T)
             return [];
         }
         GameState!T[] result = [this];
-        auto _children = children.dup;
-        if (state.black_to_play && type == "high"){
-            _children.reverse;
-        }
-        else if (!state.black_to_play && type == "low"){
-            _children.reverse;
-        }
-        foreach(child; _children){
+        foreach(child; children){
             if (mixin("child." ~ type ~ "_value == " ~ type ~ "_value")){
                 result ~= child.principal_path!type(max_depth - 1);
                 break;
@@ -427,14 +257,12 @@ unittest
     auto gs = new GameState!Board8(rectangle!Board8(2, 1));
     gs.calculate_minimax_value;
     foreach (p; gs.principal_path!"high"){
-        assert(!p.dependencies.length);
         auto c = p.copy;
         c.calculate_minimax_value;
         assert(c.low_value == p.low_value);
         assert(c.high_value == p.high_value);
     }
     foreach (p; gs.principal_path!"low"){
-        assert(!p.dependencies.length);
         auto c = p.copy;
         c.calculate_minimax_value;
         assert(c.low_value == p.low_value);
@@ -455,8 +283,6 @@ unittest
         }
         auto c = gs.copy;
         c.calculate_minimax_value;
-        writeln(gs);
-        writeln(c.low_value, ", ", c.high_value);
         assert(c.low_value == gs.low_value);
         assert(c.high_value == gs.high_value);
     }
@@ -464,7 +290,7 @@ unittest
     check_children(gs, checked);
 }
 
-version(all_tests){
+//version(all_tests){
     unittest
     {
         auto gs = new GameState!Board8(rectangle!Board8(4, 1));
@@ -477,53 +303,4 @@ version(all_tests){
         assert(gs.low_value == -4);
         assert(gs.high_value == 4);
     }
-}
-
-/*
-void main()
-{
-    auto gs = new GameState!Board8(rectangle!Board8(2, 1));
-    gs.state.black_to_play = false;
-    gs.state.opponent |= Board8(1, 0);
-    gs.calculate_minimax_value;
-    foreach (p; gs.principal_path!"low"){
-        writeln(p);
-        //writeln(p.dependencies);
-        writeln;
-    }
-}
-*/
-/*
-void main()
-{
-    offending_state = State!Board8(rectangle!Board8(2, 1));
-    offending_state.opponent = Board8(0, 0);
-    offending_state.ko = Board8(1, 0);
-    offending_state.black_to_play = false;
-
-
-    auto gs = new GameState!Board8(rectangle!Board8(2, 1));
-    gs.calculate_minimax_value;
-    foreach (p; gs.principal_path!"high"(5)){
-        writeln(p);
-        foreach (dependency, dummy; p.dependencies){
-            writeln("-----------dependency-----------");
-            writeln(dependency);
-            assert(dependency == offending_state);
-        }
-        if (p.dependencies.length) writeln("*********");
-        writeln;
-    }
-    //writeln(gs);
-}
-*/
-
-/*
-void main()
-{
-    auto gs = new GameState!Board8(rectangle!Board8(4, 1));
-    //auto gs = new GameState!Board8(rectangle!Board8(2, 2));
-    gs.calculate_minimax_value;
-    writeln(gs);
-}
-*/
+//}
