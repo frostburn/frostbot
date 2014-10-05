@@ -18,15 +18,13 @@ class GameState(T)
     bool is_leaf;
     GameState!T[] children;
     GameState!T[] parents;
-    bool complete;
 
     public
     {
         T[] moves;
-        bool[GameState!T][State!T] hooks;
-        bool[State!T] dependencies;
         State!T canonical_state;
         bool canonical_state_available = false;
+        bool populated = false;
     }
 
     this(T playing_area)
@@ -55,15 +53,6 @@ class GameState(T)
     invariant
     {
         assert(state.passes <= 2);
-
-        if (is_leaf){
-            assert(!hooks.length);
-            assert(!dependencies.length);
-        }
-
-        if (complete){
-            assert(!dependencies.length);
-        }
     }
 
     GameState!T copy(){
@@ -125,74 +114,17 @@ class GameState(T)
         make_children(empty);
     }
 
-    void hook(ref GameState!T other, State!T key)
-    {
-        if (!(key in hooks)){
-            bool[GameState!T] empty;
-            hooks[key] = empty;
-        }
-        hooks[key][other] = true;
-        other.dependencies[key] = true;
-    }
-
-    void hook(ref GameState!T other)
-    {
-        hook(other, state);
-    }
-
-    void release_hooks(State!T key, bool remove_hooks, ref bool[State!T] released){
-        debug(release_hooks) {
-            writeln("Releasing hooks with key:");
-            writeln(key);
-        }
-        released[state] = true;
-        auto hooks_dup = hooks.dup;
-        if (key in hooks_dup){
-            foreach(hook; hooks_dup[key].dup.byKey){
-                hook.update_value;
-                if (remove_hooks){
-                    hook.dependencies.remove(key);
-                }
-                if (!(hook.state in released)){
-                    hook.release_hooks(key, remove_hooks, released);
-                    if (!hook.dependencies.length){
-                        hook.release_all_hooks(released);
-                    }
-                }
-            }
-            if (remove_hooks){
-                hooks.remove(key);
-            }
-        }
-    }
-
-    void release_hooks(State!T key, bool remove_hooks){
-        bool[State!T] released;
-        release_hooks(key, remove_hooks, released);
-    }
-
-    void release_hooks(bool remove_hooks=false){
-        release_hooks(state, remove_hooks);
-    }
-
-    void release_all_hooks(ref bool[State!T] released){
-        foreach(key; hooks.dup.byKey){
-            release_hooks(key, true, released);
-        }
-    }
-
-    void release_all_hooks(){
-        bool[State!T] released;
-        release_all_hooks(released);
-    }
-
-    void update_value(){
+    bool update_value(){
         debug(update_value) {
-            writeln(this);
+            writeln("Updating value: ", &this);
+            writeln(low_value, ", ", high_value);
+            //writeln(this);
         }
-        if (low_value == high_value || complete){
-            return;
+        if (low_value == high_value){
+            return false;
         }
+        auto old_low_value = low_value;
+        auto old_high_value = high_value;
         if (!is_leaf){
             float sign;
             if (state.black_to_play){
@@ -215,25 +147,60 @@ class GameState(T)
         else{
             low_value = high_value = state.liberty_score;
         }
-        if (low_value == high_value){
-            complete = true;
-            bool[State!T] empty;
-            dependencies = empty;
-            debug(complete){
-                writeln("Complete!");
-                writeln(this);
-            }
-        }
+        
         debug(update_value) {
             foreach (child; children){
-                writeln(" Child:");
+                writeln(" Child: ", &child);
                 writeln(" ", child.low_value, ", ", child.high_value);
             }
             writeln(low_value, ", ", high_value);
         }
-        
+        return (old_low_value != low_value || old_high_value != high_value);
     }
 
+    void populate_game_tree(
+        ref GameState!T[State!T] state_pool,
+        ref GameState!T[] leaf_queue
+        )
+    {
+        if (!populated){
+            populated = true;
+            assert(state_pool[state] == this);
+            if (is_leaf){
+                leaf_queue ~= this;
+                return;
+            }
+
+            make_children(state_pool);
+
+            foreach (child; children){
+                child.populate_game_tree(state_pool, leaf_queue);
+            }
+        }
+    }
+
+    void update_parents()
+    {
+        foreach (parent; parents){
+            bool changed = parent.update_value;
+            if (changed){
+                parent.update_parents;
+            }
+        }
+    }
+
+    void calculate_minimax_value()
+    {
+        GameState!T[State!T] state_pool = [state: this];
+        GameState!T[] leaf_queue;
+        populate_game_tree(state_pool, leaf_queue);
+
+        foreach (leaf; leaf_queue){
+            leaf.update_parents;
+        }
+    }
+
+    /*
     void calculate_minimax_value(
             float depth,
             bool use_transpositions,
@@ -360,6 +327,7 @@ class GameState(T)
             state_pool
         );
     }
+    */
 
     /*
     void calculate_self_minimax_value(bool[State!T] history=null, GameState!T[State!T] state_pool=null)
