@@ -1,5 +1,6 @@
 import std.stdio;
 import std.string;
+import std.algorithm;
 
 // TODO: Move to utils
 int popcount(ulong b)
@@ -665,6 +666,7 @@ class GameState(T)
     float high_value = float.infinity;
     bool is_leaf;
     GameState!T[] children;
+    GameState!T[] parents;
     bool complete;
 
     private
@@ -732,21 +734,38 @@ class GameState(T)
     {
         auto state_children = state.children(moves);
         children = [];
-        // Collect novel states first.
-        foreach(child_state; state_children){
-            if (state_pool is null || !(child_state in state_pool)){
+        foreach (child_state; state_children){
+            if (!(state_pool is null) && child_state in state_pool){
+                auto child = state_pool[child_state];
+                bool parent_in_parents = false;
+                foreach(parent; child.parents){
+                    if (this is parent){
+                        parent_in_parents = true;
+                        break;
+                    }
+                }
+                if (!parent_in_parents){
+                    child.parents ~= this;
+                }
+                children ~= child;
+            }
+            else{
                 auto child = new GameState!T(child_state, moves);
+                child.parents ~= this;
                 if (!(state_pool is null)){
                     state_pool[child_state] = child;
                 }
                 children ~= child;
             }
         }
-        foreach(child_state; state_children){
-            if (!(state_pool is null) && child_state in state_pool){
-                children ~= state_pool[child_state];
-            }
+
+        static bool more_novel(GameState!T a, GameState!T b){
+            return a.parents.length < b.parents.length;
         }
+
+        sort!more_novel(children);
+
+        assert(state_children.length == children.length);
     }
 
     void hook(GameState!T other, State!T key)
@@ -791,7 +810,7 @@ class GameState(T)
     }
 
     void release_all_hooks(){
-        foreach(key; hooks.byKey){
+        foreach(key; hooks.dup.byKey){
             release_hooks(key);
         }
     }
