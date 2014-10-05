@@ -140,41 +140,58 @@ class GameState(T)
         hook(other, state);
     }
 
-    void release_hooks(State!T key){
+    void release_hooks(State!T key, bool remove_hooks, ref bool[State!T] released){
         debug(release_hooks) {
             writeln("Releasing hooks with key:");
             writeln(key);
         }
+        released[state] = true;
         auto hooks_dup = hooks.dup;
         if (key in hooks_dup){
             foreach(hook; hooks_dup[key].dup.byKey){
                 hook.update_value;
-                hook.dependencies.remove(key);
-                if (key in hooks){
-                    hooks[key].remove(hook);
+                if (remove_hooks){
+                    hook.dependencies.remove(key);
                 }
-                hook.release_hooks(key);
-                if (!hook.dependencies.length){
-                    hook.release_all_hooks;
+                if (!(hook.state in released)){
+                    hook.release_hooks(key, remove_hooks, released);
+                    if (!hook.dependencies.length){
+                        hook.release_all_hooks(released);
+                    }
                 }
             }
-            hooks.remove(key);
+            if (remove_hooks){
+                hooks.remove(key);
+            }
         }
     }
 
-    void release_hooks(){
-        release_hooks(state);
+    void release_hooks(State!T key, bool remove_hooks){
+        bool[State!T] released;
+        release_hooks(key, remove_hooks, released);
+    }
+
+    void release_hooks(bool remove_hooks=false){
+        release_hooks(state, remove_hooks);
+    }
+
+    void release_all_hooks(ref bool[State!T] released){
+        foreach(key; hooks.dup.byKey){
+            release_hooks(key, true, released);
+        }
     }
 
     void release_all_hooks(){
-        foreach(key; hooks.dup.byKey){
-            release_hooks(key);
-        }
+        bool[State!T] released;
+        release_all_hooks(released);
     }
 
     void update_value(){
         debug(update_value) {
             writeln(this);
+        }
+        if (low_value == high_value || complete){
+            return;
         }
         if (!is_leaf){
             float sign;
@@ -218,9 +235,10 @@ class GameState(T)
     }
 
     void calculate_minimax_value(
+            float depth,
             bool use_transpositions,
             ref GameState!T[State!T] transpositions,
-            ref bool[State!T] history,
+            bool[State!T] history,
             ref GameState!T[State!T] state_pool
         )
     {
@@ -231,6 +249,10 @@ class GameState(T)
                 pool_size = state_pool.length;
             }
             writeln(this);
+        }
+
+        if (depth <= 0){
+            return;
         }
 
         if (complete){
@@ -245,9 +267,15 @@ class GameState(T)
             }
             if (canonical_state in transpositions){
                 auto transposition = transpositions[canonical_state];
+                assert(transposition.complete);
+                assert(transposition.canonical_state == canonical_state);
                 low_value = transposition.low_value;
                 high_value = transposition.high_value;
-                complete = transposition.complete;
+                complete = true;
+                bool[State!T] empty;
+                dependencies = empty;
+                children = [];
+                release_all_hooks;
                 return;
             }
         }
@@ -273,13 +301,14 @@ class GameState(T)
                 }
                 else{
                     child.calculate_minimax_value(
+                        depth - 1,
                         use_transpositions,
                         transpositions,
                         history,
                         state_pool
                     );
                     foreach (dependency; child.dependencies.byKey){
-                        if (dependency != state){
+                        if (dependency in history){
                             child.hook(this, dependency);
                         }
                     }
@@ -290,10 +319,20 @@ class GameState(T)
         update_value;
 
         if (!dependencies.length){
-            release_hooks;
+            complete = true;
+        }
+
+        release_hooks(complete);
+
+        if (!dependencies.length){
+            //release_hooks;
             complete = true;
             if (use_transpositions){
                 assert(canonical_state_available);
+                debug(transpositions) {
+                    writeln("Saving transposition:");
+                    writeln(this);
+                }
                 transpositions[canonical_state] = this;
             }
             debug(complete){
@@ -307,11 +346,14 @@ class GameState(T)
             writeln(low_value, ", ", high_value);
         }
     }
-    void calculate_minimax_value(bool use_transpositions=false){
+
+    void calculate_minimax_value(bool use_transpositions=false)
+    {
         GameState!T[State!T] transpositions;
         bool[State!T] history;
         GameState!T[State!T] state_pool;
         calculate_minimax_value(
+            float.infinity,
             use_transpositions,
             transpositions,
             history,
@@ -370,7 +412,14 @@ class GameState(T)
             return [];
         }
         GameState!T[] result = [this];
-        foreach(child; children){
+        auto _children = children.dup;
+        if (state.black_to_play && type == "high"){
+            _children.reverse;
+        }
+        else if (!state.black_to_play && type == "low"){
+            _children.reverse;
+        }
+        foreach(child; _children){
             if (mixin("child." ~ type ~ "_value == " ~ type ~ "_value")){
                 result ~= child.principal_path!type(max_depth - 1);
                 break;
@@ -425,6 +474,42 @@ unittest
     }
 }
 
+unittest
+{
+    auto gs = new GameState!Board8(rectangle!Board8(3, 1));
+    gs.calculate_minimax_value;
+    void check_children(GameState!Board8 gs, ref bool[State!Board8] checked){
+        foreach (child; gs.children){
+            if (!(child.state in checked)){
+                checked[child.state] = true;
+                check_children(child, checked);
+            }
+        }
+        auto c = gs.copy;
+        c.calculate_minimax_value;
+        writeln(gs);
+        writeln(c.low_value, ", ", c.high_value);
+        assert(c.low_value == gs.low_value);
+        assert(c.high_value == gs.high_value);
+    }
+    bool[State!Board8] checked;
+    check_children(gs, checked);
+}
+
+version(all_tests){
+    unittest
+    {
+        auto gs = new GameState!Board8(rectangle!Board8(4, 1));
+        gs.calculate_minimax_value;
+        assert(gs.low_value == 4);
+        assert(gs.high_value == 4);
+
+        gs = new GameState!Board8(rectangle!Board8(2, 2));
+        gs.calculate_minimax_value;
+        assert(gs.low_value == -4);
+        assert(gs.high_value == 4);
+    }
+}
 
 /*
 void main()

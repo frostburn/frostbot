@@ -11,9 +11,15 @@ void main()
     //gs.calculate_minimax_value(false);
     //writeln(gs);
 
-    auto gs = new GameState!Board8(rectangle!Board8(2, 1));
-    gs.calculate_minimax_value(false);
-    foreach (p; gs.principal_path!"high"(10)){
+    /*
+    auto gs = new GameState!Board8(rectangle!Board8(4, 1));
+    gs.state.player = Board8(1, 0);
+    gs.state.opponent = Board8(2, 0);
+    */
+    auto gs = new GameState!Board8(rectangle!Board8(4, 1));
+    gs.calculate_minimax_value(true);
+    /*
+    foreach (p; gs.principal_path!"high"(20)){
         writeln(p);
         writeln("Dependencies:");
         foreach(dependency; p.dependencies.byKey){
@@ -21,5 +27,6 @@ void main()
         }
         writeln("****************");
     }
+    */
     writeln(gs);
 }
