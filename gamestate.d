@@ -4,6 +4,8 @@ import std.stdio;
 import std.string;
 import std.algorithm;
 
+import state;
+
 
 debug(minimax) static size_t pool_size;
 

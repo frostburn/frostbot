@@ -29,36 +29,9 @@ struct Board8
     enum NORTH_WALL = 255UL;
     enum OUTSIDE = 13844082881149927680UL;
 
-    static immutable Board8[28] FORAGE = [
-        Board8(513UL),
-        Board8(1026UL),
-        Board8(2052UL),
-        Board8(4104UL),
-        Board8(8208UL),
-        Board8(16416UL),
-        Board8(32832UL),
-        Board8(65664UL),
-        Board8(134479872UL),
-        Board8(268959744UL),
-        Board8(537919488UL),
-        Board8(1075838976UL),
-        Board8(2151677952UL),
-        Board8(4303355904UL),
-        Board8(8606711808UL),
-        Board8(17213423616UL),
-        Board8(35253091565568UL),
-        Board8(70506183131136UL),
-        Board8(141012366262272UL),
-        Board8(282024732524544UL),
-        Board8(564049465049088UL),
-        Board8(1128098930098176UL),
-        Board8(2256197860196352UL),
-        Board8(4512395720392704UL),
-        Board8(54043195528445952UL),
-        Board8(216172782113783808UL),
-        Board8(864691128455135232UL),
-        Board8(3458764513820540928UL),
-    ];
+    static immutable Board8[WIDTH * HEIGHT / 2] FORAGE_TABLE = mixin(get_forage_table);
+
+    static immutable ulong[1 << HEIGHT] ROTATION_TABLE = mixin(get_rotation_table);
 
     ulong bits = EMPTY;
 
@@ -249,11 +222,50 @@ struct Board8
         }
     }
 
+    bool can_rotate()
+    in
+    {
+        assert(valid);
+    }
+    body
+    {
+        return !(bits & EAST_WALL);
+    }
+
+    void rotate()
+    in
+    {
+        assert(valid);
+        assert(can_rotate);
+    }
+    out
+    {
+        assert(valid);
+        assert(can_rotate);
+    }
+    body
+    {
+        version(assert){
+            auto rotated_bits = naive_rotate;
+        }
+        auto old_bits = bits;
+        bits = EMPTY;
+        assert(HEIGHT <= WIDTH);
+        for (int y = 0; y < HEIGHT; y++){
+            auto north_line = (old_bits >> (y * V_SHIFT)) & NORTH_WALL;
+            bits |= ROTATION_TABLE[north_line] >> (y * H_SHIFT);
+        }
+        assert(old_bits.popcount == bits.popcount);
+        version(assert){
+            assert(bits == rotated_bits);
+        }
+    }
+
     private ulong naive_rotate()
     in
     {
         assert(valid);
-        assert(!(bits & EAST_WALL));
+        assert(can_rotate);
     }
     out(result)
     {
@@ -273,6 +285,63 @@ struct Board8
             }
         }
         return result;
+    }
+
+    void mirror_h()
+    in
+    {
+        assert(valid);
+    }
+    out
+    {
+        assert(valid);
+    }
+    body
+    {
+        version(assert){
+            auto old_bits = bits;
+        }
+        bits = (
+            (bits & (WEST_WALL << (0 * H_SHIFT))) << ((WIDTH - 1) * H_SHIFT) |
+            (bits & (WEST_WALL << (1 * H_SHIFT))) << ((WIDTH - 3) * H_SHIFT) |
+            (bits & (WEST_WALL << (2 * H_SHIFT))) << ((WIDTH - 5) * H_SHIFT) |
+            (bits & (WEST_WALL << (3 * H_SHIFT))) << ((WIDTH - 7) * H_SHIFT) |
+            (bits & (WEST_WALL << (4 * H_SHIFT))) >> (1 * H_SHIFT) |
+            (bits & (WEST_WALL << (5 * H_SHIFT))) >> (3 * H_SHIFT) |
+            (bits & (WEST_WALL << (6 * H_SHIFT))) >> (5 * H_SHIFT) |
+            (bits & (WEST_WALL << (7 * H_SHIFT))) >> (7 * H_SHIFT)
+        );
+        version(assert){
+            assert(old_bits.popcount == bits.popcount);
+        }
+    }
+
+    void mirror_v()
+    in
+    {
+        assert(valid);
+    }
+    out
+    {
+        assert(valid);
+    }
+    body
+    {
+        version(assert){
+            auto old_bits = bits;
+        }
+        bits = (
+            (bits & (NORTH_WALL << (0 * V_SHIFT))) << ((HEIGHT - 1) * V_SHIFT) |
+            (bits & (NORTH_WALL << (1 * V_SHIFT))) << ((HEIGHT - 3) * V_SHIFT) |
+            (bits & (NORTH_WALL << (2 * V_SHIFT))) << ((HEIGHT - 5) * V_SHIFT) |
+            (bits & (NORTH_WALL << (3 * V_SHIFT))) |
+            (bits & (NORTH_WALL << (4 * V_SHIFT))) >> (2 * V_SHIFT) |
+            (bits & (NORTH_WALL << (5 * V_SHIFT))) >> (4 * V_SHIFT) |
+            (bits & (NORTH_WALL << (6 * V_SHIFT))) >> (6 * V_SHIFT)
+        );
+        version(assert){
+            assert(old_bits.popcount == bits.popcount);
+        }
     }
 
     string toString()
@@ -316,7 +385,7 @@ struct Board8
 
     string repr()
     {
-        return format("Board8(%sUL)", bits);
+        return format("Board8(0x%xUL)", bits);
     }
 
     @property bool toBool() const
@@ -346,8 +415,9 @@ int popcount(Board8 b)
 }
 
 
-void print_forage_pattern()
+string get_forage_table()
 {
+    string r;
     Board8 forage[];
     for (int y = 0; y < Board8.HEIGHT - 1; y += 2){
         for (int x = 0; x < Board8.WIDTH; x++){
@@ -362,11 +432,33 @@ void print_forage_pattern()
         block |= Board8(x + 1, y);
         forage ~= block;
     }
-    writeln("[");
-    foreach (block; forage){
-        writeln("    " ~ block.repr() ~ ",");
+    r ~= "[";
+    foreach (index, block; forage){
+        r ~= block.repr;
+        if (index < forage.length - 1){
+            r ~= ", ";
+        }
     }
-    writeln("];");
+    r ~= "]";
+    return r;
+}
+
+string get_rotation_table(){
+    string r;
+    assert(Board8.HEIGHT <= Board8.WIDTH);
+    ulong[1 << Board8.HEIGHT] rotation_table;
+    for (ulong north_line = 0; north_line < (1 << Board8.HEIGHT); north_line++){
+        rotation_table[north_line] = Board8(north_line).naive_rotate;
+    }
+    r ~= "[";
+    foreach (index, rotation; rotation_table){
+        r ~= format("0x%xUL", rotation);
+        if (index < rotation_table.length - 1){
+            r ~= ", ";
+        }
+    }
+    r ~= "]";
+    return r;
 }
 
 unittest
@@ -397,7 +489,7 @@ unittest
     assert(b.popcount() == Board8.WIDTH * Board8.HEIGHT);
 }
 
-
+/*
 void main()
 {
     auto b = Board8(12398724987489237345UL & ~Board8.EAST_WALL & Board8.FULL);
@@ -406,3 +498,4 @@ void main()
     auto r = Board8(b.naive_rotate);
     writeln(r);
 }
+*/

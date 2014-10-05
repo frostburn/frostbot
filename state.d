@@ -2,7 +2,7 @@ module state;
 
 import std.stdio;
 import std.string;
-
+import board8;
 
 struct State(T)
 {
