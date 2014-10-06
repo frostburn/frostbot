@@ -3,28 +3,8 @@ module board8;
 import std.stdio;
 import std.string;
 
-// TODO: Move to utils
-int popcount(ulong b)
-{
-     b = (b & 0x5555555555555555UL) + (b >> 1 & 0x5555555555555555UL);
-     b = (b & 0x3333333333333333UL) + (b >> 2 & 0x3333333333333333UL);
-     b = b + (b >> 4) & 0x0F0F0F0F0F0F0F0FUL;
-     b = b + (b >> 8);
-     b = b + (b >> 16);
-     b = b + (b >> 32) & 0x0000007FUL;
+import utils;
 
-     return cast(int)b;
-}
-
-int compare(in ulong a, in ulong b){
-    if (a < b){
-        return -1;
-    }
-    if (a > b){
-        return 1;
-    }
-    return 0;
-}
 
 struct Board8
 {
@@ -45,7 +25,7 @@ struct Board8
 
     ulong bits = EMPTY;
 
-    bool valid() const
+    bool valid() const pure nothrow @nogc @safe
     {
         return !(bits & OUTSIDE);
     }
@@ -56,12 +36,12 @@ struct Board8
     //    assert(valid);
     //}
 
-    this(in ulong bits)
+    this(in ulong bits) pure nothrow @nogc @safe
     {
         this.bits = bits;
     }
 
-    this(in int x, in int y)
+    this(in int x, in int y) pure nothrow @nogc @safe
     in
     {
         assert((0 <= x) && (x < WIDTH) && (0 <= y) && (y < HEIGHT));
@@ -75,38 +55,38 @@ struct Board8
         bits = (1UL << (x * H_SHIFT)) << (y * V_SHIFT);
     }
 
-    Board8 opUnary(string op)() const
+    Board8 opUnary(string op)() const pure nothrow @nogc @safe
     {
         mixin("return Board8(" ~ op ~ "bits);");
     }
 
-    Board8 opBinary(string op)(in Board8 rhs) const
+    Board8 opBinary(string op)(in Board8 rhs) const pure nothrow @nogc @safe
     {
         mixin("return Board8(bits " ~ op ~ " rhs.bits);");
     }
 
-    Board8 opBinary(string op)(in int rhs) const
+    Board8 opBinary(string op)(in int rhs) const pure nothrow @nogc @safe
     {
         mixin("return Board8(bits " ~ op ~ " rhs);");
     }
 
-    Board8 opBinary(string op)(in ulong rhs) const
+    Board8 opBinary(string op)(in ulong rhs) const pure nothrow @nogc @safe
     {
         mixin("return Board8(bits " ~ op ~ " rhs);");
     }
 
-    ref Board8 opOpAssign(string op)(in Board8 rhs)
+    ref Board8 opOpAssign(string op)(in Board8 rhs) nothrow @nogc @safe
     {
         mixin ("bits " ~ op ~ "= rhs.bits;");
         return this;
     }
 
-    bool opEquals(in Board8 rhs) const
+    bool opEquals(in Board8 rhs) const pure nothrow @nogc @safe
     {
         return bits == rhs.bits;
     }
 
-    int opCmp(in Board8 rhs) const
+    int opCmp(in Board8 rhs) const pure nothrow @nogc @safe
     {
         return compare(bits, rhs.bits);
     }
@@ -116,7 +96,12 @@ struct Board8
         return typeid(bits).getHash(&bits);
     }
 
-    Board8 liberties(in Board8 playing_area) const
+    uint popcount() const pure nothrow @nogc @safe
+    {
+        return bits.popcount;
+    }
+
+    Board8 liberties(in Board8 playing_area) const pure nothrow @nogc @safe
     {
         return (
             (this << H_SHIFT) |
@@ -149,7 +134,7 @@ struct Board8
     /**
      * Floods (expands) the board into target board along vertical and horizontal lines.
      */
-    ref Board8 flood_into(in Board8 target)
+    ref Board8 flood_into(in Board8 target) pure nothrow @nogc @safe
     in
     {
         assert(target.valid);
@@ -192,7 +177,7 @@ struct Board8
         bits = FULL;
     }
 
-    void snap(out int westwards, out int northwards)
+    void snap(out int westwards, out int northwards) pure nothrow @nogc @safe
     out
     {
         assert(westwards < WIDTH);
@@ -216,7 +201,7 @@ struct Board8
         }
     }
 
-    void fix(in int westwards, in int northwards)
+    void fix(in int westwards, in int northwards) pure nothrow @nogc @safe
     in
     {
         assert(westwards < WIDTH);
@@ -237,7 +222,7 @@ struct Board8
         }
     }
 
-    bool can_rotate()
+    bool can_rotate() pure nothrow @nogc @safe
     in
     {
         assert(valid);
@@ -247,7 +232,7 @@ struct Board8
         return !(bits & EAST_WALL);
     }
 
-    void rotate()
+    void rotate() nothrow @nogc @safe
     in
     {
         assert(valid);
@@ -276,7 +261,7 @@ struct Board8
         }
     }
 
-    private ulong naive_rotate()
+    private ulong naive_rotate() pure nothrow @nogc @safe
     in
     {
         assert(valid);
@@ -302,7 +287,7 @@ struct Board8
         return result;
     }
 
-    void mirror_h()
+    void mirror_h() pure nothrow @nogc @safe
     in
     {
         assert(valid);
@@ -331,7 +316,7 @@ struct Board8
         }
     }
 
-    void mirror_v()
+    void mirror_v() pure nothrow @nogc @safe
     in
     {
         assert(valid);
@@ -403,7 +388,7 @@ struct Board8
         return format("Board8(0x%xUL)", bits);
     }
 
-    @property bool toBool() const
+    @property bool toBool() const pure nothrow @nogc @safe
     {
         return cast(bool)bits;
     }
@@ -421,13 +406,9 @@ T rectangle(T)(int width, int height){
     return result;
 }
 
+
 immutable Board8 full8 = Board8(Board8.FULL);
 immutable Board8 empty8 = Board8(Board8.EMPTY);
-
-int popcount(Board8 b)
-{
-    return popcount(b.bits);
-}
 
 
 string get_forage_table()
@@ -501,7 +482,7 @@ unittest
 unittest
 {
     Board8 b = Board8(Board8.FULL);
-    assert(b.popcount() == Board8.WIDTH * Board8.HEIGHT);
+    assert(b.popcount == Board8.WIDTH * Board8.HEIGHT);
 }
 
 /*

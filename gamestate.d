@@ -5,19 +5,9 @@ import std.string;
 import std.algorithm;
 import std.array;
 
+import utils;
 import board8;
 import state;
-
-
-// TODO: Move to utils
-bool member_in_list(T)(ref T member, ref T[] list){
-    foreach (list_member; list){
-        if (member is list_member){
-            return true;
-        }
-    }
-    return false;
-}
 
 
 debug(minimax) static size_t pool_size;
@@ -197,7 +187,52 @@ class GameState(T)
         return (old_low_value != low_value || old_high_value != high_value);
     }
 
+    void populate_game_tree(
+        ref GameState!T[State!T] state_pool,
+        ref GameState!T[] leaf_queue,
+        bool use_transpositions
+        )
+    {
+        GameState!T[] queue;
+
+        queue ~= this;
+
+        while (queue.length){
+            auto game_state = queue.front;
+            queue.popFront;
+            debug(populate) {
+                writeln("Populating with:");
+                writeln(game_state);
+            }
+            if (!game_state.populated){
+                version(assert){
+                    if (use_transpositions){
+                        assert(game_state.canonical_state_available);
+                        assert(game_state.canonical_state in state_pool);
+                        assert(state_pool[game_state.canonical_state] == game_state);
+                    }
+                    else{
+                        assert(state_pool[game_state.state] == game_state);
+                    }
+                }
+                game_state.populated = true;
+
+                if (game_state.is_leaf){
+                    leaf_queue ~= game_state;
+                    continue;
+                }
+
+                game_state.make_children(state_pool, use_transpositions);
+
+                foreach (child; game_state.children){
+                    queue ~= child;
+                }
+            }
+        }
+    }
+
     // TODO: Create a non-recursive version
+    /*
     void populate_game_tree(
         ref GameState!T[State!T] state_pool,
         ref GameState!T[] leaf_queue,
@@ -230,6 +265,7 @@ class GameState(T)
             }
         }
     }
+    */
 
     void update_parents()
     {
@@ -241,12 +277,17 @@ class GameState(T)
         foreach (parent; parents){
             queue ~= parent;
         }
+
         while (queue.length){
-            auto state = queue.front;
+            auto game_state = queue.front;
             queue.popFront;
-            bool changed = state.update_value;
+            debug(update_parents) {
+                writeln("Updating parents for:");
+                writeln(game_state);
+            }
+            bool changed = game_state.update_value;
             if (changed){
-                foreach (parent; state.parents){
+                foreach (parent; game_state.parents){
                     queue ~= parent;
                 }
             }
