@@ -2,6 +2,8 @@ module state;
 
 import std.stdio;
 import std.string;
+
+import bitmatrix;
 import board8;
 
 
@@ -338,6 +340,59 @@ struct State(T)
         }
     }
 
+    /**
+    * Analyzes the state for unconditional life.
+    * The arguments provide pre-calculated unconditional regions that are to be extended.
+    */
+    void analyze_unconditional(ref T player_unconditional, ref T opponent_unconditional)
+    in
+    {
+        assert(!(player_unconditional & opponent_unconditional));
+    }
+    body
+    {
+        // The unconditional regions are already analyzed and can be excluded here.
+        T[] player_chains = player.chains;
+        T[] player_enclosed_regions = (~player & ~player_unconditional & playing_area).chains;
+        T[] opponent_chains = opponent.chains;
+        T[] opponent_enclosed_regions = (~opponent & ~opponent_unconditional & playing_area).chains;
+
+        T[] temp;
+        // Prune out regions that are already controlled by the other player.
+        foreach (player_enclosed_region; player_enclosed_regions){
+            if (!(player_enclosed_region & opponent_unconditional)){
+                temp ~= player_enclosed_region;
+            }
+        }
+        player_enclosed_regions = temp;
+
+        temp = [];
+        foreach (opponent_enclosed_region; opponent_enclosed_regions){
+            if (!(opponent_enclosed_region & player_unconditional)){
+                temp ~= opponent_enclosed_region;
+            }
+        }
+        opponent_enclosed_regions = temp;
+
+        // Prune out the rest using Benson's algorithm.
+        benson(player_chains, player_enclosed_regions, opponent, player_unconditional, playing_area);
+        benson(opponent_chains, opponent_enclosed_regions, player, opponent_unconditional, playing_area);
+
+        // Extend the uncoditionally controlled regions.
+        foreach (player_chain; player_chains){
+            player_unconditional |= player_chain;
+        }
+        foreach (opponent_chain; opponent_chains){
+            opponent_unconditional |= opponent_chain;
+        }
+        foreach (player_enclosed_region; player_enclosed_regions){
+            player_unconditional |= player_enclosed_region;
+        }
+        foreach (opponent_enclosed_region; opponent_enclosed_regions){
+            opponent_unconditional |= opponent_enclosed_region;
+        }
+    }
+
     string toString()
     {
         string r;
@@ -380,6 +435,59 @@ struct State(T)
 
         return r;
     }
+}
+
+void benson(T)(ref T[] chains, ref T[] regions, in T opponent, in T immortal, in T playing_area)
+{
+    // A combination matrix that holds both the information of
+    // if region i is vital to chain j and
+    // if region i is the neighbour of chain j
+    // stacked on top of each other.
+    auto chain_count = chains.length;
+    BitMatrix is_vital__is_neighbour = BitMatrix(regions.length, 2 * chain_count);
+
+    foreach (j, chain; chains){
+        T chain_liberties = chain.liberties(playing_area);
+        T far_empty_intersections = ~opponent & ~ chain_liberties;
+        foreach (i, region; regions){
+            T empty_intersections = region & ~opponent;
+            T region_far_empty_intersections = region & far_empty_intersections;
+            if (empty_intersections && !region_far_empty_intersections){
+                is_vital__is_neighbour.set(i, j);
+            }
+            if (region & chain_liberties){
+                is_vital__is_neighbour.set(i, j + chain_count);
+            }
+        }
+    }
+    bool recheck;
+    do{
+        recheck = false;
+        foreach (j, chain; chains){
+            auto vital_count = is_vital__is_neighbour.row_popcount(j);
+            if (vital_count < 2 && !(chain & immortal)){
+                recheck = recheck || is_vital__is_neighbour.clear_columns_by_row(j + chain_count);
+            }
+        }
+    }while (recheck);
+
+    T[] temp;
+    foreach (j, chain; chains){
+        // Clear neighbours so that dead regions won't choke up on them.
+        is_vital__is_neighbour.clear_row(j + chain_count);
+        if (is_vital__is_neighbour.row_nonzero(j)){
+            temp ~= chain;
+        }
+    }
+    chains = temp;
+
+    temp = [];
+    foreach (i, region; regions){
+        if (is_vital__is_neighbour.column_nonzero(i)){
+            temp ~= region;
+        }
+    }
+    regions = temp;
 }
 
 unittest
@@ -431,6 +539,27 @@ unittest
     assert(a > b);
     a.player = Board8(0UL);
     assert(a < b);
+}
+
+unittest
+{
+    State!Board8 s;
+    s.player = Board8(1, 0) | Board8(2, 0) | Board8(2, 1);
+    s.player |= Board8(0, 1) | Board8(0, 2) | Board8(1, 2);
+
+    s.opponent = Board8(7, 6);
+    s.opponent |= Board8(7, 4) | Board8(6, 4) | Board8(6, 5) | Board8(5, 5) | Board8(4, 5) | Board8(4, 6);
+
+    Board8 player_unconditional;
+    Board8 opponent_unconditional;
+
+    s.analyze_unconditional(player_unconditional, opponent_unconditional);
+    assert(player_unconditional == (s.player | Board8(0, 0) | Board8(1, 1)));
+    assert(!opponent_unconditional);
+
+    s.player |= Board8(5, 6);
+    s.analyze_unconditional(player_unconditional, opponent_unconditional);
+    assert(opponent_unconditional == (s.opponent | Board8(5, 6) | Board8(6, 6) | Board8(7, 5)));
 }
 
 void examine_state_playout(bool canonize=false)

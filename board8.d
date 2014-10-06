@@ -344,6 +344,27 @@ struct Board8
         }
     }
 
+    Board8[] chains() const
+    out(result){
+        assert(result.length <= WIDTH * HEIGHT / 2 + 1);
+    }
+    body
+    {
+        Board8 foragee = this;
+        Board8[] result;
+        foreach (block; FORAGE_TABLE){
+            Board8 temp = foragee & block;
+            if (temp){
+                foragee ^= temp.flood_into(foragee);
+                result ~= temp;
+            }
+            if (!foragee){
+                break;
+            }
+        }
+        return result;
+    }
+
     string toString()
     {
         string r;
@@ -477,6 +498,8 @@ unittest
     b0.flood_into(b2);
 
     assert(b0 == b1);
+
+    assert(b2.chains.sort == [b1, Board8(4, 5), Board8(7, 1)].sort);
 }
 
 unittest
