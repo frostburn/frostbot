@@ -3,6 +3,7 @@ module gamestate;
 import std.stdio;
 import std.string;
 import std.algorithm;
+import std.array;
 
 import board8;
 import state;
@@ -103,7 +104,7 @@ class GameState(T)
             }
             if (child_state in state_pool){
                 child = state_pool[child_state];
-                if (!(member_in_list!(GameState!T)(child, children))){
+                if (!use_transpositions || !(member_in_list!(GameState!T)(child, children))){
                     if (!member_in_list!(GameState!T)(this, child.parents)){
                         child.parents ~= this;
                     }
@@ -116,7 +117,9 @@ class GameState(T)
                 }
                 else{
                     child = new GameState!T(child_state);
-                    child.create_canonical_state;
+                    child.canonical_state = child_state;
+                    child.canonical_state_available = true;
+                    //child.create_canonical_state;
                 }
                 child.parents ~= this;
                 state_pool[child_state] = child;
@@ -154,6 +157,7 @@ class GameState(T)
         auto old_high_value = high_value;
         if (!is_leaf){
             float sign;
+            float child_low_value, child_high_value;
             if (state.black_to_play){
                 sign = +1;
             }
@@ -163,11 +167,19 @@ class GameState(T)
             low_value = -sign * float.infinity;
             high_value = -sign * float.infinity;
             foreach (child; children){
-                if (child.low_value * sign > low_value * sign){
-                    low_value = child.low_value;
+                if (state.black_to_play != child.state.black_to_play){
+                    child_low_value = child.low_value;
+                    child_high_value = child.high_value;
                 }
-                if (child.high_value * sign > high_value * sign){
-                    high_value = child.high_value;
+                else{
+                    child_low_value = -child.high_value;
+                    child_high_value = -child.low_value;
+                }
+                if (child_low_value * sign > low_value * sign){
+                    low_value = child_low_value;
+                }
+                if (child_high_value * sign > high_value * sign){
+                    high_value = child_high_value;
                 }
             }
         }
@@ -185,12 +197,17 @@ class GameState(T)
         return (old_low_value != low_value || old_high_value != high_value);
     }
 
+    // TODO: Create a non-recursive version
     void populate_game_tree(
         ref GameState!T[State!T] state_pool,
         ref GameState!T[] leaf_queue,
         bool use_transpositions
         )
     {
+        debug(populate) {
+            writeln("Populating tree for:");
+            writeln(this);
+        }
         if (!populated){
             populated = true;
             if (use_transpositions){
@@ -216,6 +233,33 @@ class GameState(T)
 
     void update_parents()
     {
+        debug(update_parents) {
+            writeln("Updating parents for:");
+            writeln(this);
+        }
+        GameState!T[] queue;
+        foreach (parent; parents){
+            queue ~= parent;
+        }
+        while (queue.length){
+            auto state = queue.front;
+            queue.popFront;
+            bool changed = state.update_value;
+            if (changed){
+                foreach (parent; state.parents){
+                    queue ~= parent;
+                }
+            }
+        }
+    }
+
+    /*
+    void update_parents()
+    {
+        debug(update_parents) {
+            writeln("Updating parents for:");
+            writeln(this);
+        }
         foreach (parent; parents){
             bool changed = parent.update_value;
             if (changed){
@@ -223,6 +267,7 @@ class GameState(T)
             }
         }
     }
+    */
 
     void calculate_minimax_value(bool use_transpositions=false)
     {
@@ -255,8 +300,10 @@ class GameState(T)
         );
     }
 
+    // TODO: Add support for transposed paths.
     GameState!T[] principal_path(string type)(int max_depth=100)
     {
+        static assert(type == "high" || type == "low");
         if (max_depth <= 0){
             return [];
         }
@@ -346,5 +393,13 @@ unittest
         gs.calculate_minimax_value;
         assert(gs.low_value == -4);
         assert(gs.high_value == 4);
+    }
+
+    unittest
+    {
+        auto gs = new GameState!Board8(rectangle!Board8(2, 3));
+        gs.calculate_minimax_value(true);
+        assert(gs.low_value == -6);
+        assert(gs.high_value == 6);
     }
 //}
