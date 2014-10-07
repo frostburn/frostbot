@@ -440,7 +440,7 @@ unittest
 
     unittest
     {
-        auto gs = new GameState!Board8(rectangle!Board8(2, 3));
+        auto gs = new GameState!Board8(rectangle!Board8(3, 2));
         gs.calculate_minimax_value(true);
         assert(gs.low_value == -6);
         assert(gs.high_value == 6);

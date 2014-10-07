@@ -44,7 +44,7 @@ void main()
     writeln(ss.player_unconditional);
     */
 
-    ss.calculate_minimax_value(30, float.infinity);
+    ss.calculate_minimax_value(20, -float.infinity);
 
     //print_state(ss);
 

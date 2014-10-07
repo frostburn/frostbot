@@ -10,6 +10,18 @@ import utils;
 import board8;
 import state;
 
+struct Transposition
+{
+    float lower_bound;
+    float upper_bound;
+
+    this(float lower_bound, float upper_bound)
+    {
+        this.lower_bound = lower_bound;
+        this.upper_bound = upper_bound;
+    }
+}
+
 class BaseSearchState(T)
 {
     State!T state;
@@ -177,8 +189,20 @@ class SearchState(T) : BaseSearchState!T
         // TODO: Sort the children.
     }
 
-    void calculate_minimax_value(float depth=float.infinity, float super_ko_value=float.nan, float alpha=-float.infinity, float beta=float.infinity)
+    void calculate_minimax_value(
+        ref Transposition[State!T] transposition_table,
+        float depth=float.infinity,
+        float super_ko_value=float.nan,
+        float alpha=-float.infinity,
+        float beta=float.infinity
+    )
     {
+        if (canonical_state in transposition_table){
+            auto transposition = transposition_table[canonical_state];
+            //lower_bound = transposition.lower_bound;
+            //upper_bound = transposition.upper_bound;
+        }
+
         if (depth <= 0){
             return;
         }
@@ -186,8 +210,6 @@ class SearchState(T) : BaseSearchState!T
         make_children(super_ko_value);
 
         foreach (child; children){
-            (cast(SearchState!T)child).calculate_minimax_value(depth - 1, super_ko_value, alpha, beta);
-            update_value; // TODO: Do single updates.
             if (state.black_to_play){
                 if (lower_bound > alpha){
                     alpha = lower_bound;
@@ -202,9 +224,22 @@ class SearchState(T) : BaseSearchState!T
             if (beta <= alpha){
                 return;
             }
-        }
 
-        update_value;
+            (cast(SearchState!T)child).calculate_minimax_value(transposition_table, depth - 1, super_ko_value, alpha, beta);
+            bool changed = update_value; // TODO: Do single updates.
+            if (lower_bound == upper_bound){
+                auto transposition = Transposition(lower_bound, upper_bound);
+                transposition_table[canonical_state] = transposition;
+                writeln(state);
+                writeln(lower_bound, ", ", upper_bound);
+            }
+        }
+    }
+
+    void calculate_minimax_value(float depth=float.infinity, float super_ko_value=float.nan)
+    {
+        Transposition[State!T] transposition_table;
+        calculate_minimax_value(transposition_table, depth, super_ko_value, -float.infinity, float.infinity);
     }
 
     bool update_value()
@@ -275,7 +310,9 @@ unittest
 {
     State!Board8 s = State!Board8(rectangle!Board8(2, 2));
     s.player = Board8(0, 0) | Board8(1, 1);
-    SearchState!Board8 ss = new SearchState!Board8(s, Board8(), Board8());
+    auto c = s;
+    c.canonize;
+    SearchState!Board8 ss = new SearchState!Board8(s, c, Board8(), Board8());
 
     assert(ss.player_unconditional == ss.state.playing_area);
 }
