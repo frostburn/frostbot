@@ -2,8 +2,8 @@ import std.stdio;
 
 import board8;
 import state;
-import gamestate;
-import bitmatrix;
+import game_state;
+import bit_matrix;
 
 void main()
 {

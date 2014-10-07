@@ -1,4 +1,4 @@
-module gamestate;
+module game_state;
 
 import std.stdio;
 import std.string;
@@ -10,8 +10,10 @@ import board8;
 import state;
 
 
-debug(minimax) static size_t pool_size;
-
+/**
+* GameState is a wrapper around State structs that maintains a list of descendants and predecessors (of which there can be multiple).
+* It doesn't have a single value. Instead it determines a range of possible values allowed by rulesets with varying super-ko rules.
+*/
 
 class GameState(T)
 {

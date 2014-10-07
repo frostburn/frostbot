@@ -1,4 +1,4 @@
-module bitmatrix;
+module bit_matrix;
 
 import std.stdio;
 

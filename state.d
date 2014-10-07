@@ -3,7 +3,7 @@ module state;
 import std.stdio;
 import std.string;
 
-import bitmatrix;
+import bit_matrix;
 import board8;
 
 
