@@ -35,7 +35,7 @@ class GameState(T)
     this(T playing_area)
     {
         state = State!T(playing_area);
-        calculate_available_moves();
+        calculate_available_moves;
     }
 
     this(State!T state, T[] moves=null)
@@ -47,7 +47,7 @@ class GameState(T)
         }
         else{
             if (moves is null){
-                calculate_available_moves();
+                calculate_available_moves;
             }
             else{
                 this.moves = moves;

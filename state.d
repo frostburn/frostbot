@@ -460,6 +460,7 @@ void benson(T)(ref T[] chains, ref T[] regions, in T opponent, in T immortal, in
             }
         }
     }
+
     bool recheck;
     do{
         recheck = false;
@@ -489,6 +490,39 @@ void benson(T)(ref T[] chains, ref T[] regions, in T opponent, in T immortal, in
     }
     regions = temp;
 }
+
+void examine_state_playout(bool canonize=false)
+{
+    import std.random;
+    import core.thread;
+
+    auto s = State!Board8();
+    bool success;
+    int i = 0;
+    int j = 0;
+    while (j < 1000){
+        success = s.make_move(Board8(
+            uniform(0, Board8.WIDTH), uniform(0, Board8.HEIGHT)
+        ));
+        if (success){
+            i++;
+            j = 0;
+            if (canonize){
+                auto t = s;
+                t.canonize;
+                writeln(t);
+            }
+            else{
+                writeln(s);
+            }
+            Thread.sleep(dur!("msecs")(1000));
+        }
+        else{
+            j++;
+        }
+    }
+}
+
 
 unittest
 {
@@ -560,36 +594,4 @@ unittest
     s.player |= Board8(5, 6);
     s.analyze_unconditional(player_unconditional, opponent_unconditional);
     assert(opponent_unconditional == (s.opponent | Board8(5, 6) | Board8(6, 6) | Board8(7, 5)));
-}
-
-void examine_state_playout(bool canonize=false)
-{
-    import std.random;
-    import core.thread;
-
-    auto s = State!Board8();
-    bool success;
-    int i = 0;
-    int j = 0;
-    while (j < 1000){
-        success = s.make_move(Board8(
-            uniform(0, Board8.WIDTH), uniform(0, Board8.HEIGHT)
-        ));
-        if (success){
-            i++;
-            j = 0;
-            if (canonize){
-                auto t = s;
-                t.canonize;
-                writeln(t);
-            }
-            else{
-                writeln(s);
-            }
-            Thread.sleep(dur!("msecs")(1000));
-        }
-        else{
-            j++;
-        }
-    }
 }
