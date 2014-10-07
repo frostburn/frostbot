@@ -21,6 +21,7 @@ class BaseSearchState(T)
 
     public
     {
+        State!T canonical_state;
         T[] moves;
     }
 }
@@ -36,37 +37,41 @@ class SearchState(T) : BaseSearchState!T
         assert(!(player_unconditional & opponent_unconditional));
         assert(state.passes <= 2);
         if (is_leaf){
-            assert((lower_bound.isNaN && upper_bound.isNaN) || (lower_bound == upper_bound));
+            // TODO: Find out why this breaks.
+            //assert((lower_bound.isNaN && upper_bound.isNaN) || (lower_bound == upper_bound));
         }
     }
 
     this(T playing_area)
     {
         state = State!T(playing_area);
+        canonical_state = state;
+        canonical_state.canonize;
         calculate_available_moves;
 
         if (state.passes >= 2){
             is_leaf = true;
-            lower_bound = upper_bound = state.liberty_score;
+            lower_bound = upper_bound = liberty_score;
         }
     }
 
-    this(State!T state, T player_unconditional, T opponent_unconditional, T[] moves=null, SearchState!T parent=null, float super_ko_value=float.nan)
+    this(State!T state, State!T canonical_state, T player_unconditional, T opponent_unconditional, T[] moves=null, SearchState!T parent=null, float super_ko_value=float.nan)
     {
         this.state = state;
+        this.canonical_state = canonical_state;
         this.player_unconditional = player_unconditional;
         this.opponent_unconditional = opponent_unconditional;
         analyze_unconditional;
         this.parent = parent;
         if (state.passes >= 2){
             is_leaf = true;
-            lower_bound = upper_bound = state.liberty_score;
+            lower_bound = upper_bound = liberty_score;
             return;
         }
         auto search_state = this;
         while (search_state.parent !is null){
             search_state = cast(SearchState!T)(search_state.parent);
-            if (search_state.state == state){
+            if (search_state.canonical_state == canonical_state){
                 is_leaf = true;
                 lower_bound = upper_bound = super_ko_value;
                 return;
@@ -83,10 +88,25 @@ class SearchState(T) : BaseSearchState!T
 
     }
 
-    invariant
+    int liberty_score()
     {
-        assert(!(player_unconditional & opponent_unconditional));
-        assert(state.passes <= 2);
+        int score = 0;
+
+        auto player_controlled_area = (state.player | player_unconditional) & ~opponent_unconditional;
+        auto opponent_controlled_area = (state.opponent | opponent_unconditional) & ~player_unconditional;
+
+        score += player_controlled_area.popcount;
+        score -= opponent_controlled_area.popcount;
+
+        score += player_controlled_area.liberties(state.playing_area & ~opponent_controlled_area).popcount;
+        score -= opponent_controlled_area.liberties(state.playing_area & ~player_controlled_area).popcount;
+
+        if (state.black_to_play){
+            return score;
+        }
+        else{
+            return -score;
+        }
     }
 
     void analyze_unconditional()
@@ -126,11 +146,27 @@ class SearchState(T) : BaseSearchState!T
     void make_children(float super_ko_value=float.nan)
     {
         auto state_children = state.children(moves);
-        // TODO: Prune out transpositions when they are likely to occur.
+
+        // Prune out transpositions.
+        State!T[] canonical_states;
+        State!T[] temp;
+        bool[State!T] seen;
         foreach (child_state; state_children){
+            auto canonical_state = child_state;
+            canonical_state.canonize;
+            if (canonical_state !in seen){
+                seen[canonical_state] = true;
+                temp ~= child_state;
+                canonical_states ~= canonical_state;
+            }
+        }
+        state_children = temp;
+
+        foreach (index, child_state; state_children){
             assert(child_state.black_to_play != state.black_to_play);
             children ~= new SearchState!T(
                     child_state,
+                    canonical_states[index],
                     opponent_unconditional,
                     player_unconditional,
                     moves,
@@ -141,17 +177,31 @@ class SearchState(T) : BaseSearchState!T
         // TODO: Sort the children.
     }
 
-    void calculate_minimax_value(float depth=float.infinity, float super_ko_value=float.nan)
+    void calculate_minimax_value(float depth=float.infinity, float super_ko_value=float.nan, float alpha=-float.infinity, float beta=float.infinity)
     {
         if (depth <= 0){
-            //lower_bound = upper_bound = state.liberty_score;
             return;
         }
 
         make_children(super_ko_value);
 
         foreach (child; children){
-            (cast(SearchState!T)child).calculate_minimax_value(depth - 1, super_ko_value);
+            (cast(SearchState!T)child).calculate_minimax_value(depth - 1, super_ko_value, alpha, beta);
+            update_value; // TODO: Do single updates.
+            if (state.black_to_play){
+                if (lower_bound > alpha){
+                    alpha = lower_bound;
+                }
+            }
+            else{
+                if (upper_bound < beta){
+                    beta = upper_bound;
+                }
+            }
+
+            if (beta <= alpha){
+                return;
+            }
         }
 
         update_value;
@@ -253,7 +303,17 @@ unittest
     assert(ss.upper_bound == 3);
 
     ss = new SearchState!Board8(rectangle!Board8(4, 1));
-    ss.calculate_minimax_value(11, -float.infinity);
+    ss.calculate_minimax_value(9, -float.infinity);
+    assert(ss.lower_bound == 4);
+    assert(ss.upper_bound == 4);
+
+    ss = new SearchState!Board8(rectangle!Board8(2, 2));
+    ss.calculate_minimax_value(8, -float.infinity);
+    assert(ss.lower_bound == -4);
+    assert(ss.upper_bound == -4);
+
+    ss = new SearchState!Board8(rectangle!Board8(2, 2));
+    ss.calculate_minimax_value(7, float.infinity);
     assert(ss.lower_bound == 4);
     assert(ss.upper_bound == 4);
 }

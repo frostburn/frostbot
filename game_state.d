@@ -410,7 +410,7 @@ unittest
     gs.calculate_minimax_value;
     void check_children(GameState!Board8 gs, ref bool[State!Board8] checked){
         foreach (child; gs.children){
-            if (!(child.state in checked)){
+            if (child.state !in checked){
                 checked[child.state] = true;
                 check_children(child, checked);
             }

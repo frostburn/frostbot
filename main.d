@@ -9,8 +9,8 @@ import search_state;
 
 void print_state(SearchState!Board8 ss){
     writeln(ss.state);
-    writeln(ss.player_unconditional);
-    writeln(ss.opponent_unconditional);
+    //writeln(ss.player_unconditional);
+    //writeln(ss.opponent_unconditional);
     //Board8 b;
     //foreach (move; ss.moves){
     //    b |= move;
@@ -32,20 +32,10 @@ void print_state(SearchState!Board8 ss){
 
 void main()
 {
-    auto s = State!Board8(rectangle!Board8(4, 1));
-    s.player = Board8(1, 0);
-    s.opponent = Board8(3, 0);
+    
+    auto ss = new SearchState!Board8(rectangle!Board8(3, 2));
 
-    Board8 player_unconditional;
-    Board8 opponent_unconditional;
-
-    s.analyze_unconditional(player_unconditional, opponent_unconditional);
-
-    assert(!player_unconditional);
-    assert(!opponent_unconditional);
     /*
-    auto ss = new SearchState!Board8(rectangle!Board8(4, 1));
-
     ss.state.player = Board8(1, 0);
     ss.state.opponent = Board8(3, 0);
 
@@ -54,13 +44,10 @@ void main()
     writeln(ss.player_unconditional);
     */
 
-    /*
-    ss.calculate_minimax_value(11, -float.infinity);
+    ss.calculate_minimax_value(30, float.infinity);
 
-    print_state(ss);
+    //print_state(ss);
 
     writeln(ss.state);
     writeln(ss.lower_bound, ", ", ss.upper_bound);
-    */
-
 }

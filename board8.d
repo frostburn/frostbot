@@ -13,11 +13,12 @@ struct Board8
     enum H_SHIFT = 1;
     enum V_SHIFT = 9;
     enum EMPTY = 0UL;
-    enum FULL = 4602661192559623935UL;
-    enum WEST_WALL = 18049651735527937UL;
-    enum EAST_WALL = 2310355422147575936UL;
-    enum NORTH_WALL = 255UL;
-    enum OUTSIDE = 13844082881149927680UL;
+    enum FULL = 0x3FDFEFF7FBFDFEFFUL;
+    enum WEST_WALL = 0x40201008040201UL;
+    enum EAST_WALL = 0x2010080402010080UL;
+    enum NORTH_WALL = 0xFFUL;
+    enum SOUTH_WALL = 0x3FC0000000000000UL;
+    enum OUTSIDE = 0xC020100804020100UL;
 
     static immutable Board8[WIDTH * HEIGHT / 2] FORAGE_TABLE = mixin(get_forage_table);
 
@@ -344,6 +345,30 @@ struct Board8
         }
     }
 
+    int horizontal_extent()
+    {
+        int extent = WIDTH;
+        while (extent > 0){
+            if (bits & (EAST_WALL >> (WIDTH - extent))){
+                return extent;
+            }
+            extent--;
+        }
+        return extent;
+    }
+
+    int vertical_extent()
+    {
+        int extent = HEIGHT;
+        while (extent > 0){
+            if (bits & (SOUTH_WALL >> ((HEIGHT - extent) * V_SHIFT))){
+                return extent;
+            }
+            extent--;
+        }
+        return extent;
+    }
+
     Board8[] chains() const
     out(result){
         assert(result.length <= WIDTH * HEIGHT / 2 + 1);
@@ -494,6 +519,9 @@ unittest
     Board8 b2 = b1;
     b2 |= Board8(4, 5);
     b2 |= Board8(7, 1);
+
+    assert(b1.horizontal_extent == 4);
+    assert(b1.vertical_extent == 5);
 
     b0.flood_into(b2);
 

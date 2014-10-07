@@ -52,6 +52,8 @@ struct State(T)
         assert(!(player & ~playing_area));
         assert(!(opponent & ~playing_area));
         assert(!(ko & ~playing_area));
+
+        // TODO: Assert that all chains have liberties
     }
 
     bool opEquals(in State!T rhs) const
@@ -397,8 +399,8 @@ struct State(T)
     {
         string r;
         T p;
-        for (int y = 0; y < T.HEIGHT; y++){
-            for(int x = 0; x < T.WIDTH; x++){
+        for (int y = 0; y < playing_area.vertical_extent; y++){
+            for(int x = 0; x < playing_area.horizontal_extent; x++){
                 p = T(x, y);
                 if (playing_area & p){
                     r ~= "\x1b[0;30;43m";
@@ -594,4 +596,16 @@ unittest
     s.player |= Board8(5, 6);
     s.analyze_unconditional(player_unconditional, opponent_unconditional);
     assert(opponent_unconditional == (s.opponent | Board8(5, 6) | Board8(6, 6) | Board8(7, 5)));
+
+    player_unconditional = Board8();
+    opponent_unconditional = Board8();
+
+    s = State!Board8(rectangle!Board8(4, 1));
+    s.player = Board8(1, 0);
+    s.opponent = Board8(3, 0);
+
+    s.analyze_unconditional(player_unconditional, opponent_unconditional);
+
+    assert(player_unconditional == s.playing_area);
+    assert(!opponent_unconditional);
 }
