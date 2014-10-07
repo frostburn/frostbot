@@ -349,7 +349,7 @@ struct Board8
     {
         int extent = WIDTH;
         while (extent > 0){
-            if (bits & (EAST_WALL >> (WIDTH - extent))){
+            if (bits & (EAST_WALL >> ((WIDTH - extent) * H_SHIFT))){
                 return extent;
             }
             extent--;
@@ -367,6 +367,20 @@ struct Board8
             extent--;
         }
         return extent;
+    }
+
+    /// Euler charasteristic of the board
+    int euler()
+    {
+        ulong temp = bits | (bits << H_SHIFT);
+        int characteristic = -utils.popcount(temp); //vertical edges
+        characteristic += utils.popcount(temp & NORTH_WALL); //northern vertices
+        characteristic += utils.popcount(temp | (temp >> H_SHIFT)); // rest of the vertices
+        characteristic -= utils.popcount(bits & NORTH_WALL); //northern horizontal edges
+        characteristic -= utils.popcount(bits | (bits << H_SHIFT)); // rest of the horizontal edges
+        characteristic += utils.popcount(bits); // pixels
+
+        return characteristic;
     }
 
     Board8[] chains() const

@@ -4,6 +4,7 @@ import std.stdio;
 import std.string;
 import std.algorithm;
 import std.array;
+import std.random;
 
 import utils;
 import board8;
@@ -98,6 +99,13 @@ class SearchState(T) : BaseSearchState!T
 
     }
 
+    ~this()
+    {
+        foreach(child; children){
+            destroy(child);
+        }
+    }
+
     int liberty_score()
     {
         int score = 0;
@@ -155,6 +163,7 @@ class SearchState(T) : BaseSearchState!T
 
     void make_children()
     {
+        children = [];
         auto state_children = state.children(moves);
 
         // Prune out transpositions.
@@ -183,7 +192,57 @@ class SearchState(T) : BaseSearchState!T
                     this
                 );
         }
-        // TODO: Sort the children.
+
+        children.randomShuffle;
+
+        static bool is_better(BaseSearchState!T a, BaseSearchState!T b){
+            if (a.is_leaf && !b.is_leaf){
+                return true;
+            }
+            if (b.is_leaf && !a.is_leaf){
+                return false;
+            }
+            if (a.state.passes < b.state.passes){
+                return true;
+            }
+            if (b.state.passes < a.state.passes){
+                return false;
+            }
+
+            int a_unconditional = (cast(SearchState!T)a).opponent_unconditional.popcount;
+            a_unconditional -= (cast(SearchState!T)a).player_unconditional.popcount;
+            int b_unconditional = (cast(SearchState!T)b).opponent_unconditional.popcount;
+            b_unconditional -= (cast(SearchState!T)b).player_unconditional.popcount;
+
+            if (a_unconditional > b_unconditional){
+                return true;
+            }
+            if (b_unconditional > a_unconditional){
+                return false;
+            }
+
+            int a_euler = a.state.opponent.euler - a.state.player.euler;
+            int b_euler = b.state.opponent.euler - b.state.player.euler;
+
+            if (a_euler > b_euler){
+                return true;
+            }
+            if (b_euler > a_euler){
+                return false;
+            }
+
+            int a_popcount = a.state.opponent.popcount - a.state.player.popcount;
+            int b_popcount = b.state.opponent.popcount - b.state.player.popcount;
+
+            if (a_popcount > b_popcount){
+                return true;
+            }
+
+            return false;
+        }
+
+        sort!is_better(children);
+
     }
 
     void calculate_minimax_value(
@@ -193,6 +252,9 @@ class SearchState(T) : BaseSearchState!T
         float beta=float.infinity
     )
     {
+        if (is_leaf){
+            return;
+        }
         if (canonical_state in transposition_table){
             auto transposition = transposition_table[canonical_state];
             if (state.black_to_play == canonical_state.black_to_play){
@@ -209,7 +271,9 @@ class SearchState(T) : BaseSearchState!T
             return;
         }
 
-        make_children;
+        if (!children.length){
+            make_children;
+        }
 
         foreach (child; children){
             if (state.black_to_play){
@@ -252,6 +316,14 @@ class SearchState(T) : BaseSearchState!T
     {
         Transposition[State!T] transposition_table;
         calculate_minimax_value(transposition_table, depth, -float.infinity, float.infinity);
+    }
+
+    void iterative_deepening_search(int min_depth, int max_depth)
+    {
+        Transposition[State!T] transposition_table;
+        for (int i = min_depth; i <= max_depth; i++){
+            calculate_minimax_value(transposition_table, i, lower_bound, upper_bound);
+        }
     }
 
     bool update_value()

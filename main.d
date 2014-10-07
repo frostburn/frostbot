@@ -33,7 +33,7 @@ void print_state(SearchState!Board8 ss){
 void main()
 {
     
-    auto ss = new SearchState!Board8(rectangle!Board8(3, 2));
+    auto ss = new SearchState!Board8(rectangle!Board8(3, 3));
 
     /*
     ss.state.player = Board8(1, 0);
@@ -44,7 +44,8 @@ void main()
     writeln(ss.player_unconditional);
     */
 
-    ss.calculate_minimax_value(7);
+    ss.iterative_deepening_search(30, 90);
+    //ss.calculate_minimax_value(50);
 
     //print_state(ss);
 
