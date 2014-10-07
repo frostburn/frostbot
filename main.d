@@ -17,14 +17,14 @@ void print_state(SearchState!Board8 ss){
     //}
     //writeln(b);
     writeln(ss.lower_bound, ", ", ss.upper_bound);
-    writeln("Num children:", ss.state.children(ss.moves).length);
+    writeln("Num children:", ss.children.length);
     foreach (child; ss.children){
         writeln(" Child: ", child.lower_bound, ", ", child.upper_bound);
     }
     Thread.sleep(dur!("msecs")(1000));
     writeln;
     foreach (child; ss.children){
-        if ((ss.state.black_to_play && child.lower_bound == ss.lower_bound) || (!ss.state.black_to_play && child.upper_bound == ss.upper_bound))
+        //if ((ss.state.black_to_play && child.lower_bound == ss.lower_bound) || (!ss.state.black_to_play && child.upper_bound == ss.upper_bound))
             print_state(cast(SearchState!Board8)child);
     }
 }
@@ -44,7 +44,7 @@ void main()
     writeln(ss.player_unconditional);
     */
 
-    ss.calculate_minimax_value(20, -float.infinity);
+    ss.calculate_minimax_value(7);
 
     //print_state(ss);
 
