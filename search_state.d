@@ -39,13 +39,15 @@ class SearchState(T) : BaseSearchState!T
     {
         assert(!(player_unconditional & opponent_unconditional));
         assert(state.passes <= 2);
-        State!T temp = state;
-        temp.canonize;
-        assert(temp == canonical_state);
-        if (is_leaf){
-            // TODO: Find out why this breaks.
-            //assert((lower_bound.isNaN && upper_bound.isNaN) || (lower_bound == upper_bound));
+        version(all_invariants){
+            State!T temp = state;
+            temp.canonize;
+            assert(temp == canonical_state);
         }
+        // TODO: Find out why this breaks.
+        //if (is_leaf){
+            //assert(lower_bound == upper_bound);
+        //}
     }
 
     this(T playing_area)
@@ -134,6 +136,9 @@ class SearchState(T) : BaseSearchState!T
 
     void prune_moves()
     {
+        if (!player_unconditional && !opponent_unconditional){
+            return;
+        }
         T[] temp;
         foreach (move; moves){
             if (!move){
@@ -146,7 +151,7 @@ class SearchState(T) : BaseSearchState!T
         moves = temp;
     }
 
-    void make_children(SearchState!T[State!T] state_pool)
+    void make_children(ref SearchState!T[State!T] state_pool)
     {
         children = [];
         auto child_states = state.children(moves);
@@ -168,7 +173,7 @@ class SearchState(T) : BaseSearchState!T
 
         foreach (index, child_state; child_states){
             auto canonical_child_state = canonical_child_states[index];
-            if (canonical_state in state_pool){
+            if (canonical_child_state in state_pool){
                 auto child = state_pool[canonical_child_state];
                 children ~= child;
                 child.parents[canonical_state] = this;
@@ -185,6 +190,7 @@ class SearchState(T) : BaseSearchState!T
                 allocated_children ~= child;
                 children ~= child;
                 child.parents[canonical_state] = this;
+                state_pool[canonical_child_state] = child;
             }
         }
 
@@ -225,10 +231,10 @@ class SearchState(T) : BaseSearchState!T
             int a_euler = a.state.opponent.euler - a.state.player.euler;
             int b_euler = b.state.opponent.euler - b.state.player.euler;
 
-            if (a_euler > b_euler){
+            if (a_euler < b_euler){
                 return true;
             }
-            if (b_euler > a_euler){
+            if (b_euler < a_euler){
                 return false;
             }
 
@@ -244,6 +250,33 @@ class SearchState(T) : BaseSearchState!T
 
         sort!is_better(children);
 
+    }
+
+    void update_parents()
+    {
+        debug(update_parents) {
+            writeln("Updating parents for:");
+            writeln(this);
+        }
+        SearchState!T[] queue;
+        foreach (parent; parents){
+            queue ~= cast(SearchState!T)parent;
+        }
+
+        while (queue.length){
+            auto search_state = queue.front;
+            queue.popFront;
+            debug(update_parents) {
+                writeln("Updating parents for:");
+                writeln(search_state);
+            }
+            bool changed = search_state.update_value;
+            if (changed){
+                foreach (parent; search_state.parents){
+                    queue ~= cast(SearchState!T)parent;
+                }
+            }
+        }
     }
 
     void calculate_minimax_value(
@@ -268,8 +301,13 @@ class SearchState(T) : BaseSearchState!T
 
         if (canonical_state in history){
             // Do a short search instead?
-            is_loop_terminal = true;
+            //is_loop_terminal = true;
             return;
+            /*
+                if (depth >= 3){
+                    depth = 3;
+                }
+            */
         }
         history = history.dup;
         history[canonical_state] = true;
@@ -279,25 +317,26 @@ class SearchState(T) : BaseSearchState!T
         }
 
         foreach (child; children){
-            if (state.black_to_play){
-                if (lower_bound > alpha){
-                    alpha = lower_bound;
-                }
+            if (lower_bound > alpha){
+                alpha = lower_bound;
             }
-            else{
-                if (upper_bound < beta){
-                    beta = upper_bound;
-                }
+            if (upper_bound < beta){
+                beta = upper_bound;
             }
 
             if (beta <= alpha){
                 return;
             }
 
-            (cast(SearchState!T)child).calculate_minimax_value(state_pool, history, depth - 1, alpha, beta);
+            if (state.black_to_play != child.state.black_to_play){
+                (cast(SearchState!T)child).calculate_minimax_value(state_pool, history, depth - 1, alpha, beta);
+            }
+            else{
+                (cast(SearchState!T)child).calculate_minimax_value(state_pool, history, depth - 1, -beta, -alpha);
+            }
             bool changed = update_value; // TODO: Do single updates.
             if (changed){
-                // Update parents?
+                //update_parents;
             }
         }
     }
@@ -320,7 +359,6 @@ class SearchState(T) : BaseSearchState!T
     }
 
 
-    // TODO: Handle transpositions!
     bool update_value()
     {
         if (is_leaf){
@@ -347,25 +385,27 @@ class SearchState(T) : BaseSearchState!T
                     child_lower_bound = child.lower_bound;
                     child_upper_bound = child.upper_bound;
                 }
-                else{
-                    child_lower_bound = -child.upper_bound;
-                    child_upper_bound = -child.lower_bound;
-                }
-                if (child_lower_bound * sign > lower_bound * sign){
-                    lower_bound = child_lower_bound;
-                }
-                if (child_upper_bound * sign > upper_bound * sign){
-                    upper_bound = child_upper_bound;
-                }
+            else{
+                child_lower_bound = -child.upper_bound;
+                child_upper_bound = -child.lower_bound;
+            }
+            if (child_lower_bound * sign > lower_bound * sign){
+                lower_bound = child_lower_bound;
+            }
+            if (child_upper_bound * sign > upper_bound * sign){
+                upper_bound = child_upper_bound;
+            }
         }
 
         debug(ss_update_value){
-            writeln("Updating value: max=", state.black_to_play);
-            writeln("Old value: ", old_lower_bound, ", ", old_upper_bound);
-            foreach (child; children){
-                writeln(" Child: ", child.lower_bound, ", ", child.upper_bound);
+            if (lower_bound > -float.infinity && upper_bound < float.infinity){
+                writeln("Updating value: max=", state.black_to_play);
+                writeln("Old value: ", old_lower_bound, ", ", old_upper_bound);
+                foreach (child; children){
+                    writeln(" Child: ", child.lower_bound, ", ", child.upper_bound, " max=", child.state.black_to_play);
+                }
+                writeln("New value: ", lower_bound, ", ", upper_bound);
             }
-            writeln("New value: ", lower_bound, ", ", upper_bound);
         }
 
         return (old_lower_bound != lower_bound) || (old_upper_bound != upper_bound);
@@ -383,6 +423,7 @@ unittest
 
     assert(ss.player_unconditional == ss.state.playing_area);
 }
+
 
 unittest
 {
@@ -415,4 +456,9 @@ unittest
     ss.calculate_minimax_value(9);
     assert(ss.lower_bound == -6);
     assert(ss.upper_bound == 6);
+
+    ss = new SearchState!Board8(rectangle!Board8(3, 3));
+    ss.calculate_minimax_value(20);
+    assert(ss.lower_bound == 9);
+    assert(ss.upper_bound == 9);
 }

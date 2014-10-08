@@ -1,2 +1,4 @@
 main
 *.o
+trace.def
+trace.log
