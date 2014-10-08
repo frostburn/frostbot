@@ -32,23 +32,18 @@ void print_state(SearchState!Board8 ss){
 
 void main()
 {
-    
-    auto ss = new SearchState!Board8(rectangle!Board8(3, 3));
+    auto ss = new SearchState!Board8(rectangle!Board8(3, 4));
 
-    /*
-    ss.state.player = Board8(1, 0);
-    ss.state.opponent = Board8(3, 0);
-
-    ss.analyze_unconditional;
-
-    writeln(ss.player_unconditional);
-    */
-
-    ss.iterative_deepening_search(30, 90);
+    //ss.iterative_deepening_search(30, 90);
     //ss.calculate_minimax_value(50);
 
     //print_state(ss);
 
-    writeln(ss.state);
-    writeln(ss.lower_bound, ", ", ss.upper_bound);
+    auto gs = new GameState!Board8(rectangle!Board8(3, 4));
+
+    gs.calculate_minimax_value;
+    writeln(gs);
+
+    //writeln(ss.state);
+    //writeln(ss.lower_bound, ", ", ss.upper_bound);
 }

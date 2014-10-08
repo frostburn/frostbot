@@ -80,11 +80,15 @@ class SearchState(T) : BaseSearchState!T
             lower_bound = upper_bound = liberty_score;
             return;
         }
+        int loop_count = 0;
         auto search_state = this;
         while (search_state.parent !is null){
             search_state = cast(SearchState!T)(search_state.parent);
             if (search_state.canonical_state == canonical_state){
-                is_leaf = true;
+                loop_count++;
+            }
+            if (loop_count > 1){
+                is_leaf = true;  // TODO: Not really a leaf...
                 return;
             }
         }
@@ -252,9 +256,6 @@ class SearchState(T) : BaseSearchState!T
         float beta=float.infinity
     )
     {
-        if (is_leaf){
-            return;
-        }
         if (canonical_state in transposition_table){
             auto transposition = transposition_table[canonical_state];
             if (state.black_to_play == canonical_state.black_to_play){
@@ -265,6 +266,10 @@ class SearchState(T) : BaseSearchState!T
                 lower_bound = -transposition.upper_bound;
                 upper_bound = -transposition.lower_bound;
             }
+        }
+
+        if (is_leaf){
+            return;
         }
 
         if (depth <= 0){
