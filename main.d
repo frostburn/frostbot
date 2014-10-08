@@ -32,18 +32,20 @@ void print_state(SearchState!Board8 ss){
 
 void main()
 {
-    auto ss = new SearchState!Board8(rectangle!Board8(3, 4));
+    auto ss = new SearchState!Board8(rectangle!Board8(3, 2));
 
     //ss.iterative_deepening_search(30, 90);
-    //ss.calculate_minimax_value(50);
+    ss.calculate_minimax_value(10);
 
     //print_state(ss);
+    writeln(ss.state);
+    writeln(ss.lower_bound, ", ", ss.upper_bound);
 
+    /*
     auto gs = new GameState!Board8(rectangle!Board8(3, 4));
 
     gs.calculate_minimax_value;
     writeln(gs);
+    */
 
-    //writeln(ss.state);
-    //writeln(ss.lower_bound, ", ", ss.upper_bound);
 }
