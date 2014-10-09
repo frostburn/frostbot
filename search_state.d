@@ -10,6 +10,32 @@ import utils;
 import board8;
 import state;
 
+class HistoryNode(T)
+{
+    T value;
+    HistoryNode!T parent = null;
+
+    this(T value){
+        this.value = value;
+    }
+
+    this(T value, ref HistoryNode!T parent){
+        this.value = value;
+        this.parent = parent;
+    }
+
+    bool opBinaryRight(string op)(in T lhs) const pure nothrow @nogc @safe
+        if (op == "in")
+    {
+        if (lhs == value){
+            return true;
+        }
+        if (parent !is null){
+            return parent.opBinaryRight!"in"(lhs);
+        }
+        return false;
+    }
+}
 
 class BaseSearchState(T)
 {
@@ -198,10 +224,10 @@ class SearchState(T) : BaseSearchState!T
 
         static bool is_better(BaseSearchState!T a, BaseSearchState!T b){
             if (a.is_leaf && !b.is_leaf){
-                return true;
+                return false;
             }
             if (b.is_leaf && !a.is_leaf){
-                return false;
+                return true;
             }
             if (a.state.passes < b.state.passes){
                 return true;
@@ -281,7 +307,7 @@ class SearchState(T) : BaseSearchState!T
 
     void calculate_minimax_value(
         ref SearchState!T[State!T] state_pool,
-        bool[State!T] history,
+        ref HistoryNode!(State!T) history,
         float depth=float.infinity,
         float alpha=-float.infinity,
         float beta=float.infinity
@@ -299,7 +325,7 @@ class SearchState(T) : BaseSearchState!T
             return;
         }
 
-        if (canonical_state in history){
+        if (history !is null && canonical_state in history){
             // Do a short search instead?
             //is_loop_terminal = true;
             return;
@@ -309,11 +335,18 @@ class SearchState(T) : BaseSearchState!T
                 }
             */
         }
-        history = history.dup;
-        history[canonical_state] = true;
+
+        // TODO: Destroy all allocated histories.
+        auto my_history = new HistoryNode!(State!T)(canonical_state, history);
 
         if (!children.length){
             make_children(state_pool);
+        }
+
+        // Check for leaves and transpositions.
+        bool changed = update_value;
+        if (changed){
+            update_parents;
         }
 
         foreach (child; children){
@@ -329,12 +362,12 @@ class SearchState(T) : BaseSearchState!T
             }
 
             if (state.black_to_play != child.state.black_to_play){
-                (cast(SearchState!T)child).calculate_minimax_value(state_pool, history, depth - 1, alpha, beta);
+                (cast(SearchState!T)child).calculate_minimax_value(state_pool, my_history, depth - 1, alpha, beta);
             }
             else{
-                (cast(SearchState!T)child).calculate_minimax_value(state_pool, history, depth - 1, -beta, -alpha);
+                (cast(SearchState!T)child).calculate_minimax_value(state_pool, my_history, depth - 1, -beta, -alpha);
             }
-            bool changed = update_value; // TODO: Do single updates.
+            changed = update_value; // TODO: Do single updates.
             if (changed){
                 //update_parents;
             }
@@ -345,14 +378,14 @@ class SearchState(T) : BaseSearchState!T
     {
 
         SearchState!T[State!T] state_pool;
-        bool[State!T] history;
+        HistoryNode!(State!T) history = null;
         calculate_minimax_value(state_pool, history, depth, -float.infinity, float.infinity);
     }
 
     void iterative_deepening_search(int min_depth, int max_depth)
     {
         SearchState!T[State!T] state_pool;
-        bool[State!T] history;
+        HistoryNode!(State!T) history = null;
         for (int i = min_depth; i <= max_depth; i++){
             calculate_minimax_value(state_pool, history, i, lower_bound, upper_bound);
         }
@@ -410,6 +443,20 @@ class SearchState(T) : BaseSearchState!T
 
         return (old_lower_bound != lower_bound) || (old_upper_bound != upper_bound);
     }
+}
+
+unittest
+{
+    auto s = State!Board8();
+    auto h = new HistoryNode!(State!Board8)(s);
+
+    auto child_s = s;
+    child_s.player = Board8(3, 3);
+    auto child_h = new HistoryNode!(State!Board8)(child_s, h);
+
+    assert(child_s !in h);
+    assert(child_s in child_h);
+    assert(s in child_h);
 }
 
 

@@ -373,16 +373,28 @@ struct Board8
     int euler()
     {
         ulong temp = bits | (bits << H_SHIFT);
-        int characteristic = -utils.popcount(temp); //vertical edges
-        characteristic += utils.popcount(temp & NORTH_WALL); //northern vertices
-        characteristic += utils.popcount(temp | (temp >> H_SHIFT)); // rest of the vertices
-        characteristic -= utils.popcount(bits & NORTH_WALL); //northern horizontal edges
-        characteristic -= utils.popcount(bits | (bits << H_SHIFT)); // rest of the horizontal edges
-        characteristic += utils.popcount(bits); // pixels
+        int characteristic = -utils.popcount(temp);  // vertical edges
+        characteristic += utils.popcount(temp & NORTH_WALL);  // northern vertices
+        characteristic += utils.popcount(temp | (temp >> H_SHIFT));  // rest of the vertices
+        characteristic -= utils.popcount(bits & NORTH_WALL);  // northern horizontal edges
+        characteristic -= utils.popcount(bits | (bits << H_SHIFT));  // rest of the horizontal edges
+        characteristic += utils.popcount(bits);  // pixels
 
         return characteristic;
     }
 
+    /// Euler charasterisric of the board surrounded by a ring of stones
+    //TODO:
+    /*
+    int surrounded_euler()
+    {
+        ulong temp = (bits & ~WEST_WALL);
+        temp |= temp << H_SHIFT;
+        int characteristic = -(utils.popcount(temp) + 50);  // vertical edges
+    }
+    */
+
+    // TODO: Optimize forage tables based on the extent of the playing area.
     Board8[] chains() const
     out(result){
         assert(result.length <= WIDTH * HEIGHT / 2 + 1);

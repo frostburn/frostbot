@@ -308,6 +308,8 @@ struct State(T)
         snap;
     }
 
+
+    // TODO: Canonize hierarchically ie. based on opCmp order.
     void canonize()
     {
         if (!black_to_play){
