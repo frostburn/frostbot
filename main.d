@@ -6,7 +6,7 @@ import bit_matrix;
 import state;
 import game_state;
 import search_state;
-import defense_state;
+import defense_search_state;
 
 void print_state(SearchState!Board8 ss, int depth){
     //
@@ -48,7 +48,7 @@ void main()
     s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
     s.opponent |= rectangle8(8, 3).south(4) & ~rectangle8(5, 2).south(5);
     s.opponent &= ~Board8(6, 6) & ~Board8(7, 5);
-    auto ds = new DefenseState8(s, s.player, s.opponent);
+    auto ds = new DefenseSearchState8(s, s.player, s.opponent);
 
     ds.calculate_minimax_value;
     //assert(ds.lower_bound == 6);

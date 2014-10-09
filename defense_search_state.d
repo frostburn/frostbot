@@ -1,4 +1,4 @@
-module defense_state;
+module defense_search_state;
 
 import std.stdio;
 import std.string;
@@ -12,7 +12,7 @@ import state;
 import search_state;
 
 
-class DefenseState(T) : BaseSearchState!T
+class DefenseSearchState(T) : BaseSearchState!T
 {
     T player_target;
     T opponent_target;
@@ -69,7 +69,7 @@ class DefenseState(T) : BaseSearchState!T
         }
     }
 
-    void make_children(ref DefenseState!T[State!T] state_pool)
+    void make_children(ref DefenseSearchState!T[State!T] state_pool)
     {
         children = [];
         auto child_states = state.children(moves);
@@ -85,7 +85,7 @@ class DefenseState(T) : BaseSearchState!T
             }
             else{
                 assert(child_state.black_to_play == state.black_to_play);
-                auto child = new DefenseState!T(
+                auto child = new DefenseSearchState!T(
                     child_state,
                     opponent_unconditional,
                     player_unconditional,
@@ -107,7 +107,7 @@ class DefenseState(T) : BaseSearchState!T
     }
 
     void calculate_minimax_value(
-        ref DefenseState!T[State!T] state_pool,
+        ref DefenseSearchState!T[State!T] state_pool,
         ref HistoryNode!(State!T) history,
         float depth=float.infinity,
         float alpha=-float.infinity,
@@ -153,7 +153,7 @@ class DefenseState(T) : BaseSearchState!T
                 return;
             }
 
-            (cast(DefenseState!T)child).calculate_minimax_value(state_pool, my_history, depth - 1, -beta, -alpha);
+            (cast(DefenseSearchState!T)child).calculate_minimax_value(state_pool, my_history, depth - 1, -beta, -alpha);
 
             changed = update_value; // TODO: Do single updates.
             if (changed){
@@ -165,14 +165,14 @@ class DefenseState(T) : BaseSearchState!T
     void calculate_minimax_value(float depth=float.infinity)
     {
 
-        DefenseState!T[State!T] state_pool;
+        DefenseSearchState!T[State!T] state_pool;
         HistoryNode!(State!T) history = null;
         calculate_minimax_value(state_pool, history, depth, -float.infinity, float.infinity);
     }
 
     void iterative_deepening_search(int min_depth, int max_depth)
     {
-        DefenseState!T[State!T] state_pool;
+        DefenseSearchState!T[State!T] state_pool;
         HistoryNode!(State!T) history = null;
         for (int i = min_depth; i <= max_depth; i++){
             calculate_minimax_value(state_pool, history, i, lower_bound, upper_bound);
@@ -217,36 +217,36 @@ class DefenseState(T) : BaseSearchState!T
     }
 }
 
-alias DefenseState8 = DefenseState!Board8;
+alias DefenseSearchState8 = DefenseSearchState!Board8;
 
 unittest
 {
-    auto ss = new DefenseState!Board8(rectangle!Board8(1, 1));
+    auto ss = new DefenseSearchState!Board8(rectangle!Board8(1, 1));
     ss.calculate_minimax_value;
     assert(ss.lower_bound == 0);
     assert(ss.upper_bound == 0);
 
-    ss = new DefenseState!Board8(rectangle!Board8(2, 1));
+    ss = new DefenseSearchState!Board8(rectangle!Board8(2, 1));
     ss.calculate_minimax_value;
     assert(ss.lower_bound == -2);
     assert(ss.upper_bound == 2);
 
-    ss = new DefenseState!Board8(rectangle!Board8(3, 1));
+    ss = new DefenseSearchState!Board8(rectangle!Board8(3, 1));
     ss.calculate_minimax_value;
     assert(ss.lower_bound == 3);
     assert(ss.upper_bound == 3);
 
-    ss = new DefenseState!Board8(rectangle!Board8(4, 1));
+    ss = new DefenseSearchState!Board8(rectangle!Board8(4, 1));
     ss.calculate_minimax_value(9);
     assert(ss.lower_bound == 4);
     assert(ss.upper_bound == 4);
 
-    ss = new DefenseState!Board8(rectangle!Board8(2, 2));
+    ss = new DefenseSearchState!Board8(rectangle!Board8(2, 2));
     ss.calculate_minimax_value(8);
     assert(ss.lower_bound == -4);
     assert(ss.upper_bound == 4);
 
-    ss = new DefenseState!Board8(rectangle!Board8(3, 2));
+    ss = new DefenseSearchState!Board8(rectangle!Board8(3, 2));
     ss.calculate_minimax_value(9);
     assert(ss.lower_bound == -6);
     assert(ss.upper_bound == 6);
@@ -256,7 +256,7 @@ unittest
 {
     auto s = State8(rectangle8(3, 2));
     s.player = Board8(0, 0) | Board8(1, 0) | Board8(2, 0);
-    auto ds = new DefenseState8(s, s.player, Board8());
+    auto ds = new DefenseSearchState8(s, s.player, Board8());
 
     ds.calculate_minimax_value;
     assert(ds.lower_bound == 6);
@@ -264,7 +264,7 @@ unittest
 
     s = State8(rectangle8(3, 2));
     s.opponent = Board8(0, 0) | Board8(1, 0) | Board8(2, 0);
-    ds = new DefenseState8(s, Board8(), s.opponent);
+    ds = new DefenseSearchState8(s, Board8(), s.opponent);
 
     ds.calculate_minimax_value;
     assert(ds.lower_bound == float.infinity);
@@ -272,7 +272,7 @@ unittest
 
     s = State8(rectangle8(4, 2));
     s.opponent = Board8(0, 0) | Board8(1, 0) | Board8(2, 0) | Board8(3, 0);
-    ds = new DefenseState8(s, Board8(), s.opponent);
+    ds = new DefenseSearchState8(s, Board8(), s.opponent);
 
     ds.calculate_minimax_value;
     assert(ds.lower_bound == -8);
@@ -287,7 +287,7 @@ version(all_tests){
         s.opponent = rectangle8(4, 3);
         s.player = s.playing_area & ~s.opponent & ~Board8(6, 0) & ~Board8(7, 1) & ~Board8(4, 0) & ~Board8(4, 1);
         s.opponent &= ~rectangle8(3, 2);
-        ds = new DefenseState8(s, Board8(), s.opponent);
+        ds = new DefenseSearchState8(s, Board8(), s.opponent);
 
         ds.calculate_minimax_value;
         assert(ds.lower_bound == 32);
@@ -300,7 +300,7 @@ version(all_tests){
         s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
         s.opponent |= rectangle8(8, 3).south(4) & ~rectangle8(5, 2).south(5);
         s.opponent &= ~Board8(6, 6) & ~Board8(7, 5);
-        ds = new DefenseState8(s, s.player, s.opponent);
+        ds = new DefenseSearchState8(s, s.player, s.opponent);
 
         ds.calculate_minimax_value;
         assert(ds.lower_bound == float.infinity);
@@ -308,7 +308,7 @@ version(all_tests){
 
         // Rectangular six in the corner with one outside liberty and one ko threat.
         s.player &= ~Board8(4, 0);
-        ds = new DefenseState8(s, s.player, s.opponent);
+        ds = new DefenseSearchState8(s, s.player, s.opponent);
 
         ds.calculate_minimax_value;
         assert(ds.lower_bound == 4);
