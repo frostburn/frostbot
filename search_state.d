@@ -10,6 +10,7 @@ import utils;
 import board8;
 import state;
 
+
 class HistoryNode(T)
 {
     T value;
@@ -37,6 +38,7 @@ class HistoryNode(T)
     }
 }
 
+
 class BaseSearchState(T)
 {
     State!T state;
@@ -46,76 +48,34 @@ class BaseSearchState(T)
     BaseSearchState!T[] children;
     BaseSearchState!T[State!T] parents;
 
-    public
-    {
-        State!T canonical_state;
-        T[] moves;
-        BaseSearchState!T[] allocated_children;
-        bool is_loop_terminal;
-    }
-}
-
-
-class SearchState(T) : BaseSearchState!T
-{
     T player_unconditional;
     T opponent_unconditional;
+
+    public
+    {
+        T[] moves;
+        BaseSearchState!T[] allocated_children;
+        HistoryNode!(State!T)[] allocated_history_nodes;
+    }
 
     invariant
     {
         assert(!(player_unconditional & opponent_unconditional));
         assert(state.passes <= 2);
-        version(all_invariants){
-            State!T temp = state;
-            temp.canonize;
-            assert(temp == canonical_state);
-        }
+
         // TODO: Find out why this breaks.
         //if (is_leaf){
-            //assert(lower_bound == upper_bound);
+        //    assert(lower_bound == upper_bound);
         //}
-    }
-
-    this(T playing_area)
-    {
-        state = State!T(playing_area);
-        canonical_state = state;
-        canonical_state.canonize;
-        calculate_available_moves;
-
-        if (state.passes >= 2){
-            is_leaf = true;
-            lower_bound = upper_bound = liberty_score;
-        }
-    }
-
-    this(State!T state, State!T canonical_state, T player_unconditional, T opponent_unconditional, T[] moves=null)
-    {
-        this.state = state;
-        this.canonical_state = canonical_state;
-        this.player_unconditional = player_unconditional;
-        this.opponent_unconditional = opponent_unconditional;
-        analyze_unconditional;
-        if (state.passes >= 2){
-            is_leaf = true;
-            lower_bound = upper_bound = liberty_score;
-            return;
-        }
-
-        if (moves is null){
-            calculate_available_moves;
-        }
-        else{
-            this.moves = moves;
-            prune_moves;
-        }
-
     }
 
     ~this()
     {
         foreach(child; allocated_children){
             destroy(child);
+        }
+        foreach(history_node; allocated_history_nodes){
+            destroy(history_node);
         }
     }
 
@@ -177,6 +137,136 @@ class SearchState(T) : BaseSearchState!T
         moves = temp;
     }
 
+    bool update_value(){
+        return false;
+    }
+
+    void update_parents()
+    {
+        debug(update_parents) {
+            writeln("Updating parents for:");
+            writeln(this);
+        }
+        BaseSearchState!T[] queue;
+        foreach (parent; parents.byValue){
+            queue ~= parent;
+        }
+
+        while (queue.length){
+            auto search_state = queue.front;
+            queue.popFront;
+            debug(update_parents) {
+                writeln("Updating parents for:");
+                writeln(search_state);
+            }
+            bool changed = search_state.update_value;
+            if (changed){
+                foreach (parent; search_state.parents){
+                    queue ~= parent;
+                }
+            }
+        }
+    }
+}
+
+static bool is_better(T)(BaseSearchState!T a, BaseSearchState!T b){
+    if (a.is_leaf && !b.is_leaf){
+        return false;
+    }
+    if (b.is_leaf && !a.is_leaf){
+        return true;
+    }
+    if (a.state.passes < b.state.passes){
+        return true;
+    }
+    if (b.state.passes < a.state.passes){
+        return false;
+    }
+    if (a.parents.length < b.parents.length){
+        return true;
+    }
+    if (b.parents.length < a.parents.length){
+        return false;
+    }
+
+    int a_unconditional = a.opponent_unconditional.popcount - a.player_unconditional.popcount;
+    int b_unconditional = b.opponent_unconditional.popcount - b.player_unconditional.popcount;
+
+    if (a_unconditional > b_unconditional){
+        return true;
+    }
+    if (b_unconditional > a_unconditional){
+        return false;
+    }
+
+    int a_euler = a.state.opponent.euler - a.state.player.euler;
+    int b_euler = b.state.opponent.euler - b.state.player.euler;
+
+    if (a_euler < b_euler){
+        return true;
+    }
+    if (b_euler < a_euler){
+        return false;
+    }
+
+    int a_popcount = a.state.opponent.popcount - a.state.player.popcount;
+    int b_popcount = b.state.opponent.popcount - b.state.player.popcount;
+
+    if (a_popcount > b_popcount){
+        return true;
+    }
+
+    return false;
+}
+
+
+class SearchState(T) : BaseSearchState!T
+{
+    public
+    {
+        State!T canonical_state;
+    }
+
+    invariant
+    {
+        version(all_invariants){
+            State!T temp = state;
+            temp.canonize;
+            assert(temp == canonical_state);
+        }
+    }
+
+    this(T playing_area)
+    {
+        state = State!T(playing_area);
+        canonical_state = state;
+        canonical_state.canonize;
+        calculate_available_moves;
+    }
+
+    this(State!T state, State!T canonical_state, T player_unconditional, T opponent_unconditional, T[] moves=null)
+    {
+        this.state = state;
+        this.canonical_state = canonical_state;
+        this.player_unconditional = player_unconditional;
+        this.opponent_unconditional = opponent_unconditional;
+        analyze_unconditional;
+        if (state.passes >= 2){
+            is_leaf = true;
+            lower_bound = upper_bound = liberty_score;
+            return;
+        }
+
+        if (moves is null){
+            calculate_available_moves;
+        }
+        else{
+            this.moves = moves;
+            prune_moves;
+        }
+
+    }
+
     void make_children(ref SearchState!T[State!T] state_pool)
     {
         children = [];
@@ -222,87 +312,8 @@ class SearchState(T) : BaseSearchState!T
 
         children.randomShuffle;
 
-        static bool is_better(BaseSearchState!T a, BaseSearchState!T b){
-            if (a.is_leaf && !b.is_leaf){
-                return false;
-            }
-            if (b.is_leaf && !a.is_leaf){
-                return true;
-            }
-            if (a.state.passes < b.state.passes){
-                return true;
-            }
-            if (b.state.passes < a.state.passes){
-                return false;
-            }
-            if (a.parents.length < b.parents.length){
-                return true;
-            }
-            if (b.parents.length < a.parents.length){
-                return false;
-            }
+        sort!(is_better!T)(children);
 
-            int a_unconditional = (cast(SearchState!T)a).opponent_unconditional.popcount;
-            a_unconditional -= (cast(SearchState!T)a).player_unconditional.popcount;
-            int b_unconditional = (cast(SearchState!T)b).opponent_unconditional.popcount;
-            b_unconditional -= (cast(SearchState!T)b).player_unconditional.popcount;
-
-            if (a_unconditional > b_unconditional){
-                return true;
-            }
-            if (b_unconditional > a_unconditional){
-                return false;
-            }
-
-            int a_euler = a.state.opponent.euler - a.state.player.euler;
-            int b_euler = b.state.opponent.euler - b.state.player.euler;
-
-            if (a_euler < b_euler){
-                return true;
-            }
-            if (b_euler < a_euler){
-                return false;
-            }
-
-            int a_popcount = a.state.opponent.popcount - a.state.player.popcount;
-            int b_popcount = b.state.opponent.popcount - b.state.player.popcount;
-
-            if (a_popcount > b_popcount){
-                return true;
-            }
-
-            return false;
-        }
-
-        sort!is_better(children);
-
-    }
-
-    void update_parents()
-    {
-        debug(update_parents) {
-            writeln("Updating parents for:");
-            writeln(this);
-        }
-        SearchState!T[] queue;
-        foreach (parent; parents){
-            queue ~= cast(SearchState!T)parent;
-        }
-
-        while (queue.length){
-            auto search_state = queue.front;
-            queue.popFront;
-            debug(update_parents) {
-                writeln("Updating parents for:");
-                writeln(search_state);
-            }
-            bool changed = search_state.update_value;
-            if (changed){
-                foreach (parent; search_state.parents){
-                    queue ~= cast(SearchState!T)parent;
-                }
-            }
-        }
     }
 
     void calculate_minimax_value(
@@ -317,9 +328,9 @@ class SearchState(T) : BaseSearchState!T
             return;
         }
 
-        if (is_loop_terminal){
-            return;
-        }
+        //if (is_loop_terminal){
+        //    return;
+        //}
 
         if (depth <= 0){
             return;
@@ -336,8 +347,8 @@ class SearchState(T) : BaseSearchState!T
             */
         }
 
-        // TODO: Destroy all allocated histories.
         auto my_history = new HistoryNode!(State!T)(canonical_state, history);
+        allocated_history_nodes ~= my_history;
 
         if (!children.length){
             make_children(state_pool);
@@ -392,7 +403,7 @@ class SearchState(T) : BaseSearchState!T
     }
 
 
-    bool update_value()
+    override bool update_value()
     {
         if (is_leaf){
             // The value should've been set in the constructor.
@@ -444,6 +455,7 @@ class SearchState(T) : BaseSearchState!T
         return (old_lower_bound != lower_bound) || (old_upper_bound != upper_bound);
     }
 }
+
 
 unittest
 {

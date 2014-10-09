@@ -478,6 +478,8 @@ T rectangle(T)(int width, int height){
     return result;
 }
 
+alias rectangle8 = rectangle!Board8;
+
 
 immutable Board8 full8 = Board8(Board8.FULL);
 immutable Board8 empty8 = Board8(Board8.EMPTY);

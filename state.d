@@ -54,6 +54,14 @@ struct State(T)
         assert(!(ko & ~playing_area));
 
         // TODO: Assert that all chains have liberties
+        version(all_invariants){
+            foreach (player_chain; player.chains){
+                assert(player_chain.liberties(playing_area & ~opponent));
+            }
+            foreach (opponent_chain; opponent.chains){
+                assert(opponent_chain.liberties(playing_area & ~player));
+            }
+        }
     }
 
     bool opEquals(in State!T rhs) const
@@ -440,6 +448,8 @@ struct State(T)
         return r;
     }
 }
+
+alias State8 = State!Board8;
 
 void benson(T)(ref T[] chains, ref T[] regions, in T opponent, in T immortal, in T playing_area)
 {
