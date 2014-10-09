@@ -4,10 +4,12 @@ import core.thread;
 import board8;
 import bit_matrix;
 import state;
+import defense_state;
 import game_state;
 import search_state;
 import defense_search_state;
 
+/*
 void print_state(SearchState!Board8 ss, int depth){
     //
     //writeln(ss.player_unconditional);
@@ -35,6 +37,7 @@ void print_state(SearchState!Board8 ss, int depth){
             print_state(cast(SearchState!Board8)child, depth - 1);
     }
 }
+*/
 
 
 void main()
@@ -42,21 +45,42 @@ void main()
     //auto pa = rectangle!Board8(3, 3) | Board8(3, 0);
     //auto ss = new SearchState!Board8(pa);
 
-    auto s = State8();
-    s.player = rectangle8(8, 4) & ~rectangle8(4, 3) & ~Board8(6, 0) & ~Board8(7, 1) & ~Board8(4, 0);
-    s.player |= rectangle8(5, 2).south(5) & ~rectangle8(4, 1).south(6);
+    /*
+    auto s = DefenseState8();
+    s.player = s.playing_area & ~rectangle8(4, 3) & ~Board8(4, 0);
     s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
-    s.opponent |= rectangle8(8, 3).south(4) & ~rectangle8(5, 2).south(5);
-    s.opponent &= ~Board8(6, 6) & ~Board8(7, 5);
-    auto ds = new DefenseSearchState8(s, s.player, s.opponent);
+
+    s.opponent_target = s.opponent;
+    s.player_outside_liberties = s.player | Board8(4, 0);
+    s.ko_threats = -1;
+
+    writeln(s);
+    */
+
+    auto s = DefenseState8();
+    s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
+    s.opponent_target = s.opponent;
+    s.player = rectangle8(5, 4) & ~rectangle8(4, 3) & ~Board8(4, 0);
+    s.player_outside_liberties = Board8(4, 0) | s.player;
+    s.playing_area = rectangle8(5, 4);
+    s.ko_threats = 0;
+
+    auto ds = new DefenseSearchState8(s);
 
     ds.calculate_minimax_value;
+
+    writeln(ds.state);
+    writeln(ds.lower_bound, ", ", ds.upper_bound);
+
+    //auto ds = new DefenseSearchState8(s, s.player, s.opponent);
+
+    //ds.calculate_minimax_value;
     //assert(ds.lower_bound == 6);
     //assert(ds.upper_bound == 6);
 
     //print_state(ss, 50);
-    writeln(ds.state);
-    writeln(ds.lower_bound, ", ", ds.upper_bound);
+    //writeln(ds.state);
+    //writeln(ds.lower_bound, ", ", ds.upper_bound);
 
     /*
     HistoryNode!(State!Board8) parent_h = null;

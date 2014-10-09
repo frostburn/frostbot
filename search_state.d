@@ -39,14 +39,14 @@ class HistoryNode(T)
 }
 
 
-class BaseSearchState(T)
+class BaseSearchState(T, S)
 {
-    State!T state;
+    S state;
     float lower_bound = -float.infinity;
     float upper_bound = float.infinity;
     bool is_leaf;
-    BaseSearchState!T[] children;
-    BaseSearchState!T[State!T] parents;
+    BaseSearchState!(T, S)[] children;
+    BaseSearchState!(T, S)[S] parents;
 
     T player_unconditional;
     T opponent_unconditional;
@@ -54,8 +54,8 @@ class BaseSearchState(T)
     public
     {
         T[] moves;
-        BaseSearchState!T[] allocated_children;
-        HistoryNode!(State!T)[] allocated_history_nodes;
+        BaseSearchState!(T, S)[] allocated_children;
+        HistoryNode!(S)[] allocated_history_nodes;
     }
 
     invariant
@@ -147,7 +147,7 @@ class BaseSearchState(T)
             writeln("Updating parents for:");
             writeln(this);
         }
-        BaseSearchState!T[] queue;
+        BaseSearchState!(T, S)[] queue;
         foreach (parent; parents.byValue){
             queue ~= parent;
         }
@@ -169,7 +169,7 @@ class BaseSearchState(T)
     }
 }
 
-static bool is_better(T)(BaseSearchState!T a, BaseSearchState!T b){
+static bool is_better(T, S)(BaseSearchState!(T, S) a, BaseSearchState!(T, S) b){
     if (a.is_leaf && !b.is_leaf){
         return false;
     }
@@ -220,17 +220,17 @@ static bool is_better(T)(BaseSearchState!T a, BaseSearchState!T b){
 }
 
 
-class SearchState(T) : BaseSearchState!T
+class SearchState(T, S) : BaseSearchState!(T, S)
 {
     public
     {
-        State!T canonical_state;
+        S canonical_state;
     }
 
     invariant
     {
         version(all_invariants){
-            State!T temp = state;
+            S temp = state;
             temp.canonize;
             assert(temp == canonical_state);
         }
@@ -238,13 +238,13 @@ class SearchState(T) : BaseSearchState!T
 
     this(T playing_area)
     {
-        state = State!T(playing_area);
+        state = S(playing_area);
         canonical_state = state;
         canonical_state.canonize;
         calculate_available_moves;
     }
 
-    this(State!T state, State!T canonical_state, T player_unconditional, T opponent_unconditional, T[] moves=null)
+    this(S state, S canonical_state, T player_unconditional, T opponent_unconditional, T[] moves=null)
     {
         this.state = state;
         this.canonical_state = canonical_state;
@@ -267,15 +267,15 @@ class SearchState(T) : BaseSearchState!T
 
     }
 
-    void make_children(ref SearchState!T[State!T] state_pool)
+    void make_children(ref SearchState!(T, S)[S] state_pool)
     {
         children = [];
         auto child_states = state.children(moves);
 
         // Prune out transpositions.
-        State!T[] canonical_child_states;
-        State!T[] temp;
-        bool[State!T] seen;
+        S[] canonical_child_states;
+        S[] temp;
+        bool[S] seen;
         foreach (child_state; child_states){
             auto canonical_child_state = child_state;
             canonical_child_state.canonize;
@@ -296,7 +296,7 @@ class SearchState(T) : BaseSearchState!T
             }
             else{
                 assert(child_state.black_to_play != state.black_to_play);
-                auto child = new SearchState!T(
+                auto child = new SearchState!(T, S)(
                     child_state,
                     canonical_child_state,
                     opponent_unconditional,
@@ -312,13 +312,13 @@ class SearchState(T) : BaseSearchState!T
 
         children.randomShuffle;
 
-        sort!(is_better!T)(children);
+        sort!(is_better!(T, S))(children);
 
     }
 
     void calculate_minimax_value(
-        ref SearchState!T[State!T] state_pool,
-        ref HistoryNode!(State!T) history,
+        ref SearchState!(T, S)[S] state_pool,
+        ref HistoryNode!(S) history,
         float depth=float.infinity,
         float alpha=-float.infinity,
         float beta=float.infinity
@@ -347,7 +347,7 @@ class SearchState(T) : BaseSearchState!T
             */
         }
 
-        auto my_history = new HistoryNode!(State!T)(canonical_state, history);
+        auto my_history = new HistoryNode!(S)(canonical_state, history);
         allocated_history_nodes ~= my_history;
 
         if (!children.length){
@@ -373,10 +373,10 @@ class SearchState(T) : BaseSearchState!T
             }
 
             if (state.black_to_play != child.state.black_to_play){
-                (cast(SearchState!T)child).calculate_minimax_value(state_pool, my_history, depth - 1, alpha, beta);
+                (cast(SearchState!(T, S))child).calculate_minimax_value(state_pool, my_history, depth - 1, alpha, beta);
             }
             else{
-                (cast(SearchState!T)child).calculate_minimax_value(state_pool, my_history, depth - 1, -beta, -alpha);
+                (cast(SearchState!(T, S))child).calculate_minimax_value(state_pool, my_history, depth - 1, -beta, -alpha);
             }
             changed = update_value; // TODO: Do single updates.
             if (changed){
@@ -388,15 +388,15 @@ class SearchState(T) : BaseSearchState!T
     void calculate_minimax_value(float depth=float.infinity)
     {
 
-        SearchState!T[State!T] state_pool;
-        HistoryNode!(State!T) history = null;
+        SearchState!(T, S)[S] state_pool;
+        HistoryNode!(S) history = null;
         calculate_minimax_value(state_pool, history, depth, -float.infinity, float.infinity);
     }
 
     void iterative_deepening_search(int min_depth, int max_depth)
     {
-        SearchState!T[State!T] state_pool;
-        HistoryNode!(State!T) history = null;
+        SearchState!(T, S)[S] state_pool;
+        HistoryNode!(S) history = null;
         for (int i = min_depth; i <= max_depth; i++){
             calculate_minimax_value(state_pool, history, i, lower_bound, upper_bound);
         }
@@ -456,15 +456,16 @@ class SearchState(T) : BaseSearchState!T
     }
 }
 
+alias SearchState8 = SearchState!(Board8, State8);
 
 unittest
 {
-    auto s = State!Board8();
-    auto h = new HistoryNode!(State!Board8)(s);
+    auto s = State8();
+    auto h = new HistoryNode!(State8)(s);
 
     auto child_s = s;
     child_s.player = Board8(3, 3);
-    auto child_h = new HistoryNode!(State!Board8)(child_s, h);
+    auto child_h = new HistoryNode!(State8)(child_s, h);
 
     assert(child_s !in h);
     assert(child_s in child_h);
@@ -474,11 +475,11 @@ unittest
 
 unittest
 {
-    State!Board8 s = State!Board8(rectangle!Board8(2, 2));
+    State8 s = State8(rectangle8(2, 2));
     s.player = Board8(0, 0) | Board8(1, 1);
     auto c = s;
     c.canonize;
-    SearchState!Board8 ss = new SearchState!Board8(s, c, Board8(), Board8());
+    SearchState8 ss = new SearchState8(s, c, Board8(), Board8());
 
     assert(ss.player_unconditional == ss.state.playing_area);
 }
@@ -486,37 +487,37 @@ unittest
 
 unittest
 {
-    auto ss = new SearchState!Board8(rectangle!Board8(1, 1));
+    auto ss = new SearchState8(rectangle8(1, 1));
     ss.calculate_minimax_value;
     assert(ss.lower_bound == 0);
     assert(ss.upper_bound == 0);
 
-    ss = new SearchState!Board8(rectangle!Board8(2, 1));
+    ss = new SearchState8(rectangle8(2, 1));
     ss.calculate_minimax_value;
     assert(ss.lower_bound == -2);
     assert(ss.upper_bound == 2);
 
-    ss = new SearchState!Board8(rectangle!Board8(3, 1));
+    ss = new SearchState8(rectangle8(3, 1));
     ss.calculate_minimax_value;
     assert(ss.lower_bound == 3);
     assert(ss.upper_bound == 3);
 
-    ss = new SearchState!Board8(rectangle!Board8(4, 1));
+    ss = new SearchState8(rectangle8(4, 1));
     ss.calculate_minimax_value(9);
     assert(ss.lower_bound == 4);
     assert(ss.upper_bound == 4);
 
-    ss = new SearchState!Board8(rectangle!Board8(2, 2));
+    ss = new SearchState8(rectangle8(2, 2));
     ss.calculate_minimax_value(8);
     assert(ss.lower_bound == -4);
     assert(ss.upper_bound == 4);
 
-    ss = new SearchState!Board8(rectangle!Board8(3, 2));
+    ss = new SearchState8(rectangle8(3, 2));
     ss.calculate_minimax_value(9);
     assert(ss.lower_bound == -6);
     assert(ss.upper_bound == 6);
 
-    ss = new SearchState!Board8(rectangle!Board8(3, 3));
+    ss = new SearchState8(rectangle8(3, 3));
     ss.calculate_minimax_value(20);
     assert(ss.lower_bound == 9);
     assert(ss.upper_bound == 9);

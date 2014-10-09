@@ -1,20 +1,25 @@
-module state;
+module defense_state;
 
 import std.stdio;
 import std.string;
 
-import bit_matrix;
 import board8;
+import state;
 
 
-struct State(T)
+struct DefenseState(T)
 {
     T player;
     T opponent;
     T playing_area = T(T.FULL);
     T ko;
+    T player_target;
+    T opponent_target;
+    T player_outside_liberties;
+    T opponent_outside_liberties;
     bool black_to_play = true;
     int passes;
+    float ko_threats = 0;
 
     this(T playing_area)
     {
@@ -27,14 +32,19 @@ struct State(T)
         this.opponent = opponent;
     }
 
-    this(T player, T opponent, T playing_area, T ko, bool black_to_play, int passes)
+    this(T player, T opponent, T playing_area, T ko, T player_target, T opponent_target, T player_outside_liberties, T opponent_outside_liberties, bool black_to_play, int passes, float ko_threats)
     {
         this.player = player;
         this.opponent = opponent;
         this.playing_area = playing_area;
         this.ko = ko;
+        this.player_target = player_target;
+        this.opponent_target = opponent_target;
+        this.player_outside_liberties = player_outside_liberties;
+        this.opponent_outside_liberties = opponent_outside_liberties;
         this.black_to_play = black_to_play;
         this.passes = passes;
+        this.ko_threats = ko_threats;
     }
 
     invariant
@@ -44,39 +54,61 @@ struct State(T)
         assert(playing_area.valid);
         assert(ko.valid);
         assert(ko.popcount <= 1);
+        assert(player_target.valid);
+        assert(opponent_target.valid);
+        assert(player_outside_liberties.valid);
+        assert(opponent_outside_liberties.valid);
 
         assert(!(player & opponent));
         assert(!(player & ko));
         assert(!(opponent & ko));
+        assert(!(player & opponent_outside_liberties));
+        assert(!(opponent & player_outside_liberties));
+        assert(!(player_target & opponent_target));
+        assert(!(player_target & player_outside_liberties));
+        assert(!(player_target & opponent_outside_liberties));
+        assert(!(opponent_target & player_outside_liberties));
+        assert(!(opponent_target & opponent_outside_liberties));
+        assert(!(player_outside_liberties & opponent_outside_liberties));
 
         assert(!(player & ~playing_area));
         assert(!(opponent & ~playing_area));
         assert(!(ko & ~playing_area));
+        assert(!(player_target & ~playing_area));
+        assert(!(opponent_target & ~playing_area));
+        assert(!(player_outside_liberties & ~playing_area));
+        assert(!(opponent_outside_liberties & ~playing_area));
 
-        // TODO: Assert that all chains have liberties
+
+        // TODO: Assert that all killable chains have liberties.
         version(all_invariants){
             foreach (player_chain; player.chains){
-                assert(player_chain.liberties(playing_area & ~opponent));
+                assert(player_chain & player_outside_liberties || player_chain.liberties(playing_area & ~opponent));
             }
             foreach (opponent_chain; opponent.chains){
-                assert(opponent_chain.liberties(playing_area & ~player));
+                assert(opponent_chain & opponent_outside_liberties || opponent_chain.liberties(playing_area & ~player));
             }
         }
     }
 
-    bool opEquals(in State!T rhs) const
+    bool opEquals(in DefenseState!T rhs) const
     {
         return (
             (player == rhs.player) &&
             (opponent == rhs.opponent) &&
             (playing_area == rhs.playing_area) &&
             (ko == rhs.ko) &&
+            (player_target == rhs.player_target) &&
+            (opponent_target == rhs.opponent_target) &&
+            (player_outside_liberties == rhs.player_outside_liberties) &&
+            (opponent_outside_liberties == rhs.opponent_outside_liberties) &&
             (black_to_play == rhs.black_to_play) &&
-            (passes == rhs.passes)
+            (passes == rhs.passes) &&
+            (ko_threats == rhs.ko_threats)
         );
     }
 
-    int opCmp(in State!T rhs) const
+    int opCmp(in DefenseState!T rhs) const
     {
         string compare_member(string member){
             return "
@@ -98,6 +130,16 @@ struct State(T)
             return passes - rhs.passes;
         }
         mixin(compare_member("ko"));
+        mixin(compare_member("player_target"));
+        mixin(compare_member("opponent_target"));
+        mixin(compare_member("player_outside_liberties"));
+        mixin(compare_member("opponent_outside_liberties"));
+        if (ko_threats < rhs.ko_threats){
+            return -1;
+        }
+        if (ko_threats > rhs.ko_threats){
+            return 1;
+        }
         mixin(compare_member("playing_area"));
 
         return 0;
@@ -106,14 +148,21 @@ struct State(T)
     hash_t toHash() const nothrow @safe
     {
         hash_t opponent_hash = opponent.toHash;
+        hash_t player_target_hash = player_target.toHash;
         return (
             player.toHash ^
             (opponent_hash << (hash_t.sizeof * 4)) ^
             (opponent_hash >> (hash_t.sizeof * 4)) ^
             playing_area.toHash ^
             ko.toHash ^
+            (player_target_hash << (hash_t.sizeof * 4)) ^
+            (player_target_hash >> (hash_t.sizeof * 4)) ^
+            opponent_target.toHash ^
+            player_outside_liberties.toHash ^
+            opponent_outside_liberties.toHash ^
             typeid(black_to_play).getHash(&black_to_play) ^
-            typeid(passes).getHash(&passes)
+            typeid(passes).getHash(&passes) ^
+            typeid(ko_threats).getHash(&ko_threats)
         );
     }
 
@@ -158,7 +207,7 @@ struct State(T)
                 writefln("Liberties: %s", i);
                 writeln(chains_in_danger[i].liberties(playing_area & ~player));
             }
-            if (!(chains_in_danger[i].liberties(playing_area & ~player))){
+            if (!(chains_in_danger[i] & opponent_outside_liberties) && !(chains_in_danger[i].liberties(playing_area & ~player))){
                 num_kill += chains_in_danger[i].popcount;
                 kill |= chains_in_danger[i];
                 temp = chains_in_danger[i];
@@ -194,13 +243,21 @@ struct State(T)
         T old_ko = ko;
         T temp = move;
         if (move){
-            if ((move & player) || (move & opponent) || (move & ko))
+            if ((move & player) || (move & opponent) || (move & opponent_outside_liberties))
                 return false;
+            if (move & ko){
+                if (ko_threats > 0){
+                    ko_threats -= 1;
+                }
+                else{
+                    return false;
+                }
+            }
             player |= move;
             kill_stones(move);
             temp.flood_into(player);
             // Check if move is suicidal and undo it if necessary.
-            if (!(temp.liberties(playing_area & ~opponent))){
+            if (!(temp & player_outside_liberties) && !(temp.liberties(playing_area & ~opponent))){
                 player ^= move;
                 ko = old_ko;
                 return false;
@@ -220,16 +277,37 @@ struct State(T)
         temp = player;
         player = opponent;
         opponent = temp;
+
+        temp = player_target;
+        player_target = opponent_target;
+        opponent_target = temp;
+
+        temp = player_outside_liberties;
+        player_outside_liberties = opponent_outside_liberties;
+        opponent_outside_liberties = temp;
+
+        ko_threats = -ko_threats;
         black_to_play = !black_to_play;
 
         return true;
     }
 
-    State!T[] children(T[] moves)
+    DefenseState!T[] children(T[] moves)
     {
-        State!T[] _children = [];
+        DefenseState!T[] _children = [];
 
         foreach (move; moves){
+            //TODO: These sould be one per chain.
+            /*
+            if (move & player_outside_liberties){
+                if (liberty_taking_move_played){
+                    continue;
+                }
+                else{
+                    liberty_taking_move_played = true;
+                }
+            }
+            */
             auto child = this;
             if (child.make_move(move)){
                 _children ~= child;
@@ -270,6 +348,8 @@ struct State(T)
         }
     }
 
+    // TODO: Canonization
+    /*
     void snap()
     {
         int westwards, northwards;
@@ -351,6 +431,7 @@ struct State(T)
             mixin(compare_and_replace);
         }
     }
+    */
 
     /**
     * Analyzes the state for unconditional life.
@@ -363,6 +444,14 @@ struct State(T)
     }
     body
     {
+        // Add immortal stones to unconditionally controlled territory.
+        T tmp = player_outside_liberties;
+        tmp.flood_into(player);
+        player_unconditional |= tmp;
+        tmp = opponent_outside_liberties;
+        tmp.flood_into(opponent);
+        opponent_unconditional |= tmp;
+
         // The unconditional regions are already analyzed and can be excluded here.
         T[] player_chains = player.chains;
         T[] player_enclosed_regions = (~player & ~player_unconditional & playing_area).chains;
@@ -405,7 +494,7 @@ struct State(T)
         }
     }
 
-    string toString()
+    string _toString(T player_unconditional, T opponent_unconditional)
     {
         string r;
         T p;
@@ -413,7 +502,25 @@ struct State(T)
             for(int x = 0; x < playing_area.horizontal_extent; x++){
                 p = T(x, y);
                 if (playing_area & p){
-                    r ~= "\x1b[0;30;43m";
+                    r ~= "\x1b[0;30;";
+                    if (player_outside_liberties & p){
+                        r ~= "45m";
+                    }
+                    else if (opponent_outside_liberties & p){
+                        r ~= "46m";
+                    }
+                    else if (player_target & p){
+                        r ~= "44m";
+                    }
+                    else if (opponent_target & p){
+                        r ~= "41m";
+                    }
+                    else if (player_unconditional & p || opponent_unconditional & p){
+                        r ~= "42m";
+                    }
+                    else{
+                        r ~= "43m";
+                    }
                 }
                 else{
                     r ~= "\x1b[0m";
@@ -443,181 +550,35 @@ struct State(T)
             r ~= "White to play,";
         }
 
-        r ~= format(" passes=%s", passes);
+        r ~= format(" passes=%s, ko_threats=%s", passes, ko_threats);
 
         return r;
     }
-}
 
-alias State8 = State!Board8;
-
-void benson(T)(ref T[] chains, ref T[] regions, in T opponent, in T immortal, in T playing_area)
-{
-    // A combination matrix that holds both the information of
-    // if region i is vital to chain j and
-    // if region i is the neighbour of chain j
-    // stacked on top of each other.
-    auto chain_count = chains.length;
-    BitMatrix is_vital__is_neighbour = BitMatrix(regions.length, 2 * chain_count);
-
-    foreach (j, chain; chains){
-        T chain_liberties = chain.liberties(playing_area);
-        T far_empty_intersections = ~opponent & ~ chain_liberties;
-        foreach (i, region; regions){
-            T empty_intersections = region & ~opponent;
-            T region_far_empty_intersections = region & far_empty_intersections;
-            if (empty_intersections && !region_far_empty_intersections){
-                is_vital__is_neighbour.set(i, j);
-            }
-            if (region & chain_liberties){
-                is_vital__is_neighbour.set(i, j + chain_count);
-            }
-        }
-    }
-
-    bool recheck;
-    do{
-        recheck = false;
-        foreach (j, chain; chains){
-            auto vital_count = is_vital__is_neighbour.row_popcount(j);
-            if (vital_count < 2 && !(chain & immortal)){
-                recheck = recheck || is_vital__is_neighbour.clear_columns_by_row(j + chain_count);
-            }
-        }
-    }while (recheck);
-
-    T[] temp;
-    foreach (j, chain; chains){
-        // Clear neighbours so that dead regions won't choke up on them.
-        is_vital__is_neighbour.clear_row(j + chain_count);
-        if (is_vital__is_neighbour.row_nonzero(j)){
-            temp ~= chain;
-        }
-    }
-    chains = temp;
-
-    temp = [];
-    foreach (i, region; regions){
-        if (is_vital__is_neighbour.column_nonzero(i)){
-            temp ~= region;
-        }
-    }
-    regions = temp;
-}
-
-void examine_state_playout(bool canonize=false)
-{
-    import std.random;
-    import core.thread;
-
-    auto s = State!Board8();
-    bool success;
-    int i = 0;
-    int j = 0;
-    while (j < 1000){
-        success = s.make_move(Board8(
-            uniform(0, Board8.WIDTH), uniform(0, Board8.HEIGHT)
-        ));
-        if (success){
-            i++;
-            j = 0;
-            if (canonize){
-                auto t = s;
-                t.canonize;
-                writeln(t);
-            }
-            else{
-                writeln(s);
-            }
-            Thread.sleep(dur!("msecs")(1000));
-        }
-        else{
-            j++;
-        }
+    string toString(){
+        return _toString(T(), T());
     }
 }
 
+alias DefenseState8 = DefenseState!Board8;
 
 unittest
 {
-    auto s = State!Board8(
-        Board8(0, 1),
-        Board8(0, 0),
-    );
-    assert(s.black_to_play);
-    s.make_move(Board8(1, 0));
-    assert(s.player == empty8);
-    assert(s.opponent == (Board8(0, 1) | Board8(1, 0)));
-    assert(s.playing_area == full8);
-    assert(s.ko == empty8);
-    assert(!s.black_to_play);
-}
+    auto s = DefenseState8();
+    s.opponent = s.playing_area & ~Board8(0, 0);
+    s.opponent_outside_liberties = s.opponent;
 
-unittest
-{
-    auto s = State!Board8(
-        Board8(0, 1),
-        Board8(0, 0) | Board8(2, 0) | Board8(1, 1)
-    );
-    s.make_move(Board8(1, 0));
-    assert(!(s.player & Board8(0, 0)));
-    assert(s.ko == Board8(0, 0));
-    auto player = s.player;
-    auto opponent = s.opponent;
-    auto ko = s.ko;
-    auto black_to_play = s.black_to_play;
     assert(!s.make_move(Board8(0, 0)));
-    assert(s.player == player);
-    assert(s.opponent == opponent);
-    assert(s.ko == ko);
-    assert(s.black_to_play == black_to_play);
-    s.make_move(Board8(5, 5));
-    assert(!s.ko);
-}
+    assert(s.make_move(Board8()));
+    assert(s.make_move(Board8(0, 0)));
+    assert(s.opponent == s.playing_area);
 
-unittest
-{
-    auto a = State!Board8();
-    auto b = a;
-    a.player = Board8(1UL);
-    assert(a > b);
-    b.player = Board8(1UL);
-    assert(a == b);
-    a.opponent = Board8(2UL);
-    assert(a > b);
-    a.player = Board8(0UL);
-    assert(a < b);
-}
-
-unittest
-{
-    State!Board8 s;
-    s.player = Board8(1, 0) | Board8(2, 0) | Board8(2, 1);
-    s.player |= Board8(0, 1) | Board8(0, 2) | Board8(1, 2);
-
-    s.opponent = Board8(7, 6);
-    s.opponent |= Board8(7, 4) | Board8(6, 4) | Board8(6, 5) | Board8(5, 5) | Board8(4, 5) | Board8(4, 6);
-
-    Board8 player_unconditional;
-    Board8 opponent_unconditional;
-
-    s.analyze_unconditional(player_unconditional, opponent_unconditional);
-    assert(player_unconditional == (s.player | Board8(0, 0) | Board8(1, 1)));
-    assert(!opponent_unconditional);
-
-    s.player |= Board8(5, 6);
-    s.analyze_unconditional(player_unconditional, opponent_unconditional);
-    assert(opponent_unconditional == (s.opponent | Board8(5, 6) | Board8(6, 6) | Board8(7, 5)));
-
-    player_unconditional = Board8();
-    opponent_unconditional = Board8();
-
-    s = State!Board8(rectangle!Board8(4, 1));
+    s = DefenseState8();
+    s.opponent = Board8(0, 0);
+    s.opponent_outside_liberties = s.opponent;
     s.player = Board8(1, 0);
-    s.opponent = Board8(3, 0);
 
-    s.analyze_unconditional(player_unconditional, opponent_unconditional);
-
-    assert(player_unconditional == s.playing_area);
-    assert(!opponent_unconditional);
+    assert(s.make_move(Board8(0, 1)));
+    assert(s.player == Board8(0, 0));
+    assert(s.opponent == (Board8(1, 0) | Board8(0, 1)));
 }
