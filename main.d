@@ -4,6 +4,7 @@ import core.thread;
 import board8;
 import bit_matrix;
 import state;
+import polyomino;
 import defense_state;
 import game_state;
 import search_state;
@@ -57,6 +58,11 @@ void main()
     writeln(s);
     */
 
+    auto s = Shape([Piece(0, 0), Piece(0, 1), Piece(0, 2)]);
+    writeln(polyominoes(5));
+
+    /*
+    //TODO: Move to unittests.
     auto s = DefenseState8();
     s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
     s.opponent_target = s.opponent;
@@ -71,6 +77,7 @@ void main()
 
     writeln(ds.state);
     writeln(ds.lower_bound, ", ", ds.upper_bound);
+    */
 
     //auto ds = new DefenseSearchState8(s, s.player, s.opponent);
 
