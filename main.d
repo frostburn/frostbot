@@ -58,26 +58,25 @@ void main()
     writeln(s);
     */
 
-    auto s = Shape([Piece(0, 0), Piece(0, 1), Piece(0, 2)]);
-    writeln(polyominoes(5));
+    //auto s = Shape([Piece(0, 0), Piece(0, 1), Piece(0, 2)]);
+    //writeln(s.liberties);
 
-    /*
+    
     //TODO: Move to unittests.
     auto s = DefenseState8();
     s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
     s.opponent_target = s.opponent;
-    s.player = rectangle8(5, 4) & ~rectangle8(4, 3) & ~Board8(4, 0);
-    s.player_outside_liberties = Board8(4, 0) | s.player;
+    s.player = rectangle8(5, 4) & ~rectangle8(4, 3) & ~Board8(4, 0) & ~Board8(4, 1);
+    s.player_outside_liberties = Board8(4, 0) | Board8(4, 1) | s.player;
     s.playing_area = rectangle8(5, 4);
-    s.ko_threats = 0;
+    s.ko_threats = float.infinity;
 
     auto ds = new DefenseSearchState8(s);
 
     ds.calculate_minimax_value;
 
-    writeln(ds.state);
+    //writeln(ds.state);
     writeln(ds.lower_bound, ", ", ds.upper_bound);
-    */
 
     //auto ds = new DefenseSearchState8(s, s.player, s.opponent);
 

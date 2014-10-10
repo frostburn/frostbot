@@ -314,3 +314,42 @@ version(all_tests){
         assert(ds.upper_bound == 4);
     }
 }
+
+unittest
+{
+    //Rectangular six in the corner with no outside liberties and infinite ko threats.
+    auto s = DefenseState8();
+    s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
+    s.opponent_target = s.opponent;
+    s.player = rectangle8(5, 4) & ~rectangle8(4, 3);
+    s.player_outside_liberties = s.player;
+    s.playing_area = rectangle8(5, 4);
+    s.ko_threats = -float.infinity;
+    auto ds = new DefenseSearchState8(s);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == float.infinity);
+    assert(ds.lower_bound == float.infinity);
+
+    // Rectangular six in the corner with one outside liberty and no ko threats.
+    s.player &= ~Board8(4, 0);
+    s.ko_threats = 0;
+    ds = new DefenseSearchState8(s);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == float.infinity);
+    assert(ds.upper_bound == float.infinity);
+
+    // Rectangular six in the corner with one outside liberty and one ko threat.
+    s.ko_threats = -1;
+    ds = new DefenseSearchState8(s);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == -4);
+    assert(ds.upper_bound == -4);
+
+    // Rectangular six in the corner with two outside liberties and infinite ko threats for the invader.
+    s.player &= ~Board8(4, 1);
+    s.ko_threats = float.infinity;
+    ds = new DefenseSearchState8(s);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == -4);
+    assert(ds.upper_bound == -4);
+}

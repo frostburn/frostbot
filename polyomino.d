@@ -200,7 +200,47 @@ struct Shape
         }
         return result;
     }
+
+    Shape liberties()
+    {
+        bool[Piece] piece_set;
+        foreach (piece; pieces){
+            piece_set[piece] = true;
+        }
+
+        bool[Piece] liberty_piece_set;
+        enum add_new_piece = "
+            if (new_piece !in piece_set){
+                liberty_piece_set[new_piece] = true;
+            }
+        ";
+
+        foreach (piece; pieces){
+            auto new_piece = piece;
+            new_piece.x += 1;
+            mixin(add_new_piece);
+            new_piece.x -= 2;
+            mixin(add_new_piece);
+            new_piece.x += 1;
+            new_piece.y += 1;
+            mixin(add_new_piece);
+            new_piece.y -= 2;
+            mixin(add_new_piece);
+        }
+        Piece[] new_pieces;
+        foreach (liberty; liberty_piece_set.byKey){
+            new_pieces ~= liberty;
+        }
+        return Shape(new_pieces);
+    }
+
+    //TODO:
+    //Shape corners()
+    //Shape[] chains()
 }
+
+//TODO:
+//struct Eyespace
 
 bool[Shape] polyominoes(int max_size)
 {
