@@ -405,7 +405,7 @@ struct State(T)
         }
     }
 
-    string toString()
+    string _toString(T player_unconditional, T opponent_unconditional)
     {
         string r;
         T p;
@@ -413,7 +413,13 @@ struct State(T)
             for(int x = 0; x < playing_area.horizontal_extent; x++){
                 p = T(x, y);
                 if (playing_area & p){
-                    r ~= "\x1b[0;30;43m";
+                    r ~= "\x1b[0;30;";
+                    if (player_unconditional & p || opponent_unconditional & p){
+                        r ~= "42m";
+                    }
+                    else{
+                        r ~= "43m";
+                    }
                 }
                 else{
                     r ~= "\x1b[0m";
@@ -446,6 +452,10 @@ struct State(T)
         r ~= format(" passes=%s", passes);
 
         return r;
+    }
+
+    string toString(){
+        return _toString(T(), T());
     }
 }
 

@@ -7,6 +7,7 @@ import std.array;
 import std.random;
 
 import utils;
+import polyomino;
 import board8;
 import defense_state;
 import search_state;
@@ -45,13 +46,20 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
             lower_bound = upper_bound = liberty_score;
             return;
         }
-        if (state.player_target & ~state.player){
+
+        if (state.player_target & ~state.player || state.player_target & opponent_unconditional){
             is_leaf = true;
             lower_bound = upper_bound = -float.infinity;
             return;
         }
         // Suicide is prohibited so it is not possible kill your own target.
         assert(!(state.opponent_target & ~state.opponent));
+        // It is however possible to blunder forfeit your stones to the opponent control.
+        if (state.opponent_target & player_unconditional){
+            is_leaf = true;
+            lower_bound = upper_bound = float.infinity;
+            return;
+        }
 
         if (moves is null){
             calculate_available_moves;
@@ -210,6 +218,7 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
 
 alias DefenseSearchState8 = DefenseSearchState!(Board8, DefenseState8);
 
+
 unittest
 {
     auto ss = new DefenseSearchState8(rectangle8(1, 1));
@@ -352,4 +361,20 @@ unittest
     ds.calculate_minimax_value;
     assert(ds.lower_bound == -4);
     assert(ds.upper_bound == -4);
+}
+
+unittest
+{
+    // Test a state where the opponent can forfeit her stones.
+    auto opponent = Board8(0, 0) | Board8(1, 0) | Board8(2, 0);
+    auto space = Board8(0, 1) | Board8(1, 1) | Board8(2, 1) | Board8(1, 2);
+    auto s = DefenseState8();
+    s.playing_area = space | opponent;
+    s.opponent = opponent;
+    s.opponent_target = opponent;
+
+    auto ds = new DefenseSearchState8(s);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == float.infinity);
+    assert(ds.upper_bound == float.infinity);
 }

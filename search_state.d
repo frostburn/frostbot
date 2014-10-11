@@ -167,6 +167,18 @@ class BaseSearchState(T, S)
             }
         }
     }
+
+    override string toString()
+    {
+        return format(
+            "%s\nlower_bound=%s upper_bound=%s leaf=%s number of children=%s",
+            state._toString(player_unconditional, opponent_unconditional),
+            lower_bound,
+            upper_bound,
+            is_leaf,
+            children.length
+        );
+    }
 }
 
 static bool is_better(T, S)(BaseSearchState!(T, S) a, BaseSearchState!(T, S) b){

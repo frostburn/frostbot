@@ -4,6 +4,7 @@ import std.stdio;
 import std.string;
 
 import utils;
+import polyomino;
 
 
 struct Board8
@@ -468,6 +469,8 @@ struct Board8
     alias toBool this;
 }
 
+
+// TODO: Move to board_common
 T rectangle(T)(int width, int height){
     T result;
     for (int y = 0; y < height; y++){
@@ -478,7 +481,50 @@ T rectangle(T)(int width, int height){
     return result;
 }
 
+
+Board8 from_piece(T)(Piece piece)
+in
+{
+    assert(piece.x >= 0);
+    assert(piece.y >= 0);
+    assert(piece.x < T.WIDTH);
+    assert(piece.y < T.HEIGHT);
+}
+out(result)
+{
+    assert(result.valid);
+}
+body
+{
+    return T(piece.x, piece.y);
+}
+
+
+Board8 from_shape(T)(Shape shape)
+in
+{
+    assert(shape.west_extent >= 0);
+    assert(shape.north_extent >= 0);
+    assert(shape.east_extent < T.WIDTH);
+    assert(shape.south_extent < T.HEIGHT);
+}
+out(result)
+{
+    assert(result.valid);
+}
+body
+{
+    auto result = T();
+    foreach (piece; shape.piece_set.byKey){
+        result |= from_piece!T(piece);
+    }
+    return result;
+}
+
+
 alias rectangle8 = rectangle!Board8;
+alias from_piece8 = from_piece!Board8;
+alias from_shape8 = from_shape!Board8;
 
 
 immutable Board8 full8 = Board8(Board8.FULL);

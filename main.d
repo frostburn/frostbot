@@ -10,6 +10,7 @@ import defense_state;
 import game_state;
 import search_state;
 import defense_search_state;
+import defense;
 
 /*
 void print_state(SearchState!Board8 ss, int depth){
@@ -44,19 +45,13 @@ void print_state(SearchState!Board8 ss, int depth){
 
 void main()
 {
-    auto s = Shape([Piece(0, 0), Piece(0, 1)]);
-    auto e = Shape([Piece(1, 0), Piece(1, 1)]);
-
-    auto es = Eyespace(s, e);
-
-    //writeln(es);
-    //writeln(es.is_good);
-
-    writeln(eyespaces(4).length);
-    /*
-    foreach (eyespace; eyespace_set.byKey){
-        writeln(eyespace);
-        writeln;
+    foreach (eyespace; eyespaces(4).byKey){
+        DefenseState8 s = from_eyespace8(eyespace, false, float.infinity);
+        auto ds = new DefenseSearchState8(s);
+        ds.calculate_minimax_value;
+        if (ds.upper_bound < float.infinity){
+            writeln(ds);
+            writeln;
+        }
     }
-    */
 }

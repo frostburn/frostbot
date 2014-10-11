@@ -3,6 +3,7 @@ module defense_state;
 import std.stdio;
 import std.string;
 
+import polyomino;
 import board8;
 import state;
 
@@ -164,6 +165,11 @@ struct DefenseState(T)
             typeid(passes).getHash(&passes) ^
             typeid(ko_threats).getHash(&ko_threats)
         );
+    }
+
+    T free_space() const
+    {
+        return (playing_area & ~player & ~opponent);
     }
 
     /// Kill opponent's stones with a move by player
@@ -561,6 +567,35 @@ struct DefenseState(T)
 }
 
 alias DefenseState8 = DefenseState!Board8;
+
+
+DefenseState!T from_eyespace(T)(Eyespace eyespace, bool defender_to_play=true, float ko_threats=0)
+in
+{
+    assert(eyespace.west_extent >= 0);
+    assert(eyespace.north_extent >= 0);
+    assert(eyespace.east_extent < T.WIDTH);
+    assert(eyespace.south_extent < T.HEIGHT);
+}
+body
+{
+    T space = from_shape!T(eyespace.space);
+    T edge = from_shape!T(eyespace.edge);
+
+    T player;
+    T opponent;
+
+    if (defender_to_play){
+        player = edge;
+    }
+    else{
+        opponent = edge;
+    }
+
+    return DefenseState!T(player, opponent, space | edge, T(), player, opponent, T(), T(), true, 0, ko_threats);
+}
+
+alias from_eyespace8 = from_eyespace!Board8;
 
 unittest
 {
