@@ -244,6 +244,24 @@ struct DefenseState(T)
         black_to_play = !black_to_play;
     }
 
+    void swap_turns()
+    {
+        auto temp = player;
+        player = opponent;
+        opponent = temp;
+
+        temp = player_target;
+        player_target = opponent_target;
+        opponent_target = temp;
+
+        temp = player_outside_liberties;
+        player_outside_liberties = opponent_outside_liberties;
+        opponent_outside_liberties = temp;
+
+        ko_threats = -ko_threats;
+        black_to_play = !black_to_play;
+    }
+
     bool make_move(in T move)
     {
         T old_ko = ko;
@@ -280,20 +298,7 @@ struct DefenseState(T)
             }
         }
 
-        temp = player;
-        player = opponent;
-        opponent = temp;
-
-        temp = player_target;
-        player_target = opponent_target;
-        opponent_target = temp;
-
-        temp = player_outside_liberties;
-        player_outside_liberties = opponent_outside_liberties;
-        opponent_outside_liberties = temp;
-
-        ko_threats = -ko_threats;
-        black_to_play = !black_to_play;
+        swap_turns;
 
         return true;
     }
@@ -569,6 +574,17 @@ struct DefenseState(T)
 alias DefenseState8 = DefenseState!Board8;
 
 
+bool eyespace_fits(T)(Eyespace eyespace)
+{
+    return (
+        (eyespace.west_extent >= 0) &&
+        (eyespace.north_extent >= 0) &&
+        (eyespace.east_extent < T.WIDTH) &&
+        (eyespace.south_extent < T.HEIGHT)
+    );
+}
+
+
 DefenseState!T from_eyespace(T)(Eyespace eyespace, bool defender_to_play=true, float ko_threats=0)
 in
 {
@@ -595,6 +611,8 @@ body
     return DefenseState!T(player, opponent, space | edge, T(), player, opponent, T(), T(), true, 0, ko_threats);
 }
 
+
+alias eyespace_fits8 = eyespace_fits!Board8;
 alias from_eyespace8 = from_eyespace!Board8;
 
 unittest

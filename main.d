@@ -45,7 +45,26 @@ void print_state(SearchState!Board8 ss, int depth){
 
 void main()
 {
-    foreach (eyespace; eyespaces(4).byKey){
+    DefenseState8 s;
+    auto space = rectangle8(5, 1).south.east;
+    auto opponent = rectangle8(7, 3) & ~space;
+
+    s.playing_area = space | opponent;
+    s.opponent = opponent;
+    s.opponent_target = opponent;
+
+    writeln(s);
+    writeln(s.calculate_status8);
+
+    /*
+    foreach (eyespace; eyespaces(6).byKey){
+        if (!eyespace_fits8(eyespace)){
+            eyespace.rotate;
+            eyespace.snap;
+            if (!eyespace_fits8(eyespace)){
+                continue;
+            }
+        }
         DefenseState8 s = from_eyespace8(eyespace, false, float.infinity);
         auto ds = new DefenseSearchState8(s);
         ds.calculate_minimax_value;
@@ -54,4 +73,5 @@ void main()
             writeln;
         }
     }
+    */
 }
