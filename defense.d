@@ -72,6 +72,14 @@ Status calculate_status(T)(DefenseState!T defense_state, ref Status[DefenseState
     if (defense_state !in transposition_table){
         auto status = calculate_status!T(defense_state);
         transposition_table[defense_state] = status;
+        debug(calculate_status_transpositions){
+            if (status == Status.defendable){
+                writeln("Saving status for:");
+                writeln(defense_state);
+                writeln(status);
+                writeln;
+            }
+        }
         return status;
     }
     else{

@@ -173,7 +173,7 @@ struct State(T)
             !(killer_liberties & player) &&
             ((killer_liberties & ~opponent).popcount == 1)
         ){
-            ko = temp;
+            ko = kill;
         }
         else{
             ko.clear;
@@ -199,6 +199,11 @@ struct State(T)
     }
 
     bool make_move(in T move)
+    in
+    {
+        assert(!move || move & playing_area);
+    }
+    body
     {
         T old_ko = ko;
         T temp = move;
@@ -253,7 +258,10 @@ struct State(T)
         T[] moves;
         for (int y = 0; y < T.HEIGHT; y++){
             for (int x = 0; x < T.WIDTH; x++){
-                moves ~= T(x, y);
+                auto move = T(x, y);
+                if (move & playing_area){
+                    moves ~= move;
+                }
             }
         }
         moves ~= T();
@@ -279,9 +287,8 @@ struct State(T)
         }
     }
 
-    void snap()
+    void snap(out int westwards, out int northwards)
     {
-        int westwards, northwards;
         playing_area.snap(westwards, northwards);
         player.fix(westwards, northwards);
         opponent.fix(westwards, northwards);
@@ -304,7 +311,6 @@ struct State(T)
         opponent.rotate;
         ko.rotate;
         playing_area.rotate;
-        snap;
     }
 
     void mirror_h()
@@ -313,7 +319,6 @@ struct State(T)
         opponent.mirror_h;
         ko.mirror_h;
         playing_area.mirror_h;
-        snap;
     }
 
     void mirror_v()
@@ -322,43 +327,60 @@ struct State(T)
         opponent.mirror_v;
         ko.mirror_v;
         playing_area.mirror_v;
-        snap;
     }
 
 
     // TODO: Canonize hierarchically ie. based on opCmp order.
-    void canonize()
+    // TODO: Pass out the fix values.
+    Transformation canonize()
     {
         if (!black_to_play){
             flip_colors;
         }
-        snap;
+        auto final_transformation = Transformation.none;
+        auto current_transformation = Transformation.none;
+        int westwards, northwards;
+        snap(westwards, northwards);
         auto temp = this;
         enum compare_and_replace = "
             if (temp < this){
+                final_transformation = current_transformation;
                 this = temp;
             }
         ";
         if (can_rotate){
             for (int i = 0; i < 3; i++){
                 temp.rotate;
+                snap(westwards, northwards);
+                current_transformation++;
                 mixin(compare_and_replace);
             }
-            temp.mirror_h;
+            temp.mirror_v;
+            snap(westwards, northwards);
+            current_transformation++;
             mixin(compare_and_replace);
             for (int i = 0; i < 3; i++){
                 temp.rotate;
+                snap(westwards, northwards);
+                current_transformation++;
                 mixin(compare_and_replace);
             }
         }
         else{
             temp.mirror_v;
+            snap(westwards, northwards);
+            current_transformation = Transformation.mirror_v;
             mixin(compare_and_replace);
             temp.mirror_h;
+            snap(westwards, northwards);
+            current_transformation = Transformation.flip;
             mixin(compare_and_replace);
             temp.mirror_v;
+            snap(westwards, northwards);
+            current_transformation = Transformation.mirror_h;
             mixin(compare_and_replace);
         }
+        return final_transformation;
     }
 
     /**
@@ -573,6 +595,17 @@ unittest
     assert(s.playing_area == full8);
     assert(s.ko == empty8);
     assert(!s.black_to_play);
+}
+
+unittest
+{
+    State8 s;
+    s.playing_area = rectangle8(3, 3) | Board8(2, 3);
+    s.player = Board8(1, 2) | Board8(2, 2) | Board8(2, 1);
+    s.opponent = Board8(0, 0) | Board8(2, 0) | Board8(0, 1) | Board8(1, 1);
+    s.passes = 1;
+    assert(s.make_move(Board8(1, 0)));
+    assert(s.ko);
 }
 
 unittest

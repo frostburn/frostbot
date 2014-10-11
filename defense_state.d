@@ -48,8 +48,6 @@ struct DefenseState(T)
         this.ko_threats = ko_threats;
     }
 
-    // Invariant disabled because it's causing ghostlike errors.
-    /*
     invariant
     {
         assert(player.valid);
@@ -93,7 +91,6 @@ struct DefenseState(T)
             }
         }
     }
-    */
 
     bool opEquals(in DefenseState!T rhs) const
     {
@@ -231,7 +228,7 @@ struct DefenseState(T)
             !(killer_liberties & player) &&
             ((killer_liberties & ~opponent).popcount == 1)
         ){
-            ko = temp;
+            ko = kill;
         }
         else{
             ko.clear;
@@ -336,7 +333,10 @@ struct DefenseState(T)
         T[] moves;
         for (int y = 0; y < T.HEIGHT; y++){
             for (int x = 0; x < T.WIDTH; x++){
-                moves ~= T(x, y);
+                auto move = T(x, y);
+                if (move & playing_area){
+                    moves ~= move;
+                }
             }
         }
         moves ~= T();

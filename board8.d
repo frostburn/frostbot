@@ -7,6 +7,8 @@ import utils;
 import polyomino;
 
 
+enum Transformation {none, rotate, flip, rotate_thrice, mirror_v_rotate, mirror_h, rotate_mirror_v, mirror_v}
+
 struct Board8
 {
     enum WIDTH = 8;
@@ -353,6 +355,40 @@ struct Board8
         );
         version(assert){
             assert(old_bits.popcount == bits.popcount);
+        }
+    }
+
+    void transform(Transformation transformation) nothrow @nogc @safe
+    { 
+        if (transformation == Transformation.rotate){
+            assert(can_rotate);
+            rotate;
+        }
+        else if (transformation == Transformation.flip){
+            mirror_v;
+            mirror_h;
+        }
+        else if (transformation == Transformation.rotate_thrice){
+            assert(can_rotate);
+            rotate;
+            rotate;
+            rotate;
+        }
+        else if (transformation == Transformation.mirror_v_rotate){
+            assert(can_rotate);
+            mirror_v;
+            rotate;
+        }
+        else if (transformation == Transformation.mirror_h){
+            mirror_h;
+        }
+        else if (transformation == Transformation.rotate_mirror_v){
+            assert(can_rotate);
+            rotate;
+            mirror_v;
+        }
+        else if (transformation == Transformation.mirror_v){
+            mirror_v;
         }
     }
 
