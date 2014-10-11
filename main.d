@@ -41,68 +41,49 @@ void print_state(SearchState!Board8 ss, int depth){
     }
 }
 */
-
+void print_path(SearchState8 ss, int depth){
+    if (depth <= 0){
+        return;
+    }
+    writeln(ss);
+    foreach (child; ss.children){
+        writeln(" ", child.lower_bound, ", ", child.upper_bound, ", max=", child.state.black_to_play);
+    }
+    foreach (child; ss.children){
+        if (child.upper_bound == ss.upper_bound){
+            Status[DefenseState8] empty;
+            SearchState8 recalculated_child = new SearchState8(child.state, (cast(SearchState8)child).canonical_state, Board8(), Board8(), Board8(), Board8(), empty);
+            recalculated_child.calculate_minimax_value(80);
+            print_path(recalculated_child, depth - 1);
+            break;
+        }
+    }
+}
 
 void main()
 {
-    /*
-    auto ss = new SearchState8(rectangle8(1, 1));
-    ss.calculate_minimax_value;
-    assert(ss.lower_bound == 0);
-    assert(ss.upper_bound == 0);
 
-    ss = new SearchState8(rectangle8(2, 1));
-    ss.calculate_minimax_value;
-    assert(ss.lower_bound == -2);
-    assert(ss.upper_bound == 2);
-
-
-    ss = new SearchState8(rectangle8(3, 1));
-    ss.calculate_minimax_value;
-    assert(ss.lower_bound == 3);
-    assert(ss.upper_bound == 3);
-
-    ss = new SearchState8(rectangle8(4, 1));
-    ss.calculate_minimax_value(9);
-    assert(ss.lower_bound == 4);
-    assert(ss.upper_bound == 4);
-
-    ss = new SearchState8(rectangle8(2, 2));
-    ss.calculate_minimax_value(8);
-    assert(ss.lower_bound == -4);
-    assert(ss.upper_bound == 4);
-    */
-
-    auto ss = new SearchState8(rectangle8(3, 2));
-    ss.calculate_minimax_value(9);
-    assert(ss.lower_bound == -6);
-    assert(ss.upper_bound == 6);
-
-    /*
-
-    ss = new SearchState8(rectangle8(3, 3));
+    auto s = State8(rectangle8(3, 3) | Board8(3, 0));
+    s.player = Board8(2, 0);
+    s.opponent = Board8(1, 1);
+    auto ss = new SearchState8(s);
+    //ss.state.player = Board8(1, 1);
+    //ss.state.opponent = Board8(1, 0);
     ss.calculate_minimax_value(20);
-    assert(ss.lower_bound == 9);
-    assert(ss.upper_bound == 9);
-    */
 
+    //print_path(ss, 20);
+    writeln(ss);
 
     /*
-    foreach (eyespace; eyespaces(6).byKey){
-        if (!eyespace_fits8(eyespace)){
-            eyespace.rotate;
-            eyespace.snap;
-            if (!eyespace_fits8(eyespace)){
-                continue;
-            }
-        }
-        DefenseState8 s = from_eyespace8(eyespace, false, float.infinity);
-        auto ds = new DefenseSearchState8(s);
-        ds.calculate_minimax_value;
-        if (ds.upper_bound < float.infinity){
-            writeln(ds);
-            writeln;
-        }
-    }
+    State8 s;
+    s.playing_area = rectangle8(3, 3) | Board8(3, 0);
+    s.player = Board8(0, 0) | Board8(0, 1) | Board8(1, 2) | Board8(2, 0);
+    s.opponent = Board8(1, 0) | Board8(1, 1) | Board8(2, 1);
+    auto c = s;
+    c.canonize;
+    Status[DefenseState8] empty;
+    SearchState8 ss = new SearchState8(s, c, Board8(), Board8(), Board8(), Board8(), empty);
+
+    writeln(ss);
     */
 }

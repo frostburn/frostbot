@@ -106,7 +106,7 @@ class BaseSearchState(T, S)
         }
     }
 
-    void analyze_defendable()
+    void analyze_defendable(ref Status[DefenseState!T] defense_table)
     {
         DefenseState!T[] player_eyespaces;
         DefenseState!T[] opponent_eyespaces;
@@ -115,7 +115,7 @@ class BaseSearchState(T, S)
         extract_eyespaces!(T, S)(state, player_eyespaces, opponent_eyespaces);
 
         foreach (player_eyespace; player_eyespaces){
-            auto status = player_eyespace.calculate_status!T;
+            auto status = calculate_status!T(player_eyespace, defense_table);
             if (status == Status.defendable){
                 player_defendable |= player_eyespace.playing_area;
             }
@@ -125,7 +125,7 @@ class BaseSearchState(T, S)
         }
 
         foreach (opponent_eyespace; opponent_eyespaces){
-            auto status = opponent_eyespace.calculate_status!T;
+            auto status = calculate_status!T(opponent_eyespace, defense_table);
             if (status == Status.defendable){
                 opponent_defendable |= opponent_eyespace.playing_area;
             }
@@ -284,21 +284,34 @@ class SearchState(T, S) : BaseSearchState!(T, S)
         }
     }
 
-    this(T playing_area)
+    this(T playing_area){
+        this(S(playing_area));
+    }
+
+    this(S state)
     {
-        state = S(playing_area);
+        this.state = state;
         canonical_state = state;
         canonical_state.canonize;
+
+        Status[DefenseState!T] empty;
+        analyze_defendable(empty);
+        analyze_secure;
+
         calculate_available_moves;
     }
 
-    this(S state, S canonical_state, T player_secure, T opponent_secure, T[] moves=null)
+    this(S state, S canonical_state, T player_defendable, T opponent_defendable, T player_secure, T opponent_secure, ref Status[DefenseState!T] defense_table, T[] moves=null)
     {
         this.state = state;
         this.canonical_state = canonical_state;
+        this.player_defendable = player_defendable;
+        if (!state.ko){
+            this.opponent_defendable = opponent_defendable;
+        }
         this.player_secure = player_secure;
         this.opponent_secure = opponent_secure;
-        analyze_defendable;
+        analyze_defendable(defense_table);
         analyze_secure;
         if (state.passes >= 2){
             is_leaf = true;
@@ -318,13 +331,7 @@ class SearchState(T, S) : BaseSearchState!(T, S)
     T[] effective_moves()
     {
         T[] result;
-        T defendable;
-        if (state.ko){
-            defendable = player_defendable;
-        }
-        else{
-            defendable = player_defendable | opponent_defendable;
-        }
+        T defendable = player_defendable | opponent_defendable;
         foreach (move; moves){
             if (!(move & defendable)){
                 result ~= move;
@@ -333,7 +340,7 @@ class SearchState(T, S) : BaseSearchState!(T, S)
         return result;
     }
 
-    void make_children(ref SearchState!(T, S)[S] state_pool)
+    void make_children(ref SearchState!(T, S)[S] state_pool, ref Status[DefenseState!T] defense_table)
     {
         children = [];
         auto child_states = state.children(effective_moves);
@@ -365,8 +372,11 @@ class SearchState(T, S) : BaseSearchState!(T, S)
                 auto child = new SearchState!(T, S)(
                     child_state,
                     canonical_child_state,
+                    opponent_defendable,
+                    player_defendable,
                     opponent_secure,
                     player_secure,
+                    defense_table,
                     moves
                 );
                 allocated_children ~= child;
@@ -385,6 +395,7 @@ class SearchState(T, S) : BaseSearchState!(T, S)
     void calculate_minimax_value(
         ref SearchState!(T, S)[S] state_pool,
         ref HistoryNode!(S) history,
+        ref Status[DefenseState!T] defense_table,
         float depth=float.infinity,
         float alpha=-float.infinity,
         float beta=float.infinity
@@ -417,7 +428,7 @@ class SearchState(T, S) : BaseSearchState!(T, S)
         allocated_history_nodes ~= my_history;
 
         if (!children.length){
-            make_children(state_pool);
+            make_children(state_pool, defense_table);
         }
 
         // Check for leaves and transpositions.
@@ -439,10 +450,10 @@ class SearchState(T, S) : BaseSearchState!(T, S)
             }
 
             if (state.black_to_play != child.state.black_to_play){
-                (cast(SearchState!(T, S))child).calculate_minimax_value(state_pool, my_history, depth - 1, alpha, beta);
+                (cast(SearchState!(T, S))child).calculate_minimax_value(state_pool, my_history, defense_table, depth - 1, alpha, beta);
             }
             else{
-                (cast(SearchState!(T, S))child).calculate_minimax_value(state_pool, my_history, depth - 1, -beta, -alpha);
+                (cast(SearchState!(T, S))child).calculate_minimax_value(state_pool, my_history, defense_table, depth - 1, -beta, -alpha);
             }
             changed = update_value; // TODO: Do single updates.
             if (changed){
@@ -456,15 +467,17 @@ class SearchState(T, S) : BaseSearchState!(T, S)
 
         SearchState!(T, S)[S] state_pool;
         HistoryNode!(S) history = null;
-        calculate_minimax_value(state_pool, history, depth, -float.infinity, float.infinity);
+        Status[DefenseState!T] defense_table;
+        calculate_minimax_value(state_pool, history, defense_table, depth, -float.infinity, float.infinity);
     }
 
     void iterative_deepening_search(int min_depth, int max_depth)
     {
         SearchState!(T, S)[S] state_pool;
         HistoryNode!(S) history = null;
+        Status[DefenseState!T] defense_table;
         for (int i = min_depth; i <= max_depth; i++){
-            calculate_minimax_value(state_pool, history, i, lower_bound, upper_bound);
+            calculate_minimax_value(state_pool, history, defense_table, i, lower_bound, upper_bound);
         }
     }
 
@@ -522,6 +535,7 @@ class SearchState(T, S) : BaseSearchState!(T, S)
     }
 }
 
+alias BaseSearchState8 = BaseSearchState!(Board8, State8);
 alias SearchState8 = SearchState!(Board8, State8);
 
 unittest
@@ -545,7 +559,8 @@ unittest
     s.player = Board8(0, 0) | Board8(1, 1);
     auto c = s;
     c.canonize;
-    SearchState8 ss = new SearchState8(s, c, Board8(), Board8());
+    Status[DefenseState8] empty;
+    SearchState8 ss = new SearchState8(s, c, Board8(), Board8(), Board8(), Board8(), empty);
 
     assert(ss.player_secure == ss.state.playing_area);
 }

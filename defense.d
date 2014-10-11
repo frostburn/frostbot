@@ -17,7 +17,7 @@ import defense_search_state;
 enum Status {dead, killable, unknown, defendable, secure}
 
 
-enum MAX_SPACE_SIZE = 5;
+enum MAX_SPACE_SIZE = 6;
 
 
 DefenseState!T[] extract_player_eyespaces(T, S)(S state)
@@ -64,6 +64,19 @@ void extract_eyespaces(T, S)(S state, out DefenseState!T[] player_eyespaces, out
     player_eyespaces = extract_player_eyespaces!(T, S)(state);
     state.swap_turns;
     opponent_eyespaces = extract_player_eyespaces!(T, S)(state);
+}
+
+
+Status calculate_status(T)(DefenseState!T defense_state, ref Status[DefenseState!T] transposition_table)
+{
+    if (defense_state !in transposition_table){
+        auto status = calculate_status!T(defense_state);
+        transposition_table[defense_state] = status;
+        return status;
+    }
+    else{
+        return transposition_table[defense_state];
+    }
 }
 
 
@@ -142,7 +155,19 @@ body
 }
 
 
-alias calculate_status8 = calculate_status!Board8;
+// Hmmm?? No double specializations?
+// alias calculate_status8 = calculate_status!Board8;
+
+Status calculate_status8(DefenseState8 defense_state,ref Status[DefenseState8] transposition_table)
+{
+    return calculate_status!Board8(defense_state, transposition_table);
+}
+
+Status calculate_status8(DefenseState8 defense_state)
+{
+    return calculate_status!Board8(defense_state);
+}
+
 
 
 unittest
