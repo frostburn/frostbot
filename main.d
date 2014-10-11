@@ -1,6 +1,7 @@
 import std.stdio;
 import core.thread;
 
+import utils;
 import board8;
 import bit_matrix;
 import state;
@@ -43,72 +44,19 @@ void print_state(SearchState!Board8 ss, int depth){
 
 void main()
 {
-    //auto pa = rectangle!Board8(3, 3) | Board8(3, 0);
-    //auto ss = new SearchState!Board8(pa);
+    auto s = Shape([Piece(0, 0), Piece(0, 1)]);
+    auto e = Shape([Piece(1, 0), Piece(1, 1)]);
 
+    auto es = Eyespace(s, e);
+
+    //writeln(es);
+    //writeln(es.is_good);
+
+    writeln(eyespaces(4).length);
     /*
-    auto s = DefenseState8();
-    s.player = s.playing_area & ~rectangle8(4, 3) & ~Board8(4, 0);
-    s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
-
-    s.opponent_target = s.opponent;
-    s.player_outside_liberties = s.player | Board8(4, 0);
-    s.ko_threats = -1;
-
-    writeln(s);
+    foreach (eyespace; eyespace_set.byKey){
+        writeln(eyespace);
+        writeln;
+    }
     */
-
-    //auto s = Shape([Piece(0, 0), Piece(0, 1), Piece(0, 2)]);
-    //writeln(s.liberties);
-
-    
-    //TODO: Move to unittests.
-    auto s = DefenseState8();
-    s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
-    s.opponent_target = s.opponent;
-    s.player = rectangle8(5, 4) & ~rectangle8(4, 3) & ~Board8(4, 0) & ~Board8(4, 1);
-    s.player_outside_liberties = Board8(4, 0) | Board8(4, 1) | s.player;
-    s.playing_area = rectangle8(5, 4);
-    s.ko_threats = float.infinity;
-
-    auto ds = new DefenseSearchState8(s);
-
-    ds.calculate_minimax_value;
-
-    //writeln(ds.state);
-    writeln(ds.lower_bound, ", ", ds.upper_bound);
-
-    //auto ds = new DefenseSearchState8(s, s.player, s.opponent);
-
-    //ds.calculate_minimax_value;
-    //assert(ds.lower_bound == 6);
-    //assert(ds.upper_bound == 6);
-
-    //print_state(ss, 50);
-    //writeln(ds.state);
-    //writeln(ds.lower_bound, ", ", ds.upper_bound);
-
-    /*
-    HistoryNode!(State!Board8) parent_h = null;
-
-    auto s = State!Board8();
-    auto h = new HistoryNode!(State!Board8)(s, parent_h);
-
-    auto child_s = s;
-    child_s.player = Board8(3, 3);
-    auto child_h = new HistoryNode!(State!Board8)(child_s, h);
-
-    //writeln(s in parent_h);
-    writeln(child_s in h);
-    writeln(child_s in child_h);
-    writeln(s in child_h);
-    */
-
-    /*
-    auto gs = new GameState!Board8(rectangle!Board8(3, 3));
-
-    gs.calculate_minimax_value(false);
-    writeln(gs);
-    */
-
 }

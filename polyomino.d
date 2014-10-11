@@ -3,6 +3,8 @@ module polyomino;
 import std.stdio;
 import std.array;
 
+import utils;
+
 
 struct Piece
 {
@@ -53,6 +55,18 @@ struct Shape
     }
     */
 
+    Shape opAssign(in Shape rhs)
+    {
+        this.pieces = rhs.pieces.dup;
+
+        return this;
+    }
+
+    this(this) pure nothrow @safe
+    {
+        pieces = pieces.dup;
+    }
+
     bool opEquals(in Shape rhs) const pure nothrow @nogc @safe
     {
         if (pieces.length != rhs.pieces.length){
@@ -95,6 +109,42 @@ struct Shape
         return result;
     }
 
+    Shape opBinary(string op)(in Shape rhs)
+        if (op == "|")
+    {
+        auto piece_set = this.piece_set;
+
+        foreach (piece; rhs.pieces){
+            piece_set[piece] = true;
+        }
+
+        Piece[] new_pieces;
+        foreach (piece; piece_set.byKey){
+            new_pieces ~= piece;
+        }
+
+        return Shape(new_pieces);
+    }
+
+    Shape opBinary(string op)(in Shape rhs)
+        if (op == "&")
+    {
+        auto piece_set = this.piece_set;
+
+        Piece[] new_pieces;
+        foreach (piece; rhs.pieces){
+            if (piece in piece_set){
+                new_pieces ~= piece;
+            }
+        }
+
+        return Shape(new_pieces);
+    }
+
+    size_t length(){
+        return pieces.length;
+    }
+
     int extent(string member, string op)()
     {
         if (!pieces.length){
@@ -112,19 +162,31 @@ struct Shape
         return result;
     }
 
+    bool[Piece] piece_set()
+    {
+        bool[Piece] _piece_set;
+        foreach (piece; pieces){
+            _piece_set[piece] = true;
+        }
+        return _piece_set;
+    }
+
+
     alias west_extent = extent!("x", "<");
     alias east_extent = extent!("x", ">");
     alias north_extent = extent!("y", "<");
     alias south_extent = extent!("y", ">");
 
+    void translate(int x, int y){
+        foreach (ref piece; pieces){
+            piece.x += x;
+            piece.y += y;
+        }
+    }
+
     void snap()
     {
-        auto west_shift = west_extent;
-        auto north_shift = north_extent;
-        foreach (ref piece; pieces){
-            piece.x -= west_shift;
-            piece.y -= north_shift;
-        }
+        translate(-west_extent, -north_extent);
     }
 
     void rotate()
@@ -134,7 +196,6 @@ struct Shape
             piece.x = piece.y;
             piece.y = -temp;
         }
-        snap;
         pieces.sort;
     }
 
@@ -143,38 +204,36 @@ struct Shape
         foreach(ref piece; pieces){
             piece.x = -piece.x;
         }
-        snap;
         pieces.sort;
     }
 
     void canonize()
     {
         snap;
-        auto temp = Shape(this.pieces);
+        auto temp = this;
         enum compare_and_replace = "
             if (temp < this){
                 this = temp;
-                temp = Shape(this.pieces);
             }
         ";
         for (int i = 0; i < 3; i++){
             temp.rotate;
+            temp.snap;
             mixin(compare_and_replace);
         }
         temp.mirror_h;
+        temp.snap;
         mixin(compare_and_replace);
         for (int i = 0; i < 3; i++){
             temp.rotate;
+            temp.snap;
             mixin(compare_and_replace);
         }
     }
 
     bool[Shape] shapes_plus_one()
     {
-        bool[Piece] piece_set;
-        foreach (piece; pieces){
-            piece_set[piece] = true;
-        }
+        auto piece_set = this.piece_set;
 
         bool[Shape] result;
         enum add_new_shape = "
@@ -203,10 +262,7 @@ struct Shape
 
     Shape liberties()
     {
-        bool[Piece] piece_set;
-        foreach (piece; pieces){
-            piece_set[piece] = true;
-        }
+        auto piece_set = this.piece_set;
 
         bool[Piece] liberty_piece_set;
         enum add_new_piece = "
@@ -234,13 +290,220 @@ struct Shape
         return Shape(new_pieces);
     }
 
-    //TODO:
-    //Shape corners()
-    //Shape[] chains()
+    Shape corners()
+    {
+        auto piece_set = this.piece_set;
+
+        foreach (piece; pieces){
+            auto new_piece = piece;
+            new_piece.x += 1;
+            piece_set[new_piece] = true;
+            new_piece.x -= 2;
+            piece_set[new_piece] = true;
+            new_piece.x += 1;
+            new_piece.y += 1;
+            piece_set[new_piece] = true;
+            new_piece.y -= 2;
+            piece_set[new_piece] = true;
+        }
+
+        bool[Piece] corner_piece_set;
+        enum add_new_piece = "
+            if (new_piece !in piece_set){
+                corner_piece_set[new_piece] = true;
+            }
+        ";
+
+        foreach (piece; pieces){
+            auto new_piece = piece;
+            new_piece.x += 1;
+            new_piece.y += 1;
+            mixin(add_new_piece);
+            new_piece.x -= 2;
+            mixin(add_new_piece);
+            new_piece.y -= 2;
+            mixin(add_new_piece);
+            new_piece.x += 2;
+            mixin(add_new_piece);
+        }
+
+        Piece[] new_pieces;
+        foreach (corner; corner_piece_set.byKey){
+            new_pieces ~= corner;
+        }
+        return Shape(new_pieces);
+    }
+
+    Shape[] chains()
+    {
+        bool[Piece] piece_set = this.piece_set;
+
+        Piece[] queue;
+        Shape[] result;
+        Piece[] chain;
+
+        enum add_to_queue = "
+            if (piece in piece_set){
+                queue ~= piece;
+            }
+        ";
+
+        while (piece_set.length){
+            chain = [];
+            queue ~= piece_set.byKey.front;
+            while (queue.length){
+                auto piece = queue.front;
+                queue.popFront;
+
+                piece_set.remove(piece);
+                chain ~= piece;
+
+                piece.x += 1;
+                mixin(add_to_queue);
+                piece.x -= 2;
+                mixin(add_to_queue);
+                piece.x += 1;
+                piece.y += 1;
+                mixin(add_to_queue);
+                piece.y -= 2;
+                mixin(add_to_queue);
+            }
+            result ~= Shape(chain);
+        }
+        return result;
+    }
 }
 
-//TODO:
-//struct Eyespace
+struct Eyespace
+{
+    Shape space;
+    Shape edge;
+
+    Eyespace opAssign(in Eyespace rhs)
+    {
+        this.space = rhs.space;
+        this.edge = rhs.edge;
+
+        return this;
+    }
+
+    this(this)
+    {
+        space = space;
+        edge = edge;
+    }
+
+    bool opEquals(in Eyespace rhs) const pure nothrow
+    {
+        return space == rhs.space && edge == rhs.edge;
+    }
+
+    int opCmp(in Eyespace rhs) const pure nothrow
+    {
+        if (space != rhs.space){
+            return space.opCmp(rhs.space);
+        }
+        return edge.opCmp(rhs.edge);
+    }
+
+    hash_t toHash() const nothrow @safe
+    {
+        return space.toHash ^ edge.toHash;
+    }
+
+    bool is_good(){
+        foreach (edge_chain; edge.chains){
+            if ((edge_chain.liberties & space).length < 2){
+                return false;
+            }
+        }
+        return true;
+    }
+
+    int extent(string direction, string op)()
+    {
+        mixin("int space_extent = space." ~ direction ~"_extent;");
+        mixin("int edge_extent = edge." ~ direction ~ "_extent;");
+        mixin("
+            if (space_extent " ~ op ~ " edge_extent){
+                return space_extent;
+            }
+            return edge_extent;
+        ");
+    }
+
+    alias west_extent = extent!("west", "<");
+    alias north_extent = extent!("north", "<");
+    alias east_extent = extent!("east", ">");
+    alias south_extent = extent!("south", ">");
+
+    void snap(){
+        auto west_extent = this.west_extent;
+        auto north_extent = this.north_extent;
+        space.translate(-west_extent, -north_extent);
+        edge.translate(-west_extent, -north_extent);
+    }
+
+    void rotate(){
+        space.rotate;
+        edge.rotate;
+    }
+
+    void mirror_h(){
+        space.mirror_h;
+        edge.mirror_h;
+    }
+
+    void canonize()
+    {
+        snap;
+        auto temp = this;
+        enum compare_and_replace = "
+            if (temp < this){
+                this = temp;
+            }
+        ";
+        for (int i = 0; i < 3; i++){
+            temp.rotate;
+            temp.snap;
+            mixin(compare_and_replace);
+        }
+        temp.mirror_h;
+        temp.snap;
+        mixin(compare_and_replace);
+        for (int i = 0; i < 3; i++){
+            temp.rotate;
+            temp.snap;
+            mixin(compare_and_replace);
+        }
+    }
+
+    string toString()
+    {
+        string r;
+        auto space_set = space.piece_set;
+        auto edge_set = edge.piece_set;
+        for (int y = north_extent; y <= south_extent; y++){
+            for (int x = west_extent; x <= east_extent; x++){
+                auto piece = Piece(x, y);
+                if (piece in space_set){
+                    r ~= ". ";
+                }
+                else if (piece in edge_set){
+                    r ~= "# ";
+                }
+                else{
+                    r ~= "  ";
+                }
+            }
+            if (y < south_extent){
+                r ~= "\n";
+            }
+        }
+        return r;
+    }
+}
+
 
 bool[Shape] polyominoes(int max_size)
 {
@@ -264,6 +527,43 @@ bool[Shape] polyominoes(int max_size)
     return result;
 }
 
+
+bool[Eyespace] eyespaces(int max_size)
+{
+    bool[Eyespace] eyespace_set;
+
+    foreach (space; polyominoes(max_size).byKey){
+        Shape[] liberty_parts = space.liberties.chains;
+        Shape[] corner_parts = space.corners.chains;
+        foreach (liberty_subset; PowerSet!Shape(liberty_parts)){
+            Shape edge;
+            foreach (edge_part; liberty_subset){
+                edge = edge | edge_part;
+            }
+            Shape[] connecting_corner_parts = [];
+            foreach (corner_part; corner_parts){
+                if ((corner_part.liberties & edge).length >= 2){
+                    connecting_corner_parts ~= corner_part;
+                }
+            }
+            foreach (corner_subset; PowerSet!Shape(connecting_corner_parts)){
+                auto final_edge = edge;
+                foreach (corner_part; corner_subset){
+                    final_edge = final_edge | corner_part;
+                }
+                auto eyespace = Eyespace(space, final_edge);
+                if (eyespace.is_good){
+                    eyespace.canonize;
+                    eyespace_set[eyespace] = true;
+                }
+            }
+        }
+    }
+
+    return eyespace_set;
+}
+
+
 unittest
 {
     assert(polyominoes(1).length == 1);
@@ -273,4 +573,28 @@ unittest
     assert(polyominoes(5).length == 21);
     assert(polyominoes(6).length == 56);
     assert(polyominoes(7).length == 164);
+}
+
+unittest
+{
+    auto s = Shape([Piece(0, 0)]);
+    assert(s.liberties == Shape([Piece(-1, 0), Piece(0, -1), Piece(0, 1), Piece(1, 0)]));
+    assert(s.corners == Shape([Piece(-1, -1), Piece(-1, 1), Piece(1, -1), Piece(1, 1)]));
+    assert(s.corners.chains.length == 4);
+}
+
+unittest
+{
+    auto s = Shape([Piece(0, 0), Piece(0, 1)]);
+    auto e = Shape([Piece(0, 2)]);
+    auto es = Eyespace(s, e);
+    assert(!es.is_good);
+
+    es.edge = Shape([Piece(1, 0), Piece(1, 1)]);
+    assert(es.is_good);
+}
+
+unittest
+{
+    assert(eyespaces(4).length == 314);
 }

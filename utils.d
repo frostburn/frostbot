@@ -13,6 +13,7 @@ uint popcount(ulong b) pure nothrow @nogc @safe
      return cast(uint)b;
 }
 
+
 version(no_popcnt){
     uint popcnt (ulong bits) pure nothrow @nogc @safe
     {
@@ -29,6 +30,7 @@ else{
     }
 }
 
+
 int compare(in ulong a, in ulong b) pure nothrow @nogc @safe
 {
     if (a < b){
@@ -40,6 +42,7 @@ int compare(in ulong a, in ulong b) pure nothrow @nogc @safe
     return 0;
 }
 
+
 bool member_in_list(T)(ref T member, ref T[] list){
     foreach (list_member; list){
         if (member is list_member){
@@ -47,4 +50,29 @@ bool member_in_list(T)(ref T member, ref T[] list){
         }
     }
     return false;
+}
+
+/// PowerSet implementation by bearophile @ http://forum.dlang.org/
+struct PowerSet(T) {
+     T[] items;
+     int opApply(int delegate(ref T[]) dg) {
+         int result;
+         T[] res;
+         T[30] buf;
+         if (!items.length) {
+             result = dg(res);
+         } else {
+             outer:
+             foreach (opt; [items[0..1], []]) {
+                 buf[0 .. opt.length] = opt[];
+                 foreach (r; PowerSet(items[1..$])) {
+                     buf[opt.length .. opt.length + r.length] = r[];
+                     res = buf[0 .. (opt.length + r.length)];
+                     result = dg(res);
+                     if (result) break outer;
+                 }
+             }
+         }
+         return result;
+     }
 }
