@@ -189,6 +189,15 @@ struct State(T)
         black_to_play = !black_to_play;
     }
 
+    void swap_turns()
+    {
+        auto temp = player;
+        player = opponent;
+        opponent = temp;
+
+        black_to_play = !black_to_play;
+    }
+
     bool make_move(in T move)
     {
         T old_ko = ko;
@@ -405,7 +414,7 @@ struct State(T)
         }
     }
 
-    string _toString(T player_unconditional, T opponent_unconditional)
+    string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure)
     {
         string r;
         T p;
@@ -414,8 +423,11 @@ struct State(T)
                 p = T(x, y);
                 if (playing_area & p){
                     r ~= "\x1b[0;30;";
-                    if (player_unconditional & p || opponent_unconditional & p){
+                    if (player_secure & p || opponent_secure & p){
                         r ~= "42m";
+                    }
+                    else if ((player_defendable | opponent_defendable) & p){
+                        r ~= "44m";
                     }
                     else{
                         r ~= "43m";
@@ -455,7 +467,7 @@ struct State(T)
     }
 
     string toString(){
-        return _toString(T(), T());
+        return _toString(T(), T(), T(), T());
     }
 }
 

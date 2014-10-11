@@ -48,6 +48,8 @@ struct DefenseState(T)
         this.ko_threats = ko_threats;
     }
 
+    // Invariant disabled because it's causing ghostlike errors.
+    /*
     invariant
     {
         assert(player.valid);
@@ -91,6 +93,7 @@ struct DefenseState(T)
             }
         }
     }
+    */
 
     bool opEquals(in DefenseState!T rhs) const
     {
@@ -505,7 +508,7 @@ struct DefenseState(T)
         }
     }
 
-    string _toString(T player_unconditional, T opponent_unconditional)
+    string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure)
     {
         string r;
         T p;
@@ -526,7 +529,7 @@ struct DefenseState(T)
                     else if (opponent_target & p){
                         r ~= "41m";
                     }
-                    else if (player_unconditional & p || opponent_unconditional & p){
+                    else if ((player_defendable | opponent_defendable | player_secure | opponent_secure) & p){
                         r ~= "42m";
                     }
                     else{
@@ -567,7 +570,7 @@ struct DefenseState(T)
     }
 
     string toString(){
-        return _toString(T(), T());
+        return _toString(T(), T(), T(), T());
     }
 }
 

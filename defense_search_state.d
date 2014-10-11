@@ -30,24 +30,24 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
     this (S state){
         state.black_to_play = true;
         this.state = state;
-        analyze_unconditional;
+        analyze_secure;
         calculate_available_moves;
     }
 
-    this(S state, T player_unconditional, T opponent_unconditional, T[] moves=null)
+    this(S state, T player_secure, T opponent_secure, T[] moves=null)
     {
         assert(state.black_to_play);
         this.state = state;
-        this.player_unconditional = player_unconditional;
-        this.opponent_unconditional = opponent_unconditional;
-        analyze_unconditional;
+        this.player_secure = player_secure;
+        this.opponent_secure = opponent_secure;
+        analyze_secure;
         if (state.passes >= 2){
             is_leaf = true;
             lower_bound = upper_bound = liberty_score;
             return;
         }
 
-        if (state.player_target & ~state.player || state.player_target & opponent_unconditional){
+        if (state.player_target & ~state.player || state.player_target & opponent_secure){
             is_leaf = true;
             lower_bound = upper_bound = -float.infinity;
             return;
@@ -55,7 +55,7 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
         // Suicide is prohibited so it is not possible kill your own target.
         assert(!(state.opponent_target & ~state.opponent));
         // It is however possible to blunder forfeit your stones to the opponent control.
-        if (state.opponent_target & player_unconditional){
+        if (state.opponent_target & player_secure){
             is_leaf = true;
             lower_bound = upper_bound = float.infinity;
             return;
@@ -88,8 +88,8 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
                 assert(child_state.black_to_play == state.black_to_play);
                 auto child = new DefenseSearchState!(T, S)(
                     child_state,
-                    opponent_unconditional,
-                    player_unconditional,
+                    opponent_secure,
+                    player_secure,
                     moves
                 );
                 allocated_children ~= child;

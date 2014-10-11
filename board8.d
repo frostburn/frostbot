@@ -103,14 +103,24 @@ struct Board8
         return bits.popcount;
     }
 
+    Board8 blob(in Board8 playing_area) const pure nothrow @nogc @safe
+    {
+        auto temp = bits | (bits << H_SHIFT) | (bits >> H_SHIFT);
+        return Board8(
+            (temp | (temp << V_SHIFT) | (temp >> V_SHIFT)) & playing_area.bits
+        );
+    }
+
     Board8 liberties(in Board8 playing_area) const pure nothrow @nogc @safe
     {
-        return (
-            (this << H_SHIFT) |
-            (this >> H_SHIFT) |
-            (this << V_SHIFT) |
-            (this >> V_SHIFT)
-        ) & (~this) & playing_area;
+        return Board8(
+            (
+                (bits << H_SHIFT) |
+                (bits >> H_SHIFT) |
+                (bits << V_SHIFT) |
+                (bits >> V_SHIFT)
+            ) & (~bits) & playing_area.bits
+        );
     }
 
     Board8 east(in int n=1) const

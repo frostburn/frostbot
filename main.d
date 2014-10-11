@@ -45,16 +45,47 @@ void print_state(SearchState!Board8 ss, int depth){
 
 void main()
 {
-    DefenseState8 s;
-    auto space = rectangle8(5, 1).south.east;
-    auto opponent = rectangle8(7, 3) & ~space;
+    /*
+    auto ss = new SearchState8(rectangle8(1, 1));
+    ss.calculate_minimax_value;
+    assert(ss.lower_bound == 0);
+    assert(ss.upper_bound == 0);
 
-    s.playing_area = space | opponent;
-    s.opponent = opponent;
-    s.opponent_target = opponent;
+    ss = new SearchState8(rectangle8(2, 1));
+    ss.calculate_minimax_value;
+    assert(ss.lower_bound == -2);
+    assert(ss.upper_bound == 2);
 
-    writeln(s);
-    writeln(s.calculate_status8);
+
+    ss = new SearchState8(rectangle8(3, 1));
+    ss.calculate_minimax_value;
+    assert(ss.lower_bound == 3);
+    assert(ss.upper_bound == 3);
+
+    ss = new SearchState8(rectangle8(4, 1));
+    ss.calculate_minimax_value(9);
+    assert(ss.lower_bound == 4);
+    assert(ss.upper_bound == 4);
+
+    ss = new SearchState8(rectangle8(2, 2));
+    ss.calculate_minimax_value(8);
+    assert(ss.lower_bound == -4);
+    assert(ss.upper_bound == 4);
+    */
+
+    auto ss = new SearchState8(rectangle8(3, 2));
+    ss.calculate_minimax_value(9);
+    assert(ss.lower_bound == -6);
+    assert(ss.upper_bound == 6);
+
+    /*
+
+    ss = new SearchState8(rectangle8(3, 3));
+    ss.calculate_minimax_value(20);
+    assert(ss.lower_bound == 9);
+    assert(ss.upper_bound == 9);
+    */
+
 
     /*
     foreach (eyespace; eyespaces(6).byKey){

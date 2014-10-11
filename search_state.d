@@ -9,6 +9,8 @@ import std.random;
 import utils;
 import board8;
 import state;
+import defense_state;
+import defense;
 
 
 class HistoryNode(T)
@@ -48,8 +50,12 @@ class BaseSearchState(T, S)
     BaseSearchState!(T, S)[] children;
     BaseSearchState!(T, S)[S] parents;
 
-    T player_unconditional;
-    T opponent_unconditional;
+    T player_defendable;
+    T opponent_defendable;
+
+    T player_secure;
+    T opponent_secure;
+
 
     public
     {
@@ -60,7 +66,7 @@ class BaseSearchState(T, S)
 
     invariant
     {
-        assert(!(player_unconditional & opponent_unconditional));
+        assert(!(player_secure & opponent_secure));
         assert(state.passes <= 2);
 
         // TODO: Find out why this breaks.
@@ -83,8 +89,8 @@ class BaseSearchState(T, S)
     {
         int score = 0;
 
-        auto player_controlled_area = (state.player | player_unconditional) & ~opponent_unconditional;
-        auto opponent_controlled_area = (state.opponent | opponent_unconditional) & ~player_unconditional;
+        auto player_controlled_area = (state.player | player_defendable | player_secure) & ~(opponent_defendable | opponent_secure);
+        auto opponent_controlled_area = (state.opponent | opponent_defendable | opponent_secure) & ~(player_defendable | player_secure);
 
         score += player_controlled_area.popcount;
         score -= opponent_controlled_area.popcount;
@@ -100,9 +106,39 @@ class BaseSearchState(T, S)
         }
     }
 
-    void analyze_unconditional()
+    void analyze_defendable()
     {
-        state.analyze_unconditional(player_unconditional, opponent_unconditional);
+        DefenseState!T[] player_eyespaces;
+        DefenseState!T[] opponent_eyespaces;
+
+        // TODO: Exclude already analyzed areas.
+        extract_eyespaces!(T, S)(state, player_eyespaces, opponent_eyespaces);
+
+        foreach (player_eyespace; player_eyespaces){
+            auto status = player_eyespace.calculate_status!T;
+            if (status == Status.defendable){
+                player_defendable |= player_eyespace.playing_area;
+            }
+            else if (status == Status.secure){
+                player_secure |= player_eyespace.playing_area;
+            }
+        }
+
+        foreach (opponent_eyespace; opponent_eyespaces){
+            auto status = opponent_eyespace.calculate_status!T;
+            if (status == Status.defendable){
+                opponent_defendable |= opponent_eyespace.playing_area;
+            }
+            else if (status == Status.secure){
+                opponent_secure |= opponent_eyespace.playing_area;
+            }
+        }
+    }
+
+    void analyze_secure()
+    {
+        // Intentionally abusing unconditional life analysis by treating secure territory as unconditional territory.
+        state.analyze_unconditional(player_secure, opponent_secure);
     }
 
     void calculate_available_moves()
@@ -122,7 +158,7 @@ class BaseSearchState(T, S)
 
     void prune_moves()
     {
-        if (!player_unconditional && !opponent_unconditional){
+        if (!player_secure && !opponent_secure){
             return;
         }
         T[] temp;
@@ -130,7 +166,7 @@ class BaseSearchState(T, S)
             if (!move){
                 temp ~= move;
             }
-            else if (move & ~player_unconditional & ~opponent_unconditional){
+            else if (move & ~player_secure & ~opponent_secure){
                 temp ~= move;
             }
         }
@@ -172,7 +208,7 @@ class BaseSearchState(T, S)
     {
         return format(
             "%s\nlower_bound=%s upper_bound=%s leaf=%s number of children=%s",
-            state._toString(player_unconditional, opponent_unconditional),
+            state._toString(player_defendable, opponent_defendable, player_secure, opponent_secure),
             lower_bound,
             upper_bound,
             is_leaf,
@@ -201,13 +237,13 @@ static bool is_better(T, S)(BaseSearchState!(T, S) a, BaseSearchState!(T, S) b){
         return false;
     }
 
-    int a_unconditional = a.opponent_unconditional.popcount - a.player_unconditional.popcount;
-    int b_unconditional = b.opponent_unconditional.popcount - b.player_unconditional.popcount;
+    int a_secure = a.opponent_secure.popcount - a.player_secure.popcount;
+    int b_secure = b.opponent_secure.popcount - b.player_secure.popcount;
 
-    if (a_unconditional > b_unconditional){
+    if (a_secure > b_secure){
         return true;
     }
-    if (b_unconditional > a_unconditional){
+    if (b_secure > a_secure){
         return false;
     }
 
@@ -256,13 +292,14 @@ class SearchState(T, S) : BaseSearchState!(T, S)
         calculate_available_moves;
     }
 
-    this(S state, S canonical_state, T player_unconditional, T opponent_unconditional, T[] moves=null)
+    this(S state, S canonical_state, T player_secure, T opponent_secure, T[] moves=null)
     {
         this.state = state;
         this.canonical_state = canonical_state;
-        this.player_unconditional = player_unconditional;
-        this.opponent_unconditional = opponent_unconditional;
-        analyze_unconditional;
+        this.player_secure = player_secure;
+        this.opponent_secure = opponent_secure;
+        analyze_defendable;
+        analyze_secure;
         if (state.passes >= 2){
             is_leaf = true;
             lower_bound = upper_bound = liberty_score;
@@ -276,13 +313,30 @@ class SearchState(T, S) : BaseSearchState!(T, S)
             this.moves = moves;
             prune_moves;
         }
+    }
 
+    T[] effective_moves()
+    {
+        T[] result;
+        T defendable;
+        if (state.ko){
+            defendable = player_defendable;
+        }
+        else{
+            defendable = player_defendable | opponent_defendable;
+        }
+        foreach (move; moves){
+            if (!(move & defendable)){
+                result ~= move;
+            }
+        }
+        return result;
     }
 
     void make_children(ref SearchState!(T, S)[S] state_pool)
     {
         children = [];
-        auto child_states = state.children(moves);
+        auto child_states = state.children(effective_moves);
 
         // Prune out transpositions.
         S[] canonical_child_states;
@@ -311,8 +365,8 @@ class SearchState(T, S) : BaseSearchState!(T, S)
                 auto child = new SearchState!(T, S)(
                     child_state,
                     canonical_child_state,
-                    opponent_unconditional,
-                    player_unconditional,
+                    opponent_secure,
+                    player_secure,
                     moves
                 );
                 allocated_children ~= child;
@@ -493,7 +547,7 @@ unittest
     c.canonize;
     SearchState8 ss = new SearchState8(s, c, Board8(), Board8());
 
-    assert(ss.player_unconditional == ss.state.playing_area);
+    assert(ss.player_secure == ss.state.playing_area);
 }
 
 

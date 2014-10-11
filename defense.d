@@ -9,6 +9,7 @@ import std.random;
 import utils;
 import polyomino;
 import board8;
+import state;
 import defense_state;
 import defense_search_state;
 
@@ -19,6 +20,53 @@ enum Status {dead, killable, unknown, defendable, secure}
 enum MAX_SPACE_SIZE = 5;
 
 
+DefenseState!T[] extract_player_eyespaces(T, S)(S state)
+{
+    DefenseState!T[] result;
+
+    T player_edges;
+    foreach (player_chain; state.player.chains){
+        // TODO: Exclude certain chains of size two.
+        if (player_chain.popcount > 1){
+            player_edges |= player_chain;
+        }
+    }
+
+    foreach (region; (state.playing_area & ~player_edges).chains){
+        if (state.ko & region){
+            continue;
+        }
+        auto blob = region.blob(state.playing_area);
+        auto player_target = blob;
+        player_target.flood_into(player_edges);
+        auto playing_area = blob | player_target;
+        auto defense_state = DefenseState!T(
+            state.opponent & playing_area,
+            state.player & playing_area,
+            playing_area,
+            T(),
+            T(),
+            player_target,
+            T(),
+            T(),
+            true,
+            0,
+            float.infinity
+        );
+        result ~= defense_state;
+    }
+    return result;
+}
+
+
+void extract_eyespaces(T, S)(S state, out DefenseState!T[] player_eyespaces, out DefenseState!T[] opponent_eyespaces)
+{
+    player_eyespaces = extract_player_eyespaces!(T, S)(state);
+    state.swap_turns;
+    opponent_eyespaces = extract_player_eyespaces!(T, S)(state);
+}
+
+
 Status calculate_status(T)(DefenseState!T defense_state)
 in
 {
@@ -26,9 +74,14 @@ in
     assert(!defense_state.player_outside_liberties);
     assert(!defense_state.opponent_outside_liberties);  // TODO: Add support for outside liberties.
     assert(defense_state.black_to_play);
+    assert(defense_state.ko_threats == float.infinity);
 }
 body
 {
+    debug(calculate_status) {
+        writeln("Calculating status for:");
+        writeln(defense_state);
+    }
     if (!defense_state.opponent_target){
         return Status.unknown;
     }
@@ -54,7 +107,6 @@ body
             }
         }
 
-        defense_state.ko_threats = float.infinity;
         auto defense_search_state = new DefenseSearchState!(T, DefenseState!T)(defense_state);
         defense_search_state.calculate_minimax_value;
 
@@ -62,7 +114,13 @@ body
             return Status.killable;
         }
 
-        if (defense_search_state.upper_bound < float.infinity && defense_search_state.lower_bound == defense_search_state.upper_bound){
+        int min_score = defense_state.playing_area.popcount;
+        min_score = -min_score;
+        if (defense_search_state.lower_bound > min_score){
+            // Probably a seki.
+            return Status.unknown;
+        }
+        if (defense_search_state.lower_bound == min_score && defense_search_state.upper_bound == min_score){
             foreach (child_state; defense_state.children){
                 child_state.swap_turns;
                 assert(child_state.black_to_play);
@@ -72,7 +130,7 @@ body
                     writeln("Child state:");
                     writeln(child_search_state);
                 }
-                if (child_search_state.upper_bound == float.infinity || child_search_state.lower_bound != child_search_state.upper_bound){
+                if (child_search_state.lower_bound > min_score){
                     return Status.defendable;
                 }
             }
@@ -90,6 +148,7 @@ alias calculate_status8 = calculate_status!Board8;
 unittest
 {
     DefenseState8 s;
+    s.ko_threats = float.infinity;
     auto space = rectangle8(3, 1).south.east;
     auto opponent = rectangle8(5, 3) & ~space;
     s.playing_area = space | opponent;
@@ -116,4 +175,34 @@ unittest
     s.opponent = opponent;
     s.opponent_target = opponent;
     assert(s.calculate_status8 == Status.secure);
+}
+
+unittest
+{
+    State8 s;
+    s.player = rectangle8(5, 2) & ~rectangle8(4, 1);
+    s.opponent = (rectangle8(6, 2) & ~rectangle8(5, 1).south).south(5);
+
+    s.player |= Board8(1, 6);
+    s.opponent |= Board8(1, 0);
+    s.player |= Board8(3, 3) | Board8(4, 3) | Board8(6, 6);
+    s.opponent |= Board8(5, 0) | Board8(6, 4);
+
+    DefenseState8[] player_eyespaces;
+    DefenseState8[] opponent_eyespaces;
+
+    extract_eyespaces!(Board8, State8)(s, player_eyespaces, opponent_eyespaces);
+
+    foreach (player_eyespace; player_eyespaces){
+        player_eyespace.calculate_status8;
+    }
+
+    bool opponent_has_a_defendable_group;
+    foreach (opponent_eyespace; opponent_eyespaces){
+        
+        if (opponent_eyespace.calculate_status8 == Status.defendable){
+            opponent_has_a_defendable_group = true;
+        }
+    }
+    assert(opponent_has_a_defendable_group);
 }
