@@ -329,57 +329,84 @@ struct State(T)
         playing_area.mirror_v;
     }
 
+    void canonize()
+    {
+        int dummy_w, dummy_n;
+        canonize(dummy_w, dummy_n);
+    }
 
     // TODO: Canonize hierarchically ie. based on opCmp order.
-    // TODO: Pass out the fix values.
-    Transformation canonize()
+    Transformation canonize(out int final_westwards, out int final_northwards)
     {
         if (!black_to_play){
             flip_colors;
         }
+        auto initial_playing_area = playing_area;  // TODO: Fix the translation calculations instead.
+
         auto final_transformation = Transformation.none;
         auto current_transformation = Transformation.none;
-        int westwards, northwards;
-        snap(westwards, northwards);
+        int current_westwards, current_northwards;
+        int recent_westwards, recent_northwards;
+        int fix_temp;
+        snap(current_westwards, current_northwards);
         auto temp = this;
         enum compare_and_replace = "
             if (temp < this){
                 final_transformation = current_transformation;
+                final_westwards = current_westwards;
+                final_northwards = current_northwards;
                 this = temp;
             }
         ";
+        enum do_rotation = "
+            temp.rotate;
+            snap(recent_westwards, recent_northwards);
+            fix_temp = current_westwards;
+            current_westwards = recent_westwards - current_northwards;
+            current_northwards = recent_northwards + fix_temp;
+        ";
+        enum do_mirror_v = "
+            temp.mirror_v;
+            snap(recent_westwards, recent_northwards);
+            current_westwards = recent_westwards + current_westwards;
+            current_northwards = recent_northwards - current_northwards;
+        ";
         if (can_rotate){
             for (int i = 0; i < 3; i++){
-                temp.rotate;
-                snap(westwards, northwards);
+                mixin(do_rotation);
                 current_transformation++;
                 mixin(compare_and_replace);
             }
-            temp.mirror_v;
-            snap(westwards, northwards);
+
+            mixin(do_mirror_v);
             current_transformation++;
             mixin(compare_and_replace);
+
             for (int i = 0; i < 3; i++){
-                temp.rotate;
-                snap(westwards, northwards);
+                mixin(do_rotation);
                 current_transformation++;
                 mixin(compare_and_replace);
             }
         }
         else{
-            temp.mirror_v;
-            snap(westwards, northwards);
+            mixin(do_mirror_v);
             current_transformation = Transformation.mirror_v;
             mixin(compare_and_replace);
+
             temp.mirror_h;
-            snap(westwards, northwards);
+            snap(recent_westwards, recent_northwards);
+            current_westwards = recent_westwards - current_westwards;
+            current_northwards = recent_northwards + current_northwards;
             current_transformation = Transformation.flip;
             mixin(compare_and_replace);
-            temp.mirror_v;
-            snap(westwards, northwards);
+            
+            mixin(do_mirror_v);
             current_transformation = Transformation.mirror_h;
             mixin(compare_and_replace);
         }
+
+        initial_playing_area.snap(final_westwards, final_northwards);
+
         return final_transformation;
     }
 

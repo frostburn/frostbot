@@ -341,13 +341,17 @@ class SearchState(T, S) : BaseSearchState!(T, S)
         // Prune out transpositions.
         State!T[] child_states;
         Transformation[] child_transformations;
+        int[] child_fixes;
         bool[S] seen;
         foreach (child_state; state.children(effective_moves)){
-            auto child_transformation = child_state.canonize;
+            int westwards, northwards;
+            auto child_transformation = child_state.canonize(westwards, northwards);
             if (child_state !in seen){
                 seen[child_state] = true;
                 child_states ~= child_state;
                 child_transformations ~= child_transformation;
+                child_fixes ~= westwards;
+                child_fixes ~= northwards;
             }
         }
 
@@ -360,24 +364,30 @@ class SearchState(T, S) : BaseSearchState!(T, S)
             else{
                 assert(child_state.black_to_play);
 
-                /*
                 auto child_player_defendable = opponent_defendable;
                 auto child_opponent_defendable = player_defendable;
                 auto child_player_secure = opponent_secure;
                 auto child_opponent_secure = player_secure;
 
                 auto child_transformation = child_transformations[index];
+                int westwards = child_fixes[2 * index];
+                int northwards = child_fixes[2 * index + 1];
+
                 child_player_defendable.transform(child_transformation);
+                child_player_defendable.fix(westwards, northwards);
                 child_opponent_defendable.transform(child_transformation);
+                child_opponent_defendable.fix(westwards, northwards);
                 child_player_secure.transform(child_transformation);
+                child_player_secure.fix(westwards, northwards);
                 child_opponent_secure.transform(child_transformation);
+                child_opponent_secure.fix(westwards, northwards);
 
                 T[] child_moves;
                 foreach(move; moves){
                     move.transform(child_transformation);
+                    move.fix(westwards, northwards);
                     child_moves ~= move;
                 }
-                */
 
                 auto child = new SearchState!(T, S)(
                     child_state,
@@ -586,4 +596,20 @@ unittest
     ss.calculate_minimax_value(20);
     assert(ss.lower_bound == 9);
     assert(ss.upper_bound == 9);
+}
+
+version(all_tests)
+{
+    unittest
+    {
+        auto s = State8(rectangle8(4, 3));
+        s.player = Board8(1, 2) | Board8(2, 2) | Board8(2, 1);
+        s.opponent = rectangle8(4, 2) & ~Board8(2, 1) & ~Board8(3, 0);
+
+        auto ss = new SearchState8(s);
+        ss.calculate_minimax_value(20);
+
+        assert(ss.lower_bound == -12);
+        assert(ss.upper_bound == -10);
+    }
 }

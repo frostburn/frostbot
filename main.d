@@ -78,7 +78,8 @@ void main()
     writeln(t);
     */
 
-    auto s = State8(rectangle8(3, 3) | Board8(3, 0));
+    /*
+    auto s = State8(rectangle8(4, 3));
     //s.player = Board8(2, 0);
     //s.opponent = Board8(1, 1);
     auto ss = new SearchState8(s);
@@ -88,6 +89,16 @@ void main()
 
     print_path(ss, 20);
     //writeln(ss);
+    */
+
+    auto s = State8(rectangle8(3, 3));
+    //s.player = Board8(1, 2) | Board8(2, 2) | Board8(2, 1);
+    //s.opponent = rectangle8(4, 2) & ~Board8(2, 1) & ~Board8(3, 0);
+
+    auto ss = new SearchState8(s);
+    ss.calculate_minimax_value(20);
+
+    writeln(ss);
 
     /*
     State8 s;

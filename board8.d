@@ -159,25 +159,26 @@ struct Board8
     }
     body
     {
-        Board8 temp;
+        ulong temp;
+        ulong target_bits = target.bits;
 
-        this &= target;
-        if (!this){
+        bits &= target_bits;
+        if (!bits){
             return this;
         }
 
         // The "+" operation can be thought as an infinite inverting horizontal flood with a garbage bit at each end.
         // Here we invert it back and clear the garbage bits by "&":ing with the target.
-        this |= (~(this + target)) & target;
+        bits |= (~(bits + target_bits)) & target_bits;
         do{
-            temp = this;
-            this |= (
-                (this >> H_SHIFT) |
-                (this << V_SHIFT) |
-                (this >> V_SHIFT)
-            ) & target;
-            this |= (~(this + target)) & target;
-        } while(this != temp);
+            temp = bits;
+            bits |= (
+                (bits >> H_SHIFT) |
+                (bits << V_SHIFT) |
+                (bits >> V_SHIFT)
+            ) & target_bits;
+            bits |= (~(bits + target_bits)) & target_bits;
+        } while(bits != temp);
 
         return this;
     }
@@ -594,6 +595,24 @@ string get_forage_table()
         block |= Board8(x + 1, y);
         forage ~= block;
     }
+
+    // Optimize for small boards
+    Board8 small_board = rectangle8(4, 4);
+    bool[Board8] used;
+    Board8[] temp;
+    foreach(block; forage){
+        if (block & small_board){
+            temp ~= block;
+            used[block] = true;
+        }
+    }
+    foreach(block; forage){
+        if (block !in used){
+            temp ~= block;
+        }
+    }
+    forage = temp;
+
     r ~= "[";
     foreach (index, block; forage){
         r ~= block.repr;
