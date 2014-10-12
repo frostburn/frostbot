@@ -9,6 +9,7 @@ import std.random;
 import utils;
 import polyomino;
 import board8;
+import eyeshape;
 import state;
 import defense_state;
 import defense_search_state;
@@ -27,12 +28,18 @@ DefenseState!T[] extract_player_eyespaces(T, S)(S state)
     T player_edges;
     foreach (player_chain; state.player.chains){
         // TODO: Exclude certain chains of size two.
-        if (player_chain.popcount > 1){
+        auto chain_size = player_chain.popcount;
+        auto number_of_liberties = player_chain.liberties(state.playing_area & ~state.opponent).popcount;
+        if (chain_size > 1 && number_of_liberties > 1){
             player_edges |= player_chain;
         }
     }
 
+    // TODO: Check region pairs.
     foreach (region; (state.playing_area & ~player_edges).chains){
+        if (region.popcount <= 2){
+            continue;
+        }
         if (state.ko & region){
             continue;
         }
@@ -107,10 +114,19 @@ body
         return Status.unknown;
     }
 
+    // Check if target is in atari.
+    foreach (target_chain; defense_state.opponent_target.chains){
+        if (target_chain.liberties(defense_state.playing_area & ~defense_state.opponent).popcount <= 1){
+            return Status.killable;
+        }
+    }
+
     auto space = defense_state.playing_area & ~defense_state.opponent_target & ~defense_state.player_outside_liberties;
     auto space_size = space.popcount;
 
-    //Static analysis for small contiguous spaces.
+
+    // TODO: Create asserts with naive shape recognition.
+    // Static analysis for small contiguous spaces.
     if (space.euler == 1){
         // Small spaces cannot be divided into two eyes.
         if (space_size <= 2){
@@ -124,55 +140,96 @@ body
             // It's pointless to play anywhere exept in the middle.
             // TODO: Prove this.
 
-            T temp = space & space.east;
-            T middle = temp & temp.west;
-            T wings;
-            if (middle){  // Horizontal straight three.
-                wings = middle.east | middle.west;
-            }
-            else{
-                if (temp){  // Bent three.
-                    if (space & temp.south){
-                        middle = temp;
-                        wings = middle.south | middle.west;
-                    }
-                    else if(space & temp.north){
-                        middle = temp;
-                        wings = middle.north | middle.west;
-                    }
-                    else{
-                        middle = temp.west;
-                        if (space & middle.north){
-                            wings = middle.north | temp;
-                        }
-                        else{
-                            wings = middle.south | temp;
-                        }
-                    }
-                }
-                else{  // Vertical straight three.
-                    temp = space & space.north;
-                    middle = temp & temp.south;
-                    wings = middle.north | middle.south;
-                }
-            }
-            if (defense_state.player & middle){
+            auto three_space = get_three_space!T(space);
+
+            if (defense_state.player & three_space.middle){
                 return Status.dead;
             }
             else{
                 if (defense_state.player_outside_liberties){
-                    player_useless = wings;
-                    opponent_useless = wings;
+                    player_useless = opponent_useless = three_space.wings;
                 }
                 return Status.contested;
             }
         }
-    }
 
-    //if (farmers_hat || star_five){
-        // TODO: It's pointless to play anywhere exept in the middle.
-        // TODO: Prove this.
-    //}
+        if (space_size == 4){
+            auto four_space = get_four_space!T(space);
+
+            if (four_space.shape == FourShape.farmers_hat){
+                if (defense_state.player & four_space.middle){
+                    return Status.dead;
+                }
+                else{
+                    if (defense_state.player_outside_liberties){
+                        player_useless = opponent_useless = four_space.wings;
+                    }
+                    return Status.contested;
+                }
+            }
+            else if (four_space.shape == FourShape.straight_four){
+                auto number_of_attacking_stones = (defense_state.player & four_space.middle).popcount;
+                if (number_of_attacking_stones == 2){
+                    return Status.dead;
+                }
+                else if (number_of_attacking_stones == 1){
+                    if (defense_state.player_outside_liberties){
+                        player_useless = opponent_useless = four_space.wings;
+                    }
+                    return Status.contested;
+                }
+                else{
+                    return Status.defendable;
+                }
+            }
+            else if (four_space.shape == FourShape.bent_four){
+                auto number_of_attacking_stones = (defense_state.player & four_space.middle).popcount;
+                if (number_of_attacking_stones == 2){
+                    return Status.dead;
+                }
+                else if (number_of_attacking_stones == 1){
+                    if (defense_state.player_outside_liberties){
+                        player_useless = opponent_useless = four_space.wings;
+                    }
+                    return Status.contested;
+                }
+                // Bent four in the corner needs to fall through.
+            }
+            else if (four_space.shape == FourShape.square_four){
+                if (defense_state.opponent & space){
+                    auto smaller_space = space & ~defense_state.opponent
+                    if (smaller_space.popcount == 3){
+                        auto three_space = get_three_space!T(smaller_space);
+
+                        if (defense_state.player & three_space.middle){
+                            return Status.dead;
+                        }
+                        else{
+                            if (defense_state.player_outside_liberties){
+                                player_useless = opponent_useless = three_space.wings;
+                            }
+                            return Status.contested;
+                        }
+                    }
+                }
+                else{
+                    return Status.killable;
+                }
+            }
+            else if (four_space.shape == FourShape.twisted_four){
+                auto number_of_attacking_stones = (defense_state.player & four_space.middle).popcount;
+                if (number_of_attacking_stones == 2){
+                    return Status.dead;
+                }
+                else if (number_of_attacking_stones == 1){
+                    if (defense_state.player_outside_liberties){
+                        player_useless = opponent_useless = four_space.wings;
+                    }
+                    return Status.contested;
+                }
+            }
+        }
+    }
 
     if (space_size <= MAX_SPACE_SIZE){
         // Analyzing defendable territory. No outside forcing moves allowed.
@@ -180,13 +237,6 @@ body
         defense_state.player_outside_liberties = T();
         defense_state.player &= ~outside_liberties;
         defense_state.playing_area &= ~outside_liberties;
-
-        // Check if target is in atari.
-        foreach (target_chain; defense_state.opponent_target.chains){
-            if (target_chain.liberties(defense_state.playing_area & ~defense_state.opponent).popcount <= 1){
-                return Status.killable;
-            }
-        }
 
         auto defense_search_state = new DefenseSearchState!(T, DefenseState!T)(defense_state);
         defense_search_state.calculate_minimax_value;

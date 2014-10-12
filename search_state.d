@@ -340,6 +340,7 @@ class SearchState(T, S) : BaseSearchState!(T, S)
     {
         T[] result;
         T useless = player_defendable | opponent_defendable | player_useless;
+
         foreach (move; moves){
             if (!(move & useless)){
                 result ~= move;
