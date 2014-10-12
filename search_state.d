@@ -109,44 +109,34 @@ class BaseSearchState(T, S)
         }
     }
 
-    void analyze_defendable(ref Status[DefenseState!T] defense_table)
+    void analyze_defendable(ref DefenseResult!T[DefenseState!T] defense_table)
     {
         DefenseState!T[] player_eyespaces;
         DefenseState!T[] opponent_eyespaces;
 
         // TODO: Exclude already analyzed areas.
-        // TODO: Use other statuses as well. eg. avoid playing into dead regions before the outside liberties have been filled.
-        //       Only play the killing/living moves for contended regions.
-        extract_eyespaces!(T, S)(state, player_eyespaces, opponent_eyespaces);
+        extract_eyespaces!(T, S)(state, player_secure, opponent_secure, player_eyespaces, opponent_eyespaces);
 
-        // TODO: Mixin
-        foreach (player_eyespace; player_eyespaces){
-            T eyespace_player_useless, eyespace_opponent_useless;
-            auto status = calculate_status!T(player_eyespace, defense_table, eyespace_player_useless, eyespace_opponent_useless);
-            if (status == Status.defendable){
-                player_defendable |= player_eyespace.playing_area;
-            }
-            else if (status == Status.secure){
-                player_secure |= player_eyespace.playing_area;
-            }
+        string analyze_eyespaces(string player, string opponent)
+        {
+            return "
+                foreach (" ~ player ~ "_eyespace; " ~ player ~ "_eyespaces){
+                    auto result = calculate_status!T(" ~ player ~ "_eyespace, defense_table, " ~ player ~ "_secure, " ~ opponent ~ "_secure);
+                    if (result.status == Status.defendable){
+                        " ~ player ~ "_defendable |= (" ~ player ~ "_eyespace.playing_area & ~" ~ opponent ~ "_secure);
+                    }
+                    else if (result.status == Status.secure){
+                        " ~ player ~ "_secure |= (" ~ player ~ "_eyespace.playing_area & ~" ~ opponent ~ "_secure);
+                    }
 
-            player_useless = eyespace_opponent_useless;
-            opponent_useless = eyespace_player_useless;
+                    " ~ player ~ "_useless |= result." ~ opponent ~ "_useless;
+                    " ~ opponent ~ "_useless |= result." ~ player ~ "_useless;
+                }
+            ";
         }
 
-        foreach (opponent_eyespace; opponent_eyespaces){
-            T eyespace_player_useless, eyespace_opponent_useless;
-            auto status = calculate_status!T(opponent_eyespace, defense_table, eyespace_player_useless, eyespace_opponent_useless);
-            if (status == Status.defendable){
-                opponent_defendable |= opponent_eyespace.playing_area;
-            }
-            else if (status == Status.secure){
-                opponent_secure |= opponent_eyespace.playing_area;
-            }
-
-            player_useless |= eyespace_player_useless;
-            opponent_useless |= eyespace_opponent_useless;
-        }
+        mixin(analyze_eyespaces("player", "opponent"));
+        mixin(analyze_eyespaces("opponent", "player"));
     }
 
     void analyze_secure()
@@ -303,14 +293,14 @@ class SearchState(T, S) : BaseSearchState!(T, S)
         state.canonize;
         this.state = state;
 
-        Status[DefenseState!T] empty;
+        DefenseResult!T[DefenseState!T] empty;
         analyze_defendable(empty);
         analyze_secure;
 
         calculate_available_moves;
     }
 
-    this(S state, T player_defendable, T opponent_defendable, T player_secure, T opponent_secure, ref Status[DefenseState!T] defense_table, T[] moves=null)
+    this(S state, T player_defendable, T opponent_defendable, T player_secure, T opponent_secure, ref DefenseResult!T[DefenseState!T] defense_table, T[] moves=null)
     {
         this.state = state;
         this.player_defendable = player_defendable;
@@ -349,7 +339,7 @@ class SearchState(T, S) : BaseSearchState!(T, S)
         return result;
     }
 
-    void make_children(ref SearchState!(T, S)[S] state_pool, ref Status[DefenseState!T] defense_table)
+    void make_children(ref SearchState!(T, S)[S] state_pool, ref DefenseResult!T[DefenseState!T] defense_table)
     {
         children = [];
 
@@ -429,7 +419,7 @@ class SearchState(T, S) : BaseSearchState!(T, S)
     void calculate_minimax_value(
         ref SearchState!(T, S)[S] state_pool,
         ref HistoryNode!(S) history,
-        ref Status[DefenseState!T] defense_table,
+        ref DefenseResult!T[DefenseState!T] defense_table,
         float depth=float.infinity,
         float alpha=-float.infinity,
         float beta=float.infinity
@@ -494,7 +484,7 @@ class SearchState(T, S) : BaseSearchState!(T, S)
 
         SearchState!(T, S)[S] state_pool;
         HistoryNode!(S) history = null;
-        Status[DefenseState!T] defense_table;
+        DefenseResult!T[DefenseState!T] defense_table;
         calculate_minimax_value(state_pool, history, defense_table, depth, -float.infinity, float.infinity);
     }
 
@@ -502,7 +492,7 @@ class SearchState(T, S) : BaseSearchState!(T, S)
     {
         SearchState!(T, S)[S] state_pool;
         HistoryNode!(S) history = null;
-        Status[DefenseState!T] defense_table;
+        DefenseResult!T[DefenseState!T] defense_table;
         for (int i = min_depth; i <= max_depth; i++){
             calculate_minimax_value(state_pool, history, defense_table, i, lower_bound, upper_bound);
         }
@@ -568,7 +558,7 @@ unittest
 {
     State8 s = State8(rectangle8(2, 2));
     s.player = Board8(0, 0) | Board8(1, 1);
-    Status[DefenseState8] empty;
+    DefenseResult8[DefenseState8] empty;
     SearchState8 ss = new SearchState8(s, Board8(), Board8(), Board8(), Board8(), empty);
 
     assert(ss.player_secure == ss.state.playing_area);
