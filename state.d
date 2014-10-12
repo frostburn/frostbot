@@ -45,6 +45,7 @@ struct State(T)
         assert(ko.valid);
         assert(ko.popcount <= 1);
 
+        /*
         assert(!(player & opponent));
         assert(!(player & ko));
         assert(!(opponent & ko));
@@ -52,6 +53,7 @@ struct State(T)
         assert(!(player & ~playing_area));
         assert(!(opponent & ~playing_area));
         assert(!(ko & ~playing_area));
+        */
 
         // TODO: Assert that all chains have liberties
         version(all_invariants){

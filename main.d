@@ -48,6 +48,7 @@ void print_path(SearchState8 ss, int depth){
         return;
     }
     writeln(ss);
+    writeln(ss.player_useless | ss.opponent_useless);
     foreach (child; ss.children){
         writeln(" ", child.lower_bound, ", ", child.upper_bound, ", max=", child.state.black_to_play);
     }
@@ -61,7 +62,7 @@ void print_path(SearchState8 ss, int depth){
     }
     if (!found_one){
         foreach (child; ss.children){
-            if (-child.lower_bound == ss.upper_bound){
+            if (-child.upper_bound == ss.lower_bound){
                 print_path(cast(SearchState8)child, depth - 1);
                 break;
             }
@@ -101,12 +102,65 @@ void main()
     //s.opponent = rectangle8(4, 2) & ~Board8(2, 1) & ~Board8(3, 0);
 
 
-    //SearchState8[State8] state_pool;
-    //Status[DefenseState8] defense_table;
-    auto ss = new SearchState8(rectangle8(3, 3));
-    ss.calculate_minimax_value(15);
+    SearchState8[State8] state_pool;
+    DefenseResult8[DefenseState8] defense_table;
+    //auto ss = new SearchState8(rectangle8(4, 3));
+
+    /*
+    ss.make_children(state_pool, defense_table);
+
+    writeln("SSSSSSSSSS");
+    writeln(ss);
+
+    foreach (child; ss.children){
+        writeln(child);
+        writeln;
+    }
+    */
+    auto ss = new SearchState8(rectangle8(4, 3));
+
+    ss.calculate_minimax_value(50);
+    print_path(ss, 20);
+
+
+    /*
+    auto s = State8(rectangle8(4, 3));
+    s.opponent = rectangle8(4, 3) & ~(Board8(0, 1) | Board8(1, 1) | Board8(1, 2) | Board8(3, 2));
+    s.player = Board8(1, 1);
+    s.passes = 0;
+    */
+
+    /*
+    auto s = State8(rectangle8(4, 3));
+    s.player = rectangle8(3, 3).east & ~rectangle8(2, 2).east(2).south;
+    s.opponent = rectangle8(4, 2).south & ~s.player & ~ Board8(3, 2);
+
+    auto ss = new SearchState8(s);
+
+    ss.calculate_minimax_value(20);
+
+    assert(ss.lower_bound == 12);
+    assert(ss.upper_bound == 12);
 
     writeln(ss);
+    */
+    //writeln(ss.player_useless | ss.opponent_useless);
+
+    /*
+    auto s = State8(rectangle8(3, 4));
+    s.player = Board8(0, 0) | Board8(1, 0);
+    s.opponent = rectangle8(3, 3).south & ~(Board8(0, 2) | Board8(1, 2) | Board8(1, 3));
+
+
+    auto ss = new SearchState8(s);
+
+    ss.calculate_minimax_value(20);
+
+    assert(ss.lower_bound == -12);
+    assert(ss.upper_bound == -12);
+
+    writeln(ss);
+    */
 
     /*
     auto s = State8(rectangle8(3, 3));
@@ -118,6 +172,7 @@ void main()
 
     writeln(ss);
     */
+
 
     /*
     foreach (child; ss.children){

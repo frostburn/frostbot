@@ -48,6 +48,7 @@ struct DefenseState(T)
         this.ko_threats = ko_threats;
     }
 
+    /*
     invariant
     {
         assert(player.valid);
@@ -91,6 +92,7 @@ struct DefenseState(T)
             }
         }
     }
+    */
 
     bool opEquals(in DefenseState!T rhs) const
     {

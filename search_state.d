@@ -69,7 +69,8 @@ class BaseSearchState(T, S)
 
     invariant
     {
-        assert(!(player_secure & opponent_secure));
+        //assert(!(player_secure & opponent_secure));
+        //assert(!(player_defendable & opponent_defendable));
         assert(state.passes <= 2);
 
         // TODO: Find out why this breaks.
@@ -78,6 +79,7 @@ class BaseSearchState(T, S)
         //}
     }
 
+    /*
     ~this()
     {
         foreach(child; allocated_children){
@@ -87,6 +89,7 @@ class BaseSearchState(T, S)
             destroy(history_node);
         }
     }
+    */
 
     int liberty_score()
     {
@@ -114,7 +117,7 @@ class BaseSearchState(T, S)
         DefenseState!T[] player_eyespaces;
         DefenseState!T[] opponent_eyespaces;
 
-        // TODO: Exclude already analyzed areas.
+
         extract_eyespaces!(T, S)(state, player_secure, opponent_secure, player_eyespaces, opponent_eyespaces);
 
         string analyze_eyespaces(string player, string opponent)
@@ -122,6 +125,10 @@ class BaseSearchState(T, S)
             return "
                 foreach (" ~ player ~ "_eyespace; " ~ player ~ "_eyespaces){
                     auto result = calculate_status!T(" ~ player ~ "_eyespace, defense_table, " ~ player ~ "_secure, " ~ opponent ~ "_secure);
+                    debug(analyze_defendable){
+                        writeln(" ~ player ~ "_eyespace);
+                        writeln(result);
+                    }
                     if (result.status == Status.defendable){
                         " ~ player ~ "_defendable |= (" ~ player ~ "_eyespace.playing_area & ~" ~ opponent ~ "_secure);
                     }
@@ -294,8 +301,8 @@ class SearchState(T, S) : BaseSearchState!(T, S)
         this.state = state;
 
         DefenseResult!T[DefenseState!T] empty;
-        analyze_defendable(empty);
         analyze_secure;
+        analyze_defendable(empty);
 
         calculate_available_moves;
     }
@@ -309,8 +316,9 @@ class SearchState(T, S) : BaseSearchState!(T, S)
         }
         this.player_secure = player_secure;
         this.opponent_secure = opponent_secure;
-        analyze_defendable(defense_table);
+
         analyze_secure;
+        analyze_defendable(defense_table);
         if (state.passes >= 2){
             is_leaf = true;
             lower_bound = upper_bound = liberty_score;
@@ -605,6 +613,15 @@ unittest
     assert(ss.children.length == 4);
 }
 
+unittest
+{
+    SearchState8[State8] state_pool;
+    DefenseResult8[DefenseState8] defense_table;
+    auto ss = new SearchState8(rectangle8(4, 3));
+    ss.make_children(state_pool, defense_table);
+    assert(ss.children.length == 5);
+}
+
 version(all_tests)
 {
     unittest
@@ -612,11 +629,28 @@ version(all_tests)
         auto s = State8(rectangle8(4, 3));
         s.player = Board8(1, 2) | Board8(2, 2) | Board8(2, 1);
         s.opponent = rectangle8(4, 2) & ~Board8(2, 1) & ~Board8(3, 0);
-
         auto ss = new SearchState8(s);
         ss.calculate_minimax_value(20);
-
         assert(ss.lower_bound == -12);
         assert(ss.upper_bound == -10);
+
+
+        s = State8(rectangle8(4, 3));
+        s.player = rectangle8(3, 3).east & ~rectangle8(2, 2).east(2).south;
+        s.opponent = rectangle8(4, 2).south & ~s.player & ~ Board8(3, 2);
+        ss = new SearchState8(s);
+        ss.calculate_minimax_value(20);
+        assert(ss.lower_bound == 12);
+        assert(ss.upper_bound == 12);
+
+
+        s = State8(rectangle8(3, 4));
+        s.player = Board8(0, 0) | Board8(1, 0);
+        s.opponent = rectangle8(3, 3).south & ~(Board8(0, 2) | Board8(1, 2) | Board8(1, 3));
+        ss = new SearchState8(s);
+        ss.calculate_minimax_value(20);
+        assert(ss.lower_bound == -12);
+        assert(ss.upper_bound == -12);
+
     }
 }
