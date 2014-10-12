@@ -73,8 +73,25 @@ DefenseState!T[] extract_player_eyespaces(T, S)(S state, T player_secure, T oppo
         auto blob = region.blob(state.playing_area);
         auto player_target = blob;
         player_target.flood_into(player_edges);
-        auto opponent_outside_liberties = player_target.liberties(state.playing_area & ~region);
-        auto playing_area = blob | player_target | opponent_outside_liberties | secure;
+        auto outside_liberties = player_target.liberties(state.playing_area & ~region);
+
+        T opponent_outside_liberties;
+        foreach (target_chain; player_target.chains){
+            // Check if the outside liberties can actually be filled out to cause an atari.
+            auto halo = target_chain.liberties(state.playing_area) & outside_liberties;
+            foreach (halo_piece; halo.chains){
+                if (halo_piece.liberties(state.playing_area & ~player_secure & ~player_target)){
+                    opponent_outside_liberties |= halo_piece;
+                }
+                // If they are small enough they can act as eyes for the target. :)
+                // Otherwise it's best to just remove them.
+                else if (halo_piece.popcount > 2){
+                    outside_liberties &= ~halo_piece;
+                }
+            }
+        }
+
+        auto playing_area = blob | player_target | outside_liberties | secure;
         auto defense_state = DefenseState!T(
             state.opponent & playing_area,
             state.player & playing_area,
@@ -156,7 +173,7 @@ body
     {
         return "
             auto result = DefenseResult!T(Status.contested);
-            if (defense_state.player_outside_liberties){
+            if (defense_state.player_outside_liberties & ~defense_state.player){
                 result.player_useless = result.opponent_useless = " ~ number ~ "_space.wings;
             }
             return result;
@@ -385,7 +402,6 @@ unittest
 
     bool opponent_has_a_defendable_group;
     foreach (opponent_eyespace; opponent_eyespaces){
-        
         if (calculate_status(opponent_eyespace, player_secure, opponent_secure).status == Status.defendable){
             opponent_has_a_defendable_group = true;
         }

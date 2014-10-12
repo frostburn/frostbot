@@ -117,7 +117,7 @@ void main()
         writeln;
     }
     */
-    auto ss = new SearchState8(rectangle8(4, 3));
+    auto ss = new SearchState8(rectangle8(3, 3));
 
     ss.calculate_minimax_value(50);
     print_path(ss, 20);
