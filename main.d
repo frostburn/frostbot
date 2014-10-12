@@ -91,14 +91,25 @@ void main()
     //writeln(ss);
     */
 
-    auto s = State8(rectangle8(3, 3));
+
+    //writeln(b);
+
+    //auto s = State8(rectangle8(3, 3));
     //s.player = Board8(1, 2) | Board8(2, 2) | Board8(2, 1);
     //s.opponent = rectangle8(4, 2) & ~Board8(2, 1) & ~Board8(3, 0);
 
-    auto ss = new SearchState8(s);
-    ss.calculate_minimax_value(20);
+    SearchState8[State8] state_pool;
+    Status[DefenseState8] defense_table;
+    auto ss = new SearchState8(rectangle8(2, 2));
+    ss.make_children(state_pool, defense_table);
+    //ss.calculate_minimax_value(20);
 
     writeln(ss);
+
+    foreach (child; ss.children){
+        writeln(child);
+        writeln;
+    }
 
     /*
     State8 s;

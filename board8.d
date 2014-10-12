@@ -125,14 +125,33 @@ struct Board8
         );
     }
 
+
+    Board8 east() const
+    {
+        return (this << H_SHIFT) & FULL;
+    }
+
+    Board8 west() const
+    {
+        return (this >> H_SHIFT) & FULL;
+    }
+
     Board8 east(in int n=1) const
     {
-        return (this << (H_SHIFT * n)) & FULL;
+        uint new_bits = cast(uint)bits;
+        for (int i = 0; i < n; i++){
+            new_bits = (new_bits << H_SHIFT) & FULL;
+        }
+        return Board8(new_bits);
     }
 
     Board8 west(in int n=1) const
     {
-        return (this >> (H_SHIFT * n)) & FULL;
+        uint new_bits = cast(uint)bits;
+        for (int i = 0; i < n; i++){
+            new_bits = (new_bits >> H_SHIFT) & FULL;
+        }
+        return Board8(new_bits);
     }
 
     Board8 south(in int n=1) const
@@ -360,6 +379,15 @@ struct Board8
     }
 
     void transform(Transformation transformation) nothrow @nogc @safe
+    in
+    {
+        assert(valid);
+    }
+    out
+    {
+        assert(valid);
+    }
+    body
     { 
         if (transformation == Transformation.rotate){
             assert(can_rotate);
@@ -394,6 +422,11 @@ struct Board8
     }
 
     int horizontal_extent()
+    in
+    {
+        assert(valid);
+    }
+    body
     {
         int extent = WIDTH;
         while (extent > 0){
@@ -406,6 +439,11 @@ struct Board8
     }
 
     int vertical_extent()
+    in
+    {
+        assert(valid);
+    }
+    body
     {
         int extent = HEIGHT;
         while (extent > 0){
@@ -419,13 +457,18 @@ struct Board8
 
     /// Euler charasteristic of the board
     int euler()
+    in
+    {
+        assert(valid);
+    }
+    body
     {
         ulong temp = bits | (bits << H_SHIFT);
         int characteristic = -utils.popcount(temp);  // vertical edges
         characteristic += utils.popcount(temp & NORTH_WALL);  // northern vertices
-        characteristic += utils.popcount(temp | (temp >> H_SHIFT));  // rest of the vertices
+        characteristic += utils.popcount(temp | (temp >> V_SHIFT));  // rest of the vertices
         characteristic -= utils.popcount(bits & NORTH_WALL);  // northern horizontal edges
-        characteristic -= utils.popcount(bits | (bits << H_SHIFT));  // rest of the horizontal edges
+        characteristic -= utils.popcount(bits | (bits >> V_SHIFT));  // rest of the horizontal edges
         characteristic += utils.popcount(bits);  // pixels
 
         return characteristic;
@@ -673,6 +716,18 @@ unittest
 {
     Board8 b = Board8(Board8.FULL);
     assert(b.popcount == Board8.WIDTH * Board8.HEIGHT);
+}
+
+unittest
+{
+    assert((Board8(0, 0) | Board8(5, 0)).east(3) == Board8(3, 0));
+}
+
+unittest{
+    auto b = Board8(0, 0) | Board8(1, 0);
+    assert(b.euler == 1);
+    b |= Board8(5, 5);
+    assert(b.euler == 2);
 }
 
 /*

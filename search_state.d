@@ -56,6 +56,9 @@ class BaseSearchState(T, S)
     T player_secure;
     T opponent_secure;
 
+    T player_useless;
+    T opponent_useless;
+
 
     public
     {
@@ -112,26 +115,37 @@ class BaseSearchState(T, S)
         DefenseState!T[] opponent_eyespaces;
 
         // TODO: Exclude already analyzed areas.
+        // TODO: Use other statuses as well. eg. avoid playing into dead regions before the outside liberties have been filled.
+        //       Only play the killing/living moves for contended regions.
         extract_eyespaces!(T, S)(state, player_eyespaces, opponent_eyespaces);
 
+        // TODO: Mixin
         foreach (player_eyespace; player_eyespaces){
-            auto status = calculate_status!T(player_eyespace, defense_table);
+            T eyespace_player_useless, eyespace_opponent_useless;
+            auto status = calculate_status!T(player_eyespace, defense_table, eyespace_player_useless, eyespace_opponent_useless);
             if (status == Status.defendable){
                 player_defendable |= player_eyespace.playing_area;
             }
             else if (status == Status.secure){
                 player_secure |= player_eyespace.playing_area;
             }
+
+            player_useless = eyespace_opponent_useless;
+            opponent_useless = eyespace_player_useless;
         }
 
         foreach (opponent_eyespace; opponent_eyespaces){
-            auto status = calculate_status!T(opponent_eyespace, defense_table);
+            T eyespace_player_useless, eyespace_opponent_useless;
+            auto status = calculate_status!T(opponent_eyespace, defense_table, eyespace_player_useless, eyespace_opponent_useless);
             if (status == Status.defendable){
                 opponent_defendable |= opponent_eyespace.playing_area;
             }
             else if (status == Status.secure){
                 opponent_secure |= opponent_eyespace.playing_area;
             }
+
+            player_useless |= eyespace_player_useless;
+            opponent_useless |= eyespace_opponent_useless;
         }
     }
 
@@ -325,9 +339,9 @@ class SearchState(T, S) : BaseSearchState!(T, S)
     T[] effective_moves()
     {
         T[] result;
-        T defendable = player_defendable | opponent_defendable;
+        T useless = player_defendable | opponent_defendable | player_useless;
         foreach (move; moves){
-            if (!(move & defendable)){
+            if (!(move & useless)){
                 result ~= move;
             }
         }
@@ -586,6 +600,7 @@ unittest
     ss.calculate_minimax_value(8);
     assert(ss.lower_bound == -4);
     assert(ss.upper_bound == 4);
+    assert(ss.children.length == 2);
 
     ss = new SearchState8(rectangle8(3, 2));
     ss.calculate_minimax_value(9);
@@ -596,6 +611,7 @@ unittest
     ss.calculate_minimax_value(20);
     assert(ss.lower_bound == 9);
     assert(ss.upper_bound == 9);
+    assert(ss.children.length == 4);
 }
 
 version(all_tests)

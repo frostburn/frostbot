@@ -341,35 +341,33 @@ struct State(T)
         if (!black_to_play){
             flip_colors;
         }
-        auto initial_playing_area = playing_area;  // TODO: Fix the translation calculations instead.
+        auto initial_playing_area = playing_area;  // TODO: Calculate fixes manually
 
         auto final_transformation = Transformation.none;
         auto current_transformation = Transformation.none;
-        int current_westwards, current_northwards;
-        int recent_westwards, recent_northwards;
-        int fix_temp;
-        snap(current_westwards, current_northwards);
+        snap(final_westwards, final_northwards);
         auto temp = this;
         enum compare_and_replace = "
+            debug(canonize){
+                writeln(\"Comparing:\");
+                writeln(this);
+                writeln(temp);
+            }
             if (temp < this){
+                debug(canonize) {
+                    writeln(\"Replacing with current transformation=\", current_transformation);
+                }
                 final_transformation = current_transformation;
-                final_westwards = current_westwards;
-                final_northwards = current_northwards;
                 this = temp;
             }
         ";
         enum do_rotation = "
             temp.rotate;
-            snap(recent_westwards, recent_northwards);
-            fix_temp = current_westwards;
-            current_westwards = recent_westwards - current_northwards;
-            current_northwards = recent_northwards + fix_temp;
+            temp.snap(final_westwards, final_northwards);
         ";
         enum do_mirror_v = "
             temp.mirror_v;
-            snap(recent_westwards, recent_northwards);
-            current_westwards = recent_westwards + current_westwards;
-            current_northwards = recent_northwards - current_northwards;
+            temp.snap(final_westwards, final_northwards);
         ";
         if (can_rotate){
             for (int i = 0; i < 3; i++){
@@ -394,9 +392,7 @@ struct State(T)
             mixin(compare_and_replace);
 
             temp.mirror_h;
-            snap(recent_westwards, recent_northwards);
-            current_westwards = recent_westwards - current_westwards;
-            current_northwards = recent_northwards + current_northwards;
+            temp.snap(final_westwards, final_northwards);
             current_transformation = Transformation.flip;
             mixin(compare_and_replace);
             
