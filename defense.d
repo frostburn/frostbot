@@ -121,9 +121,11 @@ void extract_eyespaces(T, S)(S state, T player_secure, T opponent_secure, out De
 
 DefenseResult!T calculate_status(T)(DefenseState!T defense_state, ref DefenseResult!T[DefenseState!T] transposition_table, in T player_secure, in T opponent_secure)
 {
-    if (defense_state !in transposition_table){
+    auto canonical_defense_state = defense_state;
+    canonical_defense_state.canonize;
+    if (canonical_defense_state !in transposition_table){
         auto result = calculate_status!T(defense_state, player_secure, opponent_secure);
-        transposition_table[defense_state] = result;
+        transposition_table[canonical_defense_state] = result;
         debug(calculate_status_transpositions){
             if (results.status == Status.defendable){
                 writeln("Saving status for:");
@@ -135,7 +137,7 @@ DefenseResult!T calculate_status(T)(DefenseState!T defense_state, ref DefenseRes
         return result;
     }
     else{
-        return transposition_table[defense_state];
+        return transposition_table[canonical_defense_state];
     }
 }
 

@@ -184,6 +184,19 @@ class BaseSearchState(T, S)
         moves = temp;
     }
 
+    T[] effective_moves()
+    {
+        T[] result;
+        T useless = player_defendable | opponent_defendable | player_useless;
+
+        foreach (move; moves){
+            if (!(move & useless)){
+                result ~= move;
+            }
+        }
+        return result;
+    }
+
     bool update_value(){
         return false;
     }
@@ -334,25 +347,12 @@ class SearchState(T, S) : BaseSearchState!(T, S)
         }
     }
 
-    T[] effective_moves()
-    {
-        T[] result;
-        T useless = player_defendable | opponent_defendable | player_useless;
-
-        foreach (move; moves){
-            if (!(move & useless)){
-                result ~= move;
-            }
-        }
-        return result;
-    }
-
     void make_children(ref SearchState!(T, S)[S] state_pool, ref DefenseResult!T[DefenseState!T] defense_table)
     {
         children = [];
 
         // Prune out transpositions.
-        State!T[] child_states;
+        S[] child_states;
         Transformation[] child_transformations;
         int[] child_fixes;
         bool[S] seen;
@@ -404,13 +404,12 @@ class SearchState(T, S) : BaseSearchState!(T, S)
 
                 auto child = new SearchState!(T, S)(
                     child_state,
-                    T(), T(), T(), T(),
-                    //child_player_defendable,
-                    //child_opponent_defendable,
-                    //child_player_secure,
-                    //child_opponent_secure,
+                    child_player_defendable,
+                    child_opponent_defendable,
+                    child_player_secure,
+                    child_opponent_secure,
                     defense_table,
-                    null,
+                    child_moves,
                 );
                 allocated_children ~= child;
                 children ~= child;

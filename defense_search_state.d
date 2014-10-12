@@ -22,13 +22,11 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
 
     this(T playing_area)
     {
-        state = S(playing_area);
-        state.black_to_play = true;
-        calculate_available_moves;
+        this(S(playing_area));
     }
 
     this (S state){
-        state.black_to_play = true;
+        state.canonize;
         this.state = state;
         analyze_secure;
         calculate_available_moves;
@@ -104,6 +102,84 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
         sort!(is_better!(T, S))(children);
 
     }
+
+    /*
+    void make_children(ref DefenseSearchState!(T, S)[S] state_pool)
+    {
+        children = [];
+
+        // Prune out transpositions.
+        S[] child_states;
+        Transformation[] child_transformations;
+        int[] child_fixes;
+        bool[S] seen;
+        foreach (child_state; state.children(effective_moves)){
+            int westwards, northwards;
+            auto child_transformation = child_state.canonize(westwards, northwards);
+            if (child_state !in seen){
+                seen[child_state] = true;
+                child_states ~= child_state;
+                child_transformations ~= child_transformation;
+                child_fixes ~= westwards;
+                child_fixes ~= northwards;
+            }
+        }
+
+        foreach (index, child_state; child_states){
+            if (child_state in state_pool){
+                auto child = state_pool[child_state];
+                children ~= child;
+                child.parents[state] = this;
+            }
+            else{
+                assert(child_state.black_to_play);
+
+                auto child_player_defendable = opponent_defendable;
+                auto child_opponent_defendable = player_defendable;
+                auto child_player_secure = opponent_secure;
+                auto child_opponent_secure = player_secure;
+
+                auto child_transformation = child_transformations[index];
+                int westwards = child_fixes[2 * index];
+                int northwards = child_fixes[2 * index + 1];
+
+                child_player_defendable.transform(child_transformation);
+                child_player_defendable.fix(westwards, northwards);
+                child_opponent_defendable.transform(child_transformation);
+                child_opponent_defendable.fix(westwards, northwards);
+                child_player_secure.transform(child_transformation);
+                child_player_secure.fix(westwards, northwards);
+                child_opponent_secure.transform(child_transformation);
+                child_opponent_secure.fix(westwards, northwards);
+
+                T[] child_moves;
+                foreach(move; moves){
+                    move.transform(child_transformation);
+                    move.fix(westwards, northwards);
+                    child_moves ~= move;
+                }
+
+                auto child = new DefenseSearchState!(T, S)(
+                    child_state,
+                    //child_player_defendable,
+                    //child_opponent_defendable,
+                    child_player_secure,
+                    child_opponent_secure,
+                    //defense_table,
+                    child_moves,
+                );
+                allocated_children ~= child;
+                children ~= child;
+                child.parents[state] = this;
+                state_pool[child_state] = child;
+            }
+        }
+
+        children.randomShuffle;
+
+        sort!(is_better!(T, S))(children);
+    }
+    */
 
     void calculate_minimax_value(
         ref DefenseSearchState!(T, S)[S] state_pool,

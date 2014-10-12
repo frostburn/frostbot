@@ -364,15 +364,41 @@ struct DefenseState(T)
         }
     }
 
-    // TODO: Canonization
-    /*
-    void snap()
+    /// Reduces target, moves outside liberties and applies other transformations that do not affect the result.
+    void reduce()
     {
-        int westwards, northwards;
+        if (!player_outside_liberties && !opponent_outside_liberties && !ko){  // TODO move the outside liberties
+            T space = playing_area & ~player_target & ~opponent_target & ~player_outside_liberties & ~opponent_outside_liberties;
+            T blob = space.blob(playing_area);
+
+            auto temp = this;
+
+            T candidate_player_target = player_target & blob;
+            if (candidate_player_target.chains.length == player_target.chains.length){
+                player_target = candidate_player_target;
+            }
+
+            T candidate_opponent_target = opponent_target & blob;
+            if (candidate_opponent_target.chains.length == opponent_target.chains.length){
+                opponent_target = candidate_opponent_target;
+            }
+
+            playing_area = blob | player_target | opponent_target;
+            player &= playing_area;
+            opponent &= playing_area;
+        }
+    }
+
+    void snap(out int westwards, out int northwards)
+    {
         playing_area.snap(westwards, northwards);
         player.fix(westwards, northwards);
         opponent.fix(westwards, northwards);
         ko.fix(westwards, northwards);
+        player_target.fix(westwards, northwards);
+        opponent_target.fix(westwards, northwards);
+        player_outside_liberties.fix(westwards, northwards);
+        opponent_outside_liberties.fix(westwards, northwards);
     }
 
     bool can_rotate()
@@ -391,7 +417,10 @@ struct DefenseState(T)
         opponent.rotate;
         ko.rotate;
         playing_area.rotate;
-        snap;
+        player_target.rotate;
+        opponent_target.rotate;
+        player_outside_liberties.rotate;
+        opponent_outside_liberties.rotate;
     }
 
     void mirror_h()
@@ -400,7 +429,10 @@ struct DefenseState(T)
         opponent.mirror_h;
         ko.mirror_h;
         playing_area.mirror_h;
-        snap;
+        player_target.mirror_h;
+        opponent_target.mirror_h;
+        player_outside_liberties.mirror_h;
+        opponent_outside_liberties.mirror_h;
     }
 
     void mirror_v()
@@ -409,45 +441,90 @@ struct DefenseState(T)
         opponent.mirror_v;
         ko.mirror_v;
         playing_area.mirror_v;
-        snap;
+        player_target.mirror_v;
+        opponent_target.mirror_v;
+        player_outside_liberties.mirror_v;
+        opponent_outside_liberties.mirror_v;
     }
 
-
-    // TODO: Canonize hierarchically ie. based on opCmp order.
     void canonize()
     {
+        int dummy_w, dummy_n;
+        canonize(dummy_w, dummy_n);
+    }
+
+    // TODO: Canonize hierarchically ie. based on opCmp order.
+    Transformation canonize(out int final_westwards, out int final_northwards)
+    {
+        reduce;
         if (!black_to_play){
             flip_colors;
         }
-        snap;
+        auto initial_playing_area = playing_area;  // TODO: Calculate fixes manually
+
+        auto final_transformation = Transformation.none;
+        auto current_transformation = Transformation.none;
+        snap(final_westwards, final_northwards);
         auto temp = this;
         enum compare_and_replace = "
+            debug(canonize){
+                writeln(\"Comparing:\");
+                writeln(this);
+                writeln(temp);
+            }
             if (temp < this){
+                debug(canonize) {
+                    writeln(\"Replacing with current transformation=\", current_transformation);
+                }
+                final_transformation = current_transformation;
                 this = temp;
             }
         ";
+        enum do_rotation = "
+            temp.rotate;
+            temp.snap(final_westwards, final_northwards);
+        ";
+        enum do_mirror_v = "
+            temp.mirror_v;
+            temp.snap(final_westwards, final_northwards);
+        ";
         if (can_rotate){
             for (int i = 0; i < 3; i++){
-                temp.rotate;
+                mixin(do_rotation);
+                current_transformation++;
                 mixin(compare_and_replace);
             }
-            temp.mirror_h;
+
+            mixin(do_mirror_v);
+            current_transformation++;
             mixin(compare_and_replace);
+
             for (int i = 0; i < 3; i++){
-                temp.rotate;
+                mixin(do_rotation);
+                current_transformation++;
                 mixin(compare_and_replace);
             }
         }
         else{
-            temp.mirror_v;
+            mixin(do_mirror_v);
+            current_transformation = Transformation.mirror_v;
             mixin(compare_and_replace);
+
             temp.mirror_h;
+            temp.snap(final_westwards, final_northwards);
+            current_transformation = Transformation.flip;
             mixin(compare_and_replace);
-            temp.mirror_v;
+            
+            mixin(do_mirror_v);
+            current_transformation = Transformation.mirror_h;
             mixin(compare_and_replace);
         }
+
+        initial_playing_area.transform(final_transformation);
+        initial_playing_area.snap(final_westwards, final_northwards);
+
+        return final_transformation;
     }
-    */
 
     /**
     * Analyzes the state for unconditional life.

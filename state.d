@@ -403,6 +403,7 @@ struct State(T)
             mixin(compare_and_replace);
         }
 
+        initial_playing_area.transform(final_transformation);
         initial_playing_area.snap(final_westwards, final_northwards);
 
         return final_transformation;
