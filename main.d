@@ -8,9 +8,9 @@ import state;
 import polyomino;
 import defense_state;
 import game_state;
-import search_state;
-import defense_search_state;
-import defense;
+//import search_state;
+//import defense_search_state;
+//import defense;
 import eyeshape;
 
 /*
@@ -43,6 +43,7 @@ void print_state(SearchState!Board8 ss, int depth){
 }
 */
 
+/*
 void print_path(SearchState8 ss, int depth){
     if (depth <= 0){
         return;
@@ -69,6 +70,7 @@ void print_path(SearchState8 ss, int depth){
         }
     }
 }
+*/
 
 void main()
 {
@@ -102,8 +104,8 @@ void main()
     //s.opponent = rectangle8(4, 2) & ~Board8(2, 1) & ~Board8(3, 0);
 
 
-    SearchState8[State8] state_pool;
-    DefenseResult8[DefenseState8] defense_table;
+    //SearchState8[State8] state_pool;
+    //DefenseResult8[DefenseState8] defense_table;
     //auto ss = new SearchState8(rectangle8(4, 3));
 
     /*
@@ -118,20 +120,15 @@ void main()
     }
     */
 
+
     auto s = DefenseState8(rectangle8(4, 3));
-    s.player = rectangle8(4, 3) & ~rectangle8(3, 2) | Board8(2, 1);
+    s.player = rectangle8(4, 3) & ~(Board8(0, 0) | Board8(0, 1) | Board8(1, 0));
     s.player_target = s.player;
     s.ko_threats = -float.infinity;
 
     auto gs = new DefenseGameState8(s);
 
     gs.calculate_minimax_value;
-
-    assert(gs.low_value == 12);
-    assert(gs.high_value == 12);
-    foreach (child; gs.children){
-        assert(child.value_shift < 0);
-    }
 
     foreach (g; gs.principal_path!"high"(20)){
         writeln(g);

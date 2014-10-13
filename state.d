@@ -11,7 +11,7 @@ struct State(T)
 {
     T player;
     T opponent;
-    T playing_area = T(T.FULL);
+    T playing_area = T.full;
     T ko;
     bool black_to_play = true;
     int passes;
@@ -481,7 +481,7 @@ struct State(T)
                 p = T(x, y);
                 if (playing_area & p){
                     r ~= "\x1b[0;30;";
-                    if (player_secure & p || opponent_secure & p){
+                    if ((player_secure | opponent_secure) & p){
                         r ~= "42m";
                     }
                     else if ((player_defendable | opponent_defendable) & p){

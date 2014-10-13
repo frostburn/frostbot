@@ -3,21 +3,73 @@ module defense_state;
 import std.stdio;
 import std.string;
 
+import utils;
 import polyomino;
 import board8;
 import state;
 
 
+struct TargetChain(T)
+{
+    T chain;
+    float outside_liberties = 0;
+
+    this(T chain)
+    {
+        this.chain = chain;
+    }
+
+    this(T chain, float outside_liberties)
+    {
+        this.chain = chain;
+        this.outside_liberties = outside_liberties;
+    }
+
+    invariant
+    {
+        assert(chain.valid);
+        assert(chain);
+        assert(outside_liberties >= 0);
+    }
+
+    bool opEquals(in TargetChain!T rhs) const pure nothrow @nogc @safe
+    {
+        return chain == rhs.chain && outside_liberties == rhs.outside_liberties;
+    }
+
+    int opCmp(in TargetChain!T rhs) const pure nothrow @nogc @safe
+    {
+        if (chain != rhs.chain){
+            return chain.opCmp(rhs.chain);
+        }
+        if (outside_liberties < rhs.outside_liberties){
+            return -1;
+        }
+        if (outside_liberties > rhs.outside_liberties){
+            return 1;
+        }
+        return 0;
+    }
+
+    hash_t toHash() const nothrow @safe
+    {
+        return (
+            chain.toHash ^
+            typeid(outside_liberties).getHash(&outside_liberties)
+        );
+    }
+}
+
+alias TargetChain8 = TargetChain!Board8;
+
 struct DefenseState(T)
 {
     T player;
     T opponent;
-    T playing_area = T(T.FULL);
+    T playing_area = T.full;
     T ko;
-    T player_target;
-    T opponent_target;
-    T player_outside_liberties;
-    T opponent_outside_liberties;
+    TargetChain!T[] player_targets;
+    TargetChain!T[] opponent_targets;
     bool black_to_play = true;
     int passes;
     float ko_threats = 0;
@@ -33,22 +85,72 @@ struct DefenseState(T)
         this.opponent = opponent;
     }
 
-    this(T player, T opponent, T playing_area, T ko, T player_target, T opponent_target, T player_outside_liberties, T opponent_outside_liberties, bool black_to_play, int passes, float ko_threats)
+    this(T player, T opponent, T playing_area, T ko, TargetChain!T[] player_targets, TargetChain!T[] opponent_targets, bool black_to_play, int passes, float ko_threats)
     {
         this.player = player;
         this.opponent = opponent;
         this.playing_area = playing_area;
         this.ko = ko;
-        this.player_target = player_target;
-        this.opponent_target = opponent_target;
-        this.player_outside_liberties = player_outside_liberties;
-        this.opponent_outside_liberties = opponent_outside_liberties;
+        this.player_targets = player_targets.dup;
+        this.player_targets.sort;
+        this.opponent_targets = opponent_targets.dup;
+        this.opponent_targets.sort;
         this.black_to_play = black_to_play;
         this.passes = passes;
         this.ko_threats = ko_threats;
     }
 
-    /*
+    T player_target() const @property
+    {
+        T result;
+        foreach (target; player_targets){
+            result |= target.chain;
+        }
+        return result;
+    }
+
+    T opponent_target() const @property
+    {
+        T result;
+        foreach (target; opponent_targets){
+            result |= target.chain;
+        }
+        return result;
+    }
+
+    void player_target(T chain) @property
+    {
+        auto target_chain = TargetChain!T(chain);
+        player_targets = [target_chain];
+    }
+
+    void opponent_target(T chain) @property
+    {
+        auto target_chain = TargetChain!T(chain);
+        opponent_targets = [target_chain];
+    }
+
+    DefenseState!T opAssign(DefenseState!T rhs)
+    {
+        this.player = rhs.player;
+        this.opponent = rhs.opponent;
+        this.playing_area = rhs.playing_area;
+        this.ko = rhs.ko;
+        this.player_targets = rhs.player_targets.dup;
+        this.opponent_targets = rhs.opponent_targets.dup;
+        this.black_to_play = rhs.black_to_play;
+        this.passes = rhs.passes;
+        this.ko_threats = rhs.ko_threats;
+
+        return this;
+    }
+
+    this(this)
+    {
+        player_targets = player_targets.dup;
+        opponent_targets = opponent_targets.dup;
+    }
+
     invariant
     {
         assert(player.valid);
@@ -56,11 +158,10 @@ struct DefenseState(T)
         assert(playing_area.valid);
         assert(ko.valid);
         assert(ko.popcount <= 1);
-        assert(player_target.valid);
-        assert(opponent_target.valid);
-        assert(player_outside_liberties.valid);
-        assert(opponent_outside_liberties.valid);
+        //assert(player_target.valid);
+        //assert(opponent_target.valid);
 
+        /*
         assert(!(player & opponent));
         assert(!(player & ko));
         assert(!(opponent & ko));
@@ -80,9 +181,10 @@ struct DefenseState(T)
         assert(!(opponent_target & ~playing_area));
         assert(!(player_outside_liberties & ~playing_area));
         assert(!(opponent_outside_liberties & ~playing_area));
-
+        */
 
         // TODO: Assert that all killable chains have liberties.
+        /*
         version(all_invariants){
             foreach (player_chain; player.chains){
                 assert(player_chain & player_outside_liberties || player_chain.liberties(playing_area & ~opponent));
@@ -91,8 +193,8 @@ struct DefenseState(T)
                 assert(opponent_chain & opponent_outside_liberties || opponent_chain.liberties(playing_area & ~player));
             }
         }
+        */
     }
-    */
 
     bool opEquals(in DefenseState!T rhs) const
     {
@@ -101,10 +203,8 @@ struct DefenseState(T)
             (opponent == rhs.opponent) &&
             (playing_area == rhs.playing_area) &&
             (ko == rhs.ko) &&
-            (player_target == rhs.player_target) &&
-            (opponent_target == rhs.opponent_target) &&
-            (player_outside_liberties == rhs.player_outside_liberties) &&
-            (opponent_outside_liberties == rhs.opponent_outside_liberties) &&
+            (player_targets == rhs.player_targets) &&
+            (opponent_targets == rhs.opponent_targets) &&
             (black_to_play == rhs.black_to_play) &&
             (passes == rhs.passes) &&
             (ko_threats == rhs.ko_threats)
@@ -133,10 +233,14 @@ struct DefenseState(T)
             return passes - rhs.passes;
         }
         mixin(compare_member("ko"));
-        mixin(compare_member("player_target"));
-        mixin(compare_member("opponent_target"));
-        mixin(compare_member("player_outside_liberties"));
-        mixin(compare_member("opponent_outside_liberties"));
+
+        if (player_targets != rhs.player_targets){
+            return compare_sorted_lists!(TargetChain!T)(player_targets, rhs.player_targets);
+        }
+        if (opponent_targets != rhs.opponent_targets){
+            return compare_sorted_lists!(TargetChain!T)(opponent_targets, rhs.opponent_targets);
+        }
+
         if (ko_threats < rhs.ko_threats){
             return -1;
         }
@@ -151,18 +255,16 @@ struct DefenseState(T)
     hash_t toHash() const nothrow @safe
     {
         hash_t opponent_hash = opponent.toHash;
-        hash_t player_target_hash = player_target.toHash;
+        hash_t player_targets_hash = typeid(player_targets).getHash(&player_targets);
         return (
             player.toHash ^
             (opponent_hash << (hash_t.sizeof * 4)) ^
             (opponent_hash >> (hash_t.sizeof * 4)) ^
             playing_area.toHash ^
             ko.toHash ^
-            (player_target_hash << (hash_t.sizeof * 4)) ^
-            (player_target_hash >> (hash_t.sizeof * 4)) ^
-            opponent_target.toHash ^
-            player_outside_liberties.toHash ^
-            opponent_outside_liberties.toHash ^
+            (player_targets_hash << (hash_t.sizeof * 4)) ^
+            (player_targets_hash >> (hash_t.sizeof * 4)) ^
+            typeid(opponent_targets).getHash(&opponent_targets) ^
             typeid(black_to_play).getHash(&black_to_play) ^
             typeid(passes).getHash(&passes) ^
             typeid(ko_threats).getHash(&ko_threats)
@@ -215,7 +317,14 @@ struct DefenseState(T)
                 writefln("Liberties: %s", i);
                 writeln(chains_in_danger[i].liberties(playing_area & ~player));
             }
-            if (!(chains_in_danger[i] & opponent_outside_liberties) && !(chains_in_danger[i].liberties(playing_area & ~player))){
+            auto chain_in_danger = chains_in_danger[i];
+            float chain_outside_liberties = 0;
+            foreach (opponent_target; opponent_targets){
+                if (opponent_target.chain & chain_in_danger){
+                    chain_outside_liberties += opponent_target.outside_liberties;
+                }
+            }
+            if (!(chain_outside_liberties) && !(chain_in_danger.liberties(playing_area & ~player))){
                 num_kill += chains_in_danger[i].popcount;
                 kill |= chains_in_danger[i];
                 temp = chains_in_danger[i];
@@ -252,13 +361,9 @@ struct DefenseState(T)
         player = opponent;
         opponent = temp;
 
-        temp = player_target;
-        player_target = opponent_target;
-        opponent_target = temp;
-
-        temp = player_outside_liberties;
-        player_outside_liberties = opponent_outside_liberties;
-        opponent_outside_liberties = temp;
+        auto targets_temp = player_targets;
+        player_targets = opponent_targets;
+        opponent_targets = targets_temp;
 
         ko_threats = -ko_threats;
         black_to_play = !black_to_play;
@@ -269,7 +374,7 @@ struct DefenseState(T)
         T old_ko = ko;
         T temp = move;
         if (move){
-            if ((move & player) || (move & opponent) || (move & opponent_outside_liberties))
+            if ((move & player) || (move & opponent))
                 return false;
             if (move & ko){
                 if (ko_threats > 0){
@@ -283,7 +388,18 @@ struct DefenseState(T)
             kill_stones(move);
             temp.flood_into(player);
             // Check if move is suicidal and undo it if necessary.
-            if (!(temp & player_outside_liberties) && !(temp.liberties(playing_area & ~opponent))){
+            bool has_liberties = bool(temp.liberties(playing_area & ~opponent));
+            if (!has_liberties){
+                foreach (player_target; player_targets){
+                    if (temp & player_target.chain){
+                        if (player_target.outside_liberties){
+                            has_liberties = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!has_liberties){
                 player ^= move;
                 ko = old_ko;
                 return false;
@@ -305,24 +421,34 @@ struct DefenseState(T)
         return true;
     }
 
+    void fill_opponent_outside_liberty(size_t index)
+    in
+    {
+        assert(index < opponent_targets.length);
+        assert(opponent_targets[index].outside_liberties);
+    }
+    body
+    {
+        opponent_targets[index].outside_liberties -= 1;
+        opponent_targets.sort;
+        swap_turns;
+    }
+
     DefenseState!T[] children(T[] moves)
     {
         DefenseState!T[] _children = [];
 
         foreach (move; moves){
-            //TODO: These sould be one per chain.
-            /*
-            if (move & player_outside_liberties){
-                if (liberty_taking_move_played){
-                    continue;
-                }
-                else{
-                    liberty_taking_move_played = true;
-                }
-            }
-            */
             auto child = this;
             if (child.make_move(move)){
+                _children ~= child;
+            }
+        }
+
+        foreach (index, opponent_target; opponent_targets){
+            auto child = this;
+            if (opponent_target.outside_liberties){
+                child.fill_opponent_outside_liberty(index);
                 _children ~= child;
             }
         }
@@ -348,6 +474,7 @@ struct DefenseState(T)
 
     float liberty_score()
     {
+        // Outside liberties are not counted towards or against the score.
         if (player_target & ~player){
             if (black_to_play){
                 return -float.infinity;
@@ -386,29 +513,50 @@ struct DefenseState(T)
         return (passes >= 2 || player_target & ~player || opponent_target & ~opponent);
     }
 
-
-    // TODO: Reduction changes the maximum score reachable. Find a way to deal with this.
-    /// Reduces target, moves outside liberties and applies other transformations that do not affect the result.
+    /// Applies reducing transformations that do not affect the result.
     int reduce()
     {
-        if (player_target & player){
-            player_target.flood_into(player);
+        float[T] liberties_by_chain;
+
+        string normalize_targets(string player)
+        {
+            return "
+                foreach (ref " ~ player ~ "_target; " ~ player ~ "_targets){
+                    if (" ~ player ~ "_target.chain & " ~ player ~ "){
+                        " ~ player ~ "_target.chain.flood_into(" ~ player ~ ");
+                    }
+                    if (" ~ player ~ "_target.chain in liberties_by_chain){
+                        liberties_by_chain[" ~ player ~ "_target.chain] += " ~ player ~ "_target.outside_liberties;
+                    }
+                    else{
+                        liberties_by_chain[" ~ player ~ "_target.chain] = " ~ player ~ "_target.outside_liberties;
+                    }
+                }
+                " ~ player ~ "_targets = " ~ player ~ "_targets.init;
+                foreach (chain, liberties; liberties_by_chain){
+                    " ~ player ~ "_targets ~= TargetChain8(chain, liberties);
+                }
+                " ~ player ~ "_targets.sort;
+            ";
         }
-        if (opponent_target & opponent){
-            opponent_target.flood_into(opponent);
-        }
-        if (player_outside_liberties || opponent_outside_liberties || ko){
-            return 0;
-        }
-        if (bool(player_target) ^ bool(opponent_target)){
-            string reduce_target(string player){
+
+        mixin(normalize_targets("player"));
+        liberties_by_chain = liberties_by_chain.init;
+        mixin(normalize_targets("opponent"));
+
+        if ((cast(bool)player_targets.length) ^ (cast(bool)opponent_targets.length)){
+            string reduce_target(string player)
+            {
                 return "
                     T space = playing_area & ~" ~ player ~ "_target;
                     T blob = space.blob(playing_area);
-                    T candidate_" ~ player ~ "_target = " ~ player ~ "_target & blob;
-                    if (candidate_" ~ player ~ "_target.chains.length == " ~ player ~ "_target.chains.length){
-                        " ~ player ~ "_target = candidate_" ~ player ~ "_target;
+                    foreach (ref " ~ player ~ "_target; " ~ player ~ "_targets){
+                        T candidate_" ~ player ~ "_chain = " ~ player ~ "_target.chain & blob;
+                        if (candidate_" ~ player ~ "_chain.chains.length == " ~ player ~ "_target.chain.chains.length){
+                            " ~ player ~ "_target.chain = candidate_" ~ player ~ "_chain;
+                        }
                     }
+                    " ~ player ~ "_targets.sort;
                     int old_size = playing_area.popcount;
                     playing_area = space | " ~ player ~ "_target;
                     player &= playing_area;
@@ -417,7 +565,7 @@ struct DefenseState(T)
                 ";
             }
 
-            if (player_target){
+            if (player_targets.length){
                 mixin(reduce_target("player"));
                 return old_size - new_size;
             }
@@ -437,15 +585,32 @@ struct DefenseState(T)
         player.fix(westwards, northwards);
         opponent.fix(westwards, northwards);
         ko.fix(westwards, northwards);
-        player_target.fix(westwards, northwards);
-        opponent_target.fix(westwards, northwards);
-        player_outside_liberties.fix(westwards, northwards);
-        opponent_outside_liberties.fix(westwards, northwards);
+
+        string fix_targets(string player){
+            return "
+                foreach (ref " ~ player ~ "_target; " ~ player ~ "_targets){
+                    " ~ player ~ "_target.chain.fix(westwards, northwards);
+                }
+                " ~ player ~ "_targets.sort;
+            ";
+        }
+
+        mixin(fix_targets("player"));
+        mixin(fix_targets("opponent"));
     }
 
     bool can_rotate()
     {
         return playing_area.can_rotate;
+    }
+
+    static string transform_targets(string player, string transform){
+        return "
+            foreach (ref " ~ player ~ "_target; " ~ player ~ "_targets){
+                " ~ player ~ "_target.chain." ~ transform ~ ";
+            }
+            " ~ player ~ "_targets.sort;
+        ";
     }
 
     void rotate()
@@ -459,10 +624,8 @@ struct DefenseState(T)
         opponent.rotate;
         ko.rotate;
         playing_area.rotate;
-        player_target.rotate;
-        opponent_target.rotate;
-        player_outside_liberties.rotate;
-        opponent_outside_liberties.rotate;
+        mixin(transform_targets("player", "rotate"));
+        mixin(transform_targets("opponent", "rotate"));
     }
 
     void mirror_h()
@@ -471,10 +634,8 @@ struct DefenseState(T)
         opponent.mirror_h;
         ko.mirror_h;
         playing_area.mirror_h;
-        player_target.mirror_h;
-        opponent_target.mirror_h;
-        player_outside_liberties.mirror_h;
-        opponent_outside_liberties.mirror_h;
+        mixin(transform_targets("player", "mirror_h"));
+        mixin(transform_targets("opponent", "mirror_h"));
     }
 
     void mirror_v()
@@ -483,10 +644,8 @@ struct DefenseState(T)
         opponent.mirror_v;
         ko.mirror_v;
         playing_area.mirror_v;
-        player_target.mirror_v;
-        opponent_target.mirror_v;
-        player_outside_liberties.mirror_v;
-        opponent_outside_liberties.mirror_v;
+        mixin(transform_targets("player", "mirror_v"));
+        mixin(transform_targets("opponent", "mirror_v"));
     }
 
     void canonize()
@@ -579,12 +738,20 @@ struct DefenseState(T)
     body
     {
         // Add immortal stones to unconditionally controlled territory.
-        T tmp = player_outside_liberties;
-        tmp.flood_into(player);
-        player_unconditional |= tmp;
-        tmp = opponent_outside_liberties;
-        tmp.flood_into(opponent);
-        opponent_unconditional |= tmp;
+
+        string add_immortal_chains(string player){
+            return "
+                foreach (" ~ player ~ "_target; " ~ player ~ "_targets){
+                    if (" ~ player ~ "_target.outside_liberties == float.infinity){
+                        T temp = " ~ player ~ "_target.chain;
+                        temp.flood_into(" ~ player ~ ");
+                        " ~ player ~ "_unconditional |= temp;
+                    }
+                }
+            ";
+        }
+        mixin(add_immortal_chains("player"));
+        mixin(add_immortal_chains("opponent"));
 
         // The unconditional regions are already analyzed and can be excluded here.
         T[] player_chains = player.chains;
@@ -637,20 +804,17 @@ struct DefenseState(T)
                 p = T(x, y);
                 if (playing_area & p){
                     r ~= "\x1b[0;30;";
-                    if (player_outside_liberties & p){
+                    if (player_target & p){
                         r ~= "45m";
-                    }
-                    else if (opponent_outside_liberties & p){
-                        r ~= "46m";
-                    }
-                    else if (player_target & p){
-                        r ~= "44m";
                     }
                     else if (opponent_target & p){
                         r ~= "41m";
                     }
-                    else if ((player_defendable | opponent_defendable | player_secure | opponent_secure) & p){
+                    else if ((player_secure | opponent_secure) & p){
                         r ~= "42m";
+                    }
+                    else if ((player_defendable | opponent_defendable) & p){
+                        r ~= "44m";
                     }
                     else{
                         r ~= "43m";
@@ -684,7 +848,19 @@ struct DefenseState(T)
             r ~= "White to play,";
         }
 
-        r ~= format(" passes=%s, ko_threats=%s", passes, ko_threats);
+        float total_player_outside_liberties = 0;
+        foreach (player_target; player_targets){
+            total_player_outside_liberties += player_target.outside_liberties;
+        }
+        float total_opponent_outside_liberties = 0;
+        foreach (opponent_target; opponent_targets){
+            total_opponent_outside_liberties += opponent_target.outside_liberties;
+        }
+
+        r ~= format(
+            " passes=%s, ko_threats=%s, player liberties=%s, opponent liberties=%s",
+            passes, ko_threats, total_player_outside_liberties, total_opponent_outside_liberties
+        );
 
         return r;
     }
@@ -724,14 +900,19 @@ body
     T player;
     T opponent;
 
+    TargetChain8[] player_targets;
+    TargetChain8[] opponent_targets;
+
     if (defender_to_play){
         player = edge;
+        player_targets ~= TargetChain8(player);
     }
     else{
         opponent = edge;
+        opponent_targets ~= TargetChain8(opponent);
     }
 
-    return DefenseState!T(player, opponent, space | edge, T(), player, opponent, T(), T(), true, 0, ko_threats);
+    return DefenseState!T(player, opponent, space | edge, T(), player_targets, opponent_targets, true, 0, ko_threats);
 }
 
 
@@ -742,7 +923,8 @@ unittest
 {
     auto s = DefenseState8();
     s.opponent = s.playing_area & ~Board8(0, 0);
-    s.opponent_outside_liberties = s.opponent;
+    s.opponent_target = s.opponent;
+    s.opponent_targets[0].outside_liberties = float.infinity;
 
     assert(!s.make_move(Board8(0, 0)));
     assert(s.make_move(Board8()));
@@ -751,7 +933,8 @@ unittest
 
     s = DefenseState8();
     s.opponent = Board8(0, 0);
-    s.opponent_outside_liberties = s.opponent;
+    s.opponent_target = s.opponent;
+    s.opponent_targets[0].outside_liberties = float.infinity;
     s.player = Board8(1, 0);
 
     assert(s.make_move(Board8(0, 1)));

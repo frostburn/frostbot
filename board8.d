@@ -59,6 +59,16 @@ struct Board8
         bits = (1UL << (x * H_SHIFT)) << (y * V_SHIFT);
     }
 
+    static Board8 full()
+    {
+        return Board8(FULL);
+    }
+
+    static Board8 empty()
+    {
+        return Board8(EMPTY);
+    }
+
     Board8 opUnary(string op)() const pure nothrow @nogc @safe
     {
         mixin("return Board8(" ~ op ~ "bits);");

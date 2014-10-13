@@ -42,6 +42,54 @@ int compare(in ulong a, in ulong b) pure nothrow @nogc @safe
     return 0;
 }
 
+int compare_sorted_lists(T)(in T[] a, in T[] b)
+{
+    auto a_length = a.length;
+    auto b_length = b.length;
+    if (a_length < b_length){
+        return -1;
+    }
+    if (a_length > b_length){
+        return 1;
+    }
+
+    foreach (index, a_element; a){
+        T b_element = b[index];
+        if (a_element < b_element){
+            return -1;
+        }
+        if (a_element > b_element){
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int compare_sets(T)(in bool[T] a, in bool[T] b)
+{
+    auto a_length = a.length;
+    auto b_length = b.length;
+    if (a_length < b_length){
+        return -1;
+    }
+    if (a_length > b_length){
+        return 1;
+    }
+    T[] a_keys = a.keys;
+    T[] b_keys = b.keys;
+    a_keys.sort;
+    b_keys.sort;
+    foreach (index, a_key; a_keys){
+        T b_key = b_keys[index];
+        if (a_key < b_key){
+            return -1;
+        }
+        if (a_key > b_key){
+            return 1;
+        }
+    }
+    return 0;
+}
 
 bool member_in_list(T)(ref T member, ref T[] list){
     foreach (list_member; list){
