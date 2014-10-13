@@ -5,6 +5,7 @@ import std.string;
 import std.algorithm;
 import std.array;
 import std.random;
+import std.typecons;
 
 import utils;
 import polyomino;
@@ -279,7 +280,7 @@ body
         defense_state.player &= ~outside_liberties;
         defense_state.playing_area &= ~outside_liberties;
 
-        auto defense_search_state = new DefenseSearchState!(T, DefenseState!T)(defense_state);
+        auto defense_search_state = scoped!(DefenseSearchState!(T, DefenseState!T))(defense_state);
         defense_search_state.player_secure = player_secure;
         defense_search_state.opponent_secure = opponent_secure;
         defense_search_state.calculate_minimax_value;
@@ -307,6 +308,7 @@ body
                 if (child_search_state.lower_bound > min_score){
                     return DefenseResult!T(Status.defendable);
                 }
+                destroy(child_search_state);
             }
             return DefenseResult!T(Status.secure);
         }

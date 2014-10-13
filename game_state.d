@@ -8,6 +8,7 @@ import std.array;
 import utils;
 import board8;
 import state;
+import defense_state;
 
 
 /**
@@ -15,35 +16,35 @@ import state;
 * It doesn't have a single value. Instead it determines a range of possible values allowed by rulesets with varying super-ko rules.
 */
 
-class GameState(T)
+
+class GameState(T, S)
 {
-    State!T state;
+    S state;
     float low_value = -float.infinity;
     float high_value = float.infinity;
-    bool is_leaf;
-    GameState!T[] children;
-    GameState!T[] parents;
+    int value_shift = 0;
+    bool is_leaf = false;
+    GameState!(T, S)[] children;
+    GameState!(T, S)[S] parents;
 
     private
     {
         T[] moves;
-        State!T canonical_state;
-        bool canonical_state_available = false;
-        bool populated = false;
+        bool is_populated = false;
     }
 
     this(T playing_area)
     {
-        state = State!T(playing_area);
-        calculate_available_moves;
+        this(S(playing_area));
     }
 
-    this(State!T state, T[] moves=null)
+    this(S state, int value_shift=0, T[] moves=null)
     {
         this.state = state;
-        if (state.passes >= 2){
+        this.value_shift = value_shift;
+        if (state.is_leaf){
             is_leaf = true;
-            update_value;
+            low_value = high_value = state.liberty_score + value_shift;
         }
         else{
             if (moves is null){
@@ -60,8 +61,8 @@ class GameState(T)
         assert(state.passes <= 2);
     }
 
-    GameState!T copy(){
-        return new GameState!T(state);
+    GameState!(T, S) copy(){
+        return new GameState!(T, S)(state);
     }
 
     void calculate_available_moves()
@@ -77,125 +78,99 @@ class GameState(T)
         moves ~= T();
     }
 
-    void create_canonical_state(){
-        if (!canonical_state_available){
-            canonical_state = state;
-            canonical_state.canonize;
-            canonical_state_available = true;
-        }
-    }
-
-    void make_children(ref GameState!T[State!T] state_pool, bool use_transpositions)
+    void make_children(ref GameState!(T, S)[S] state_pool)
     {
-        GameState!T child;
-        auto state_children = state.children(moves);
         children = [];
-        foreach (child_state; state_children){
-            if (use_transpositions){
-                child_state.canonize;
+
+        // Prune out transpositions.
+        S[] child_states;
+        int[] child_value_shifts;
+        bool[S] seen;
+        foreach (child_state; state.children(moves)){
+            int child_value_shift = child_state.reduce;
+            child_state.canonize;
+            if (child_state !in seen){
+                seen[child_state] = true;
+                child_states ~= child_state;
+                child_value_shifts ~= child_value_shift;
             }
+        }
+
+        foreach (index, child_state; child_states){
             if (child_state in state_pool){
-                child = state_pool[child_state];
-                if (!use_transpositions || !(member_in_list!(GameState!T)(child, children))){
-                    if (!member_in_list!(GameState!T)(this, child.parents)){
-                        child.parents ~= this;
-                    }
-                   children ~= child;
-                }
+                auto child = state_pool[child_state];
+                children ~= child;
+                child.parents[state] = this;
             }
             else{
-                if (!use_transpositions){
-                    child = new GameState!T(child_state, moves);
+                assert(child_state.black_to_play);
+                int child_value_shift = child_value_shifts[index];
+
+                T[] child_moves = null;
+                if (child_state.playing_area == state.playing_area){
+                    child_moves = moves;
                 }
-                else{
-                    child = new GameState!T(child_state);
-                    child.canonical_state = child_state;
-                    child.canonical_state_available = true;
-                    //child.create_canonical_state;
-                }
-                child.parents ~= this;
-                state_pool[child_state] = child;
+                auto child = new GameState!(T, S)(child_state, child_value_shift - value_shift, child_moves);
                 children ~= child;
+                child.parents[state] = this;
+                state_pool[child.state] = child;
             }
         }
 
-        static bool more_novel(GameState!T a, GameState!T b){
+        //children.randomShuffle;
+
+        static bool more_novel(GameState!(T, S) a, GameState!(T, S) b){
             return a.parents.length < b.parents.length;
         }
 
         sort!more_novel(children);
-
-        if (!use_transpositions){
-            assert(state_children.length == children.length);
-        }
     }
 
     void make_children()
     {
-        GameState!T[State!T] empty;
-        make_children(empty, false);
+        GameState!(T, S)[S] empty;
+        make_children(empty);
     }
 
-    bool update_value(){
-        debug(update_value) {
-            writeln("Updating value: ", &this);
-            writeln(low_value, ", ", high_value);
-            //writeln(this);
-        }
-        if (low_value == high_value){
+    bool update_value()
+    {
+        if (is_leaf){
+            // The value should've been set in the constructor.
             return false;
         }
-        auto old_low_value = low_value;
-        auto old_high_value = high_value;
-        if (!is_leaf){
-            float sign;
-            float child_low_value, child_high_value;
-            if (state.black_to_play){
-                sign = +1;
+
+        float old_low_value = low_value;
+        float old_high_value = high_value;
+
+        low_value = -float.infinity;
+        high_value = -float.infinity;
+
+        foreach (child; children){
+            if (-child.high_value > low_value){
+                low_value = -child.high_value;
             }
-            else{
-                sign = -1;
-            }
-            low_value = -sign * float.infinity;
-            high_value = -sign * float.infinity;
-            foreach (child; children){
-                if (state.black_to_play != child.state.black_to_play){
-                    child_low_value = child.low_value;
-                    child_high_value = child.high_value;
-                }
-                else{
-                    child_low_value = -child.high_value;
-                    child_high_value = -child.low_value;
-                }
-                if (child_low_value * sign > low_value * sign){
-                    low_value = child_low_value;
-                }
-                if (child_high_value * sign > high_value * sign){
-                    high_value = child_high_value;
-                }
+            if (-child.low_value > high_value){
+                high_value = -child.low_value;
             }
         }
-        else{
-            low_value = high_value = state.liberty_score;
-        }
-        
-        debug(update_value) {
-            foreach (child; children){
-                writeln(" Child: ", &child);
-                writeln(" ", child.low_value, ", ", child.high_value);
+
+        debug(ss_update_value){
+            if (low_value > -float.infinity && high_value < float.infinity){
+                writeln("Updating value: max=", state.black_to_play);
+                writeln("Old value: ", old_low_value, ", ", old_high_value);
+                foreach (child; children){
+                    writeln(" Child: ", child.low_value, ", ", child.high_value, " max=", child.state.black_to_play);
+                }
+                writeln("New value: ", low_value, ", ", high_value);
             }
-            writeln(low_value, ", ", high_value);
         }
-        return (old_low_value != low_value || old_high_value != high_value);
+
+        return (old_low_value != low_value) || (old_high_value != high_value);
     }
 
-    void populate_game_tree(
-        ref GameState!T[State!T] state_pool,
-        ref GameState!T[] leaf_queue,
-        bool use_transpositions
-        )
+    void populate_game_tree(ref GameState!(T, S)[S] state_pool, ref GameState!(T, S)[] leaf_queue)
     {
-        GameState!T[] queue;
+        GameState!(T, S)[] queue;
 
         queue ~= this;
 
@@ -206,25 +181,18 @@ class GameState(T)
                 writeln("Populating with:");
                 writeln(game_state);
             }
-            if (!game_state.populated){
-                version(assert){
-                    if (use_transpositions){
-                        assert(game_state.canonical_state_available);
-                        assert(game_state.canonical_state in state_pool);
-                        assert(state_pool[game_state.canonical_state] == game_state);
-                    }
-                    else{
-                        assert(state_pool[game_state.state] == game_state);
-                    }
-                }
-                game_state.populated = true;
+            if (!game_state.is_populated){
+                assert(game_state.state in state_pool);
+                assert(state_pool[game_state.state] == game_state);
+
+                game_state.is_populated = true;
 
                 if (game_state.is_leaf){
                     leaf_queue ~= game_state;
                     continue;
                 }
 
-                game_state.make_children(state_pool, use_transpositions);
+                game_state.make_children(state_pool);
 
                 foreach (child; game_state.children){
                     queue ~= child;
@@ -233,49 +201,13 @@ class GameState(T)
         }
     }
 
-    // TODO: Create a non-recursive version
-    /*
-    void populate_game_tree(
-        ref GameState!T[State!T] state_pool,
-        ref GameState!T[] leaf_queue,
-        bool use_transpositions
-        )
-    {
-        debug(populate) {
-            writeln("Populating tree for:");
-            writeln(this);
-        }
-        if (!populated){
-            populated = true;
-            if (use_transpositions){
-                assert(canonical_state_available);
-                assert(canonical_state in state_pool);
-                assert(state_pool[canonical_state] == this);
-            }
-            else{
-                assert(state_pool[state] == this);
-            }
-            if (is_leaf){
-                leaf_queue ~= this;
-                return;
-            }
-
-            make_children(state_pool, use_transpositions);
-
-            foreach (child; children){
-                child.populate_game_tree(state_pool, leaf_queue, use_transpositions);
-            }
-        }
-    }
-    */
-
     void update_parents()
     {
         debug(update_parents) {
             writeln("Updating parents for:");
             writeln(this);
         }
-        GameState!T[] queue;
+        GameState!(T, S)[] queue;
         foreach (parent; parents){
             queue ~= parent;
         }
@@ -296,36 +228,14 @@ class GameState(T)
         }
     }
 
-    /*
-    void update_parents()
+    void calculate_minimax_value()
     {
-        debug(update_parents) {
-            writeln("Updating parents for:");
-            writeln(this);
-        }
-        foreach (parent; parents){
-            bool changed = parent.update_value;
-            if (changed){
-                parent.update_parents;
-            }
-        }
-    }
-    */
+        GameState!(T, S)[S] state_pool;
+        GameState!(T, S)[] leaf_queue;
 
-    void calculate_minimax_value(bool use_transpositions=false)
-    {
-        GameState!T[State!T] state_pool;
-        GameState!T[] leaf_queue;
+        state_pool[state] = this;
 
-        if (use_transpositions){
-            create_canonical_state;
-            state_pool[canonical_state] = this;
-        }
-        else{
-            state_pool[state] = this;
-        }
-
-        populate_game_tree(state_pool, leaf_queue, use_transpositions);
+        populate_game_tree(state_pool, leaf_queue);
 
         foreach (leaf; leaf_queue){
             leaf.update_parents;
@@ -335,52 +245,73 @@ class GameState(T)
     override string toString()
     {
         return format(
-            "%s\nlow_value=%s high_value=%s number of children=%s",
+            "%s\nlow_value=%s high_value=%s value_shift=%s number of children=%s",
             state,
             low_value,
             high_value,
+            value_shift,
             children.length
         );
     }
 
-    // TODO: Add support for transposed paths.
-    GameState!T[] principal_path(string type)(int max_depth=100)
+    GameState!(T, S)[] principal_path(string type)(int max_depth=100)
     {
         static assert(type == "high" || type == "low");
+        static if (type == "high"){
+            enum other_type = "low";
+        }
+        else{
+            enum other_type = "high";
+        }
         if (max_depth <= 0){
             return [];
         }
-        GameState!T[] result = [this];
+        GameState!(T, S)[] result = [this];
+        bool found_one = false;
         foreach(child; children){
-            if (mixin("child." ~ type ~ "_value == " ~ type ~ "_value")){
+            if (mixin("-child." ~ other_type ~ "_value == " ~ type ~ "_value && -child." ~ type ~ "_value == " ~ other_type ~ "_value")){
                 result ~= child.principal_path!type(max_depth - 1);
+                found_one = true;
                 break;
             }
         }
+
+        if (!found_one){
+            foreach(child; children){
+                if (mixin("-child." ~ other_type ~ "_value == " ~ type ~ "_value")){
+                    result ~= child.principal_path!type(max_depth - 1);
+                    break;
+                }
+            }
+        }
+
         return result;
     }
 }
 
+alias GameState8 = GameState!(Board8, State8);
+alias DefenseGameState8 = GameState!(Board8, DefenseState8);
+
 unittest
 {
-    auto gs = new GameState!Board8(rectangle!Board8(1, 1));
+    auto gs = new GameState8(rectangle8(1, 1));
     gs.calculate_minimax_value;
     assert(gs.low_value == 0);
     assert(gs.high_value == 0);
 
-    gs = new GameState!Board8(rectangle!Board8(2, 1));
+    gs = new GameState8(rectangle8(2, 1));
     gs.calculate_minimax_value;
     assert(gs.low_value == -2);
     assert(gs.high_value == 2);
 
-    gs = new GameState!Board8(rectangle!Board8(2, 1));
+    gs = new GameState8(rectangle8(2, 1));
     gs.state.opponent = Board8(0, 0);
     gs.state.ko = Board8(1, 0);
     gs.calculate_minimax_value;
     assert(gs.low_value == -2);
     assert(gs.high_value == 2);
 
-    gs = new GameState!Board8(rectangle!Board8(3, 1));
+    gs = new GameState8(rectangle8(3, 1));
     gs.calculate_minimax_value;
     assert(gs.low_value == 3);
     assert(gs.high_value == 3);
@@ -388,7 +319,7 @@ unittest
 
 unittest
 {
-    auto gs = new GameState!Board8(rectangle!Board8(2, 1));
+    auto gs = new GameState8(rectangle8(2, 1));
     gs.calculate_minimax_value;
     foreach (p; gs.principal_path!"high"){
         auto c = p.copy;
@@ -406,9 +337,9 @@ unittest
 
 unittest
 {
-    auto gs = new GameState!Board8(rectangle!Board8(3, 1));
+    auto gs = new GameState8(rectangle8(3, 1));
     gs.calculate_minimax_value;
-    void check_children(GameState!Board8 gs, ref bool[State!Board8] checked){
+    void check_children(GameState8 gs, ref bool[State8] checked){
         foreach (child; gs.children){
             if (child.state !in checked){
                 checked[child.state] = true;
@@ -420,29 +351,45 @@ unittest
         assert(c.low_value == gs.low_value);
         assert(c.high_value == gs.high_value);
     }
-    bool[State!Board8] checked;
+    bool[State8] checked;
     check_children(gs, checked);
 }
 
-//version(all_tests){
-    unittest
-    {
-        auto gs = new GameState!Board8(rectangle!Board8(4, 1));
-        gs.calculate_minimax_value;
-        assert(gs.low_value == 4);
-        assert(gs.high_value == 4);
+unittest
+{
+    auto gs = new GameState8(rectangle8(4, 1));
+    gs.calculate_minimax_value;
+    assert(gs.low_value == 4);
+    assert(gs.high_value == 4);
 
-        gs = new GameState!Board8(rectangle!Board8(2, 2));
-        gs.calculate_minimax_value;
-        assert(gs.low_value == -4);
-        assert(gs.high_value == 4);
-    }
+    gs = new GameState8(rectangle8(2, 2));
+    gs.calculate_minimax_value;
+    assert(gs.low_value == -4);
+    assert(gs.high_value == 4);
+}
 
-    unittest
-    {
-        auto gs = new GameState!Board8(rectangle!Board8(3, 2));
-        gs.calculate_minimax_value(true);
-        assert(gs.low_value == -6);
-        assert(gs.high_value == 6);
+unittest
+{
+    auto gs = new GameState8(rectangle8(3, 2));
+    gs.calculate_minimax_value;
+    assert(gs.low_value == -6);
+    assert(gs.high_value == 6);
+}
+
+unittest
+{
+    auto s = DefenseState8(rectangle8(4, 3));
+    s.player = rectangle8(4, 3) & ~rectangle8(3, 2) | Board8(2, 1);
+    s.player_target = s.player;
+    s.ko_threats = -float.infinity;
+
+    auto gs = new DefenseGameState8(s);
+
+    gs.calculate_minimax_value;
+
+    assert(gs.low_value == 12);
+    assert(gs.high_value == 12);
+    foreach (child; gs.children){
+        assert(child.value_shift < 0);
     }
-//}
+}

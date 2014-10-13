@@ -271,9 +271,9 @@ struct State(T)
         return children(moves);
     }
 
-    int liberty_score()
+    float liberty_score()
     {
-        int score = 0;
+        float score = 0;
 
         score += player.popcount;
         score -= opponent.popcount;
@@ -287,6 +287,16 @@ struct State(T)
         else{
             return -score;
         }
+    }
+
+    bool is_leaf()
+    {
+        return passes >= 2;
+    }
+
+    int reduce()
+    {
+        return 0;
     }
 
     void snap(out int westwards, out int northwards)

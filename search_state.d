@@ -79,7 +79,6 @@ class BaseSearchState(T, S)
         //}
     }
 
-    /*
     ~this()
     {
         foreach(child; allocated_children){
@@ -89,20 +88,19 @@ class BaseSearchState(T, S)
             destroy(history_node);
         }
     }
-    */
 
     int liberty_score()
     {
         int score = 0;
 
-        auto player_controlled_area = (state.player | player_defendable | player_secure) & ~(opponent_defendable | opponent_secure);
-        auto opponent_controlled_area = (state.opponent | opponent_defendable | opponent_secure) & ~(player_defendable | player_secure);
+        auto player_controlled_terrirory = (state.player | player_defendable | player_secure) & ~(opponent_defendable | opponent_secure);
+        auto opponent_controlled_terrirory = (state.opponent | opponent_defendable | opponent_secure) & ~(player_defendable | player_secure);
 
-        score += player_controlled_area.popcount;
-        score -= opponent_controlled_area.popcount;
+        score += player_controlled_terrirory.popcount;
+        score -= opponent_controlled_terrirory.popcount;
 
-        score += player_controlled_area.liberties(state.playing_area & ~opponent_controlled_area).popcount;
-        score -= opponent_controlled_area.liberties(state.playing_area & ~player_controlled_area).popcount;
+        score += player_controlled_terrirory.liberties(state.playing_area & ~opponent_controlled_terrirory).popcount;
+        score -= opponent_controlled_terrirory.liberties(state.playing_area & ~player_controlled_terrirory).popcount;
 
         if (state.black_to_play){
             return score;
@@ -317,6 +315,8 @@ class SearchState(T, S) : BaseSearchState!(T, S)
         analyze_secure;
         analyze_defendable(empty);
 
+        update_bounds;
+
         calculate_available_moves;
     }
 
@@ -332,11 +332,13 @@ class SearchState(T, S) : BaseSearchState!(T, S)
 
         analyze_secure;
         analyze_defendable(defense_table);
-        if (state.passes >= 2){
+        if (state.is_leaf){
             is_leaf = true;
             lower_bound = upper_bound = liberty_score;
             return;
         }
+
+        update_bounds;
 
         if (moves is null){
             calculate_available_moves;
@@ -345,6 +347,17 @@ class SearchState(T, S) : BaseSearchState!(T, S)
             this.moves = moves;
             prune_moves;
         }
+    }
+
+    void update_bounds()
+    {
+        T player_controlled_terrirory = player_secure | player_defendable;
+        T opponent_controlled_terrirory = opponent_secure | opponent_defendable;
+
+        float size = state.playing_area.popcount;
+
+        lower_bound = -size + 2 * player_controlled_terrirory.popcount;
+        upper_bound = size - 2 * opponent_controlled_terrirory.popcount;
     }
 
     void make_children(ref SearchState!(T, S)[S] state_pool, ref DefenseResult!T[DefenseState!T] defense_table)
@@ -504,6 +517,7 @@ class SearchState(T, S) : BaseSearchState!(T, S)
             calculate_minimax_value(state_pool, history, defense_table, i, lower_bound, upper_bound);
         }
     }
+
 
 
     override bool update_value()

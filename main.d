@@ -117,10 +117,62 @@ void main()
         writeln;
     }
     */
+
+    auto s = DefenseState8(rectangle8(4, 3));
+    s.player = rectangle8(4, 3) & ~rectangle8(3, 2) | Board8(2, 1);
+    s.player_target = s.player;
+    s.ko_threats = -float.infinity;
+
+    auto gs = new DefenseGameState8(s);
+
+    gs.calculate_minimax_value;
+
+    assert(gs.low_value == 12);
+    assert(gs.high_value == 12);
+    foreach (child; gs.children){
+        assert(child.value_shift < 0);
+    }
+
+    foreach (g; gs.principal_path!"high"(20)){
+        writeln(g);
+    }
+
+    /*
+    foreach (child; gs.children){
+        writeln("Child:");
+        writeln(child);
+        foreach (grand_child; child.children){
+            writeln("Grandchild");
+            writeln(grand_child);
+        }
+    }*/
+
+    /*
     auto ss = new SearchState8(rectangle8(3, 3));
 
-    ss.calculate_minimax_value(50);
+    ss.calculate_minimax_value(30);
     print_path(ss, 20);
+    */
+
+
+
+    /*
+    auto s = DefenseState8(rectangle8(4, 4));
+    s.opponent = Board8(1, 1) | Board8(2, 1);
+    s.opponent_target = s.opponent;
+    s.player = Board8(1, 2) | Board8(2, 2);
+    s.player_target = s.player;
+    s.opponent |= Board8(0, 2);
+    s.player |= Board8(3, 1);
+
+    writeln(s);
+
+    auto ds = new DefenseSearchState8(s);
+
+    ds.calculate_minimax_value(40);
+
+    writeln(ds);
+    */
 
 
     /*

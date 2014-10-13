@@ -346,9 +346,26 @@ struct DefenseState(T)
         return children(moves);
     }
 
-    int liberty_score()
+    float liberty_score()
     {
-        int score = 0;
+        if (player_target & ~player){
+            if (black_to_play){
+                return -float.infinity;
+            }
+            else{
+                return float.infinity;
+            }
+        }
+        if (opponent_target & ~opponent){
+            if (black_to_play){
+                return float.infinity;
+            }
+            else{
+                return -float.infinity;
+            }
+        }
+
+        float score = 0;
 
         score += player.popcount;
         score -= opponent.popcount;
@@ -364,28 +381,53 @@ struct DefenseState(T)
         }
     }
 
-    /// Reduces target, moves outside liberties and applies other transformations that do not affect the result.
-    void reduce()
+    bool is_leaf()
     {
-        if (!player_outside_liberties && !opponent_outside_liberties && !ko){  // TODO move the outside liberties
-            T space = playing_area & ~player_target & ~opponent_target & ~player_outside_liberties & ~opponent_outside_liberties;
-            T blob = space.blob(playing_area);
+        return (passes >= 2 || player_target & ~player || opponent_target & ~opponent);
+    }
 
-            auto temp = this;
 
-            T candidate_player_target = player_target & blob;
-            if (candidate_player_target.chains.length == player_target.chains.length){
-                player_target = candidate_player_target;
+    // TODO: Reduction changes the maximum score reachable. Find a way to deal with this.
+    /// Reduces target, moves outside liberties and applies other transformations that do not affect the result.
+    int reduce()
+    {
+        if (player_target & player){
+            player_target.flood_into(player);
+        }
+        if (opponent_target & opponent){
+            opponent_target.flood_into(opponent);
+        }
+        if (player_outside_liberties || opponent_outside_liberties || ko){
+            return 0;
+        }
+        if (bool(player_target) ^ bool(opponent_target)){
+            string reduce_target(string player){
+                return "
+                    T space = playing_area & ~" ~ player ~ "_target;
+                    T blob = space.blob(playing_area);
+                    T candidate_" ~ player ~ "_target = " ~ player ~ "_target & blob;
+                    if (candidate_" ~ player ~ "_target.chains.length == " ~ player ~ "_target.chains.length){
+                        " ~ player ~ "_target = candidate_" ~ player ~ "_target;
+                    }
+                    int old_size = playing_area.popcount;
+                    playing_area = space | " ~ player ~ "_target;
+                    player &= playing_area;
+                    opponent &= playing_area;
+                    int new_size = playing_area.popcount;
+                ";
             }
 
-            T candidate_opponent_target = opponent_target & blob;
-            if (candidate_opponent_target.chains.length == opponent_target.chains.length){
-                opponent_target = candidate_opponent_target;
+            if (player_target){
+                mixin(reduce_target("player"));
+                return old_size - new_size;
             }
-
-            playing_area = blob | player_target | opponent_target;
-            player &= playing_area;
-            opponent &= playing_area;
+            else{
+                mixin(reduce_target("opponent"));
+                return new_size - old_size;
+            }
+        }
+        else{
+            return 0;
         }
     }
 
@@ -456,7 +498,6 @@ struct DefenseState(T)
     // TODO: Canonize hierarchically ie. based on opCmp order.
     Transformation canonize(out int final_westwards, out int final_northwards)
     {
-        reduce;
         if (!black_to_play){
             flip_colors;
         }
