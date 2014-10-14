@@ -16,7 +16,7 @@ import defense_state;
 import defense_search_state;
 
 
-enum Status {dead, killable, contested, unknown, defendable, secure}
+enum Status {unknown, dead, killable, resurrectable, contested, defendable, secure}
 
 
 struct DefenseResult(T)
@@ -60,7 +60,7 @@ DefenseState!T[] extract_player_eyespaces(T, S)(S state, T player_secure, T oppo
 
     T secure = player_secure | opponent_secure;
 
-    // TODO: Check region pairs.
+    // TODO: Check region pairs too.
     foreach (region; (state.playing_area & ~player_edges).chains){
         if (!(region & ~secure)){
             continue;
@@ -74,9 +74,9 @@ DefenseState!T[] extract_player_eyespaces(T, S)(S state, T player_secure, T oppo
         auto blob = region.blob(state.playing_area);
         auto player_target = blob;
         player_target.flood_into(player_edges);
-        auto outside_liberties = player_target.liberties(state.playing_area & ~region);
+        auto potential_outside_liberties = player_target.liberties(state.playing_area & ~region);
 
-        T opponent_outside_liberties;
+        T outside_liberties;
         foreach (target_chain; player_target.chains){
             // Check if the outside liberties can actually be filled out to cause an atari.
             auto halo = target_chain.liberties(state.playing_area) & outside_liberties;
@@ -84,9 +84,9 @@ DefenseState!T[] extract_player_eyespaces(T, S)(S state, T player_secure, T oppo
                 if (halo_piece.liberties(state.playing_area & ~player_secure & ~player_target)){
                     opponent_outside_liberties |= halo_piece;
                 }
-                // If they are small enough they can act as eyes for the target. :)
-                // Otherwise it's best to just remove them.
-                else if (halo_piece.popcount > 2){
+                // Otherwise they can act as eyes for the target. :)
+                else{
+                    add_eye.blah;
                     outside_liberties &= ~halo_piece;
                 }
             }

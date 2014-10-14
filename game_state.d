@@ -393,3 +393,21 @@ unittest
         assert(child.value_shift < 0);
     }
 }
+
+unittest
+{
+    auto s = DefenseState8(rectangle8(5, 4) & ~(Board8(0, 0) | Board8(1, 0) | Board8(1, 2) | Board8(2, 2) | Board8(3, 2) | Board8(3, 1)));
+    s.opponent = (rectangle8(5, 4) & ~rectangle8(3, 3).east) & s.playing_area;
+    s.opponent_target = s.opponent;
+
+    auto gs = new DefenseGameState8(s);
+    gs.calculate_minimax_value;
+    assert(gs.low_value == float.infinity);
+    assert(gs.high_value == float.infinity);
+
+    s.opponent_targets[0].outside_liberties = 1;
+    gs = new DefenseGameState8(s);
+    gs.calculate_minimax_value;
+    assert(gs.low_value == -14);
+    assert(gs.high_value == -14);
+}

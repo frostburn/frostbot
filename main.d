@@ -120,19 +120,50 @@ void main()
     }
     */
 
+    auto s = DefenseState8(Board8(0, 0));
+    s.opponent = Board8(0, 0);
+    s.opponent_target = s.opponent;
+    s.opponent_targets[0].outside_liberties = 1;
 
-    auto s = DefenseState8(rectangle8(4, 3));
-    s.player = rectangle8(4, 3) & ~(Board8(0, 0) | Board8(0, 1) | Board8(1, 0));
-    s.player_target = s.player;
-    s.ko_threats = -float.infinity;
+    foreach (c ;s.children){
+        assert(c.passes > 0 || !c.player);
+    }
 
+
+
+    /*
+    auto s = DefenseState8(rectangle8(5, 4) & ~(Board8(0, 0) | Board8(1, 0) | Board8(1, 2) | Board8(2, 2) | Board8(3, 2) | Board8(3, 1)));
+    s.opponent = (rectangle8(5, 4) & ~rectangle8(3, 3).east) & s.playing_area;
+    s.opponent_target = s.opponent;
+    */
+
+    /*
+    s.opponent_targets[0].outside_liberties = 1;
+    foreach(c;s.children){
+        writeln(c);
+    }
+
+    */
+    /*
     auto gs = new DefenseGameState8(s);
-
     gs.calculate_minimax_value;
+    assert(gs.low_value == float.infinity);
+    assert(gs.high_value == float.infinity);
+    */
+
+    /*
+    s.opponent_targets[0].outside_liberties = 1;
+    auto gs = new DefenseGameState8(s);
+    gs.calculate_minimax_value;
+    assert(gs.low_value == -14);
+    assert(gs.high_value == -14);
 
     foreach (g; gs.principal_path!"high"(20)){
         writeln(g);
     }
+    */
+
+
 
     /*
     foreach (child; gs.children){

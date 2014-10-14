@@ -13,6 +13,7 @@ struct TargetChain(T)
 {
     T chain;
     float outside_liberties = 0;
+    //int eyes = 0;
 
     this(T chain)
     {
@@ -25,11 +26,21 @@ struct TargetChain(T)
         this.outside_liberties = outside_liberties;
     }
 
+    /*
+    this(T chain, float outside_liberties, int eyes)
+    {
+        this.chain = chain;
+        this.outside_liberties = outside_liberties
+        this.eyes = eyes;
+    }
+    */
+
     invariant
     {
         assert(chain.valid);
         assert(chain);
         assert(outside_liberties >= 0);
+        //assert(eyes >= 0);
     }
 
     bool opEquals(in TargetChain!T rhs) const pure nothrow @nogc @safe
@@ -57,6 +68,11 @@ struct TargetChain(T)
             chain.toHash ^
             typeid(outside_liberties).getHash(&outside_liberties)
         );
+    }
+
+    bool is_immortal()
+    {
+        return outside_liberties == float.infinity;
     }
 }
 
@@ -429,8 +445,16 @@ struct DefenseState(T)
     }
     body
     {
-        opponent_targets[index].outside_liberties -= 1;
+        auto opponent_target = opponent_targets[index];
+        opponent_target.outside_liberties -= 1;
         opponent_targets.sort;
+        if (!opponent_target.outside_liberties){
+            T temp = opponent_target.chain;
+            temp.flood_into(opponent);
+            if (!temp.liberties(playing_area & ~player)){
+                opponent ^= temp;
+            }
+        }
         swap_turns;
     }
 
@@ -517,24 +541,31 @@ struct DefenseState(T)
     int reduce()
     {
         float[T] liberties_by_chain;
+        T immortal;
 
         string normalize_targets(string player)
         {
             return "
                 foreach (ref " ~ player ~ "_target; " ~ player ~ "_targets){
-                    if (" ~ player ~ "_target.chain & " ~ player ~ "){
-                        " ~ player ~ "_target.chain.flood_into(" ~ player ~ ");
-                    }
-                    if (" ~ player ~ "_target.chain in liberties_by_chain){
-                        liberties_by_chain[" ~ player ~ "_target.chain] += " ~ player ~ "_target.outside_liberties;
+                    " ~ player ~ "_target.chain.flood_into(" ~ player ~ "_target.chain | " ~ player ~ ");
+                    if (" ~ player ~ "_target.is_immortal){
+                        immortal |= " ~ player ~ "_target.chain;
                     }
                     else{
-                        liberties_by_chain[" ~ player ~ "_target.chain] = " ~ player ~ "_target.outside_liberties;
+                        if (" ~ player ~ "_target.chain in liberties_by_chain){
+                            liberties_by_chain[" ~ player ~ "_target.chain] += " ~ player ~ "_target.outside_liberties;
+                        }
+                        else{
+                            liberties_by_chain[" ~ player ~ "_target.chain] = " ~ player ~ "_target.outside_liberties;
+                        }
                     }
                 }
                 " ~ player ~ "_targets = " ~ player ~ "_targets.init;
                 foreach (chain, liberties; liberties_by_chain){
                     " ~ player ~ "_targets ~= TargetChain8(chain, liberties);
+                }
+                if (immortal){
+                    " ~ player ~ "_targets ~= TargetChain8(immortal, float.infinity);
                 }
                 " ~ player ~ "_targets.sort;
             ";
@@ -542,6 +573,7 @@ struct DefenseState(T)
 
         mixin(normalize_targets("player"));
         liberties_by_chain = liberties_by_chain.init;
+        immortal = T.init;
         mixin(normalize_targets("opponent"));
 
         if ((cast(bool)player_targets.length) ^ (cast(bool)opponent_targets.length)){
@@ -551,9 +583,14 @@ struct DefenseState(T)
                     T space = playing_area & ~" ~ player ~ "_target;
                     T blob = space.blob(playing_area);
                     foreach (ref " ~ player ~ "_target; " ~ player ~ "_targets){
-                        T candidate_" ~ player ~ "_chain = " ~ player ~ "_target.chain & blob;
-                        if (candidate_" ~ player ~ "_chain.chains.length == " ~ player ~ "_target.chain.chains.length){
-                            " ~ player ~ "_target.chain = candidate_" ~ player ~ "_chain;
+                        if (" ~ player ~ "_target.is_immortal){
+                            " ~ player ~ "_target.chain &= space.liberties(playing_area);
+                        }
+                        else{
+                            T candidate_" ~ player ~ "_chain = " ~ player ~ "_target.chain & blob;
+                            if (candidate_" ~ player ~ "_chain.chains.length == " ~ player ~ "_target.chain.chains.length){
+                                " ~ player ~ "_target.chain = candidate_" ~ player ~ "_chain;
+                            }
                         }
                     }
                     " ~ player ~ "_targets.sort;
@@ -742,7 +779,7 @@ struct DefenseState(T)
         string add_immortal_chains(string player){
             return "
                 foreach (" ~ player ~ "_target; " ~ player ~ "_targets){
-                    if (" ~ player ~ "_target.outside_liberties == float.infinity){
+                    if (" ~ player ~ "_target.is_immortal){
                         T temp = " ~ player ~ "_target.chain;
                         temp.flood_into(" ~ player ~ ");
                         " ~ player ~ "_unconditional |= temp;
@@ -858,7 +895,7 @@ struct DefenseState(T)
         }
 
         r ~= format(
-            " passes=%s, ko_threats=%s, player liberties=%s, opponent liberties=%s",
+            " passes=%s, ko_threats=%s,\nplayer liberties=%s, opponent liberties=%s",
             passes, ko_threats, total_player_outside_liberties, total_opponent_outside_liberties
         );
 
@@ -940,4 +977,50 @@ unittest
     assert(s.make_move(Board8(0, 1)));
     assert(s.player == Board8(0, 0));
     assert(s.opponent == (Board8(1, 0) | Board8(0, 1)));
+}
+
+unittest
+{
+    auto s = DefenseState8(rectangle8(4, 1));
+    s.opponent = Board8(0, 0) | Board8(3, 0);
+    s.opponent_target = s.opponent;
+    auto rcs = s;
+    rcs.reduce;
+    rcs.canonize;
+
+    assert(!s.is_leaf);
+    s.make_move(Board8(1, 0));
+    assert(s.is_leaf);
+
+    assert(!rcs.is_leaf);
+    rcs.make_move(Board8(1, 0));
+    rcs.reduce;
+    rcs.canonize;
+    assert(rcs.is_leaf);
+}
+
+unittest
+{
+    auto s = DefenseState8(rectangle8(5, 4) & ~(Board8(0, 0) | Board8(1, 0) | Board8(1, 2) | Board8(2, 2) | Board8(3, 2) | Board8(3, 1)));
+    s.opponent = (rectangle8(5, 4) & ~rectangle8(3, 3).east) & s.playing_area;
+    s.opponent_target = s.opponent;
+    auto old_target_size = s.opponent_target.popcount;
+    s.reduce;
+    assert(old_target_size == s.opponent_target.popcount);
+
+    s.opponent_targets[0].outside_liberties = float.infinity;
+    s.reduce;
+    assert(s.opponent_target.popcount == 2);
+}
+
+unittest
+{
+    auto s = DefenseState8(Board8(0, 0));
+    s.opponent = Board8(0, 0);
+    s.opponent_target = s.opponent;
+    s.opponent_targets[0].outside_liberties = 1;
+
+    foreach (c ;s.children){
+        assert(c.passes > 0 || !c.player);
+    }
 }
