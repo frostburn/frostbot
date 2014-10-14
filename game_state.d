@@ -408,6 +408,12 @@ unittest
     s.opponent_targets[0].outside_liberties = 1;
     gs = new DefenseGameState8(s);
     gs.calculate_minimax_value;
+    assert(gs.low_value == float.infinity);
+    assert(gs.high_value == float.infinity);
+
+    s.opponent_targets[0].outside_liberties = 2;
+    gs = new DefenseGameState8(s);
+    gs.calculate_minimax_value;
     assert(gs.low_value == -14);
     assert(gs.high_value == -14);
 }

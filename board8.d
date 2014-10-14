@@ -497,6 +497,10 @@ struct Board8
 
     // TODO: Optimize forage tables based on the extent of the playing area.
     Board8[] chains() const
+    in
+    {
+        assert(valid);
+    }
     out(result){
         assert(result.length <= WIDTH * HEIGHT / 2 + 1);
     }
@@ -507,7 +511,7 @@ struct Board8
         foreach (block; FORAGE_TABLE){
             Board8 temp = foragee & block;
             if (temp){
-                foragee ^= temp.flood_into(foragee);
+                foragee ^= temp.flood_into(foragee);  // TODO: Implement unsafe ulong flood for this.
                 result ~= temp;
             }
             if (!foragee){
@@ -515,6 +519,26 @@ struct Board8
             }
         }
         return result;
+    }
+
+    bool is_contiguous() const
+    in
+    {
+        assert(valid);
+    }
+    body
+    {
+        if (!this){
+            return true;
+        }
+        foreach (block; FORAGE_TABLE){
+            Board8 temp = this & block;
+            if (temp){
+                temp.flood_into(this);
+                return this == temp;
+            }
+        }
+        assert(false);
     }
 
     string toString()

@@ -108,9 +108,8 @@ struct DefenseState(T)
         this.playing_area = playing_area;
         this.ko = ko;
         this.player_targets = player_targets.dup;
-        this.player_targets.sort;
         this.opponent_targets = opponent_targets.dup;
-        this.opponent_targets.sort;
+        normalize_targets;
         this.black_to_play = black_to_play;
         this.passes = passes;
         this.ko_threats = ko_threats;
@@ -333,14 +332,8 @@ struct DefenseState(T)
                 writefln("Liberties: %s", i);
                 writeln(chains_in_danger[i].liberties(playing_area & ~player));
             }
-            auto chain_in_danger = chains_in_danger[i];
-            float chain_outside_liberties = 0;
-            foreach (opponent_target; opponent_targets){
-                if (opponent_target.chain & chain_in_danger){
-                    chain_outside_liberties += opponent_target.outside_liberties;
-                }
-            }
-            if (!(chain_outside_liberties) && !(chain_in_danger.liberties(playing_area & ~player))){
+            
+            if (!chain_has_liberties!"opponent"(chains_in_danger[i])){
                 num_kill += chains_in_danger[i].popcount;
                 kill |= chains_in_danger[i];
                 temp = chains_in_danger[i];
@@ -404,18 +397,7 @@ struct DefenseState(T)
             kill_stones(move);
             temp.flood_into(player);
             // Check if move is suicidal and undo it if necessary.
-            bool has_liberties = bool(temp.liberties(playing_area & ~opponent));
-            if (!has_liberties){
-                foreach (player_target; player_targets){
-                    if (temp & player_target.chain){
-                        if (player_target.outside_liberties){
-                            has_liberties = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (!has_liberties){
+            if (!chain_has_liberties!"player"(temp)){
                 player ^= move;
                 ko = old_ko;
                 return false;
@@ -432,9 +414,27 @@ struct DefenseState(T)
             }
         }
 
+        normalize_targets(false);
         swap_turns;
 
         return true;
+    }
+
+    bool chain_has_liberties(string player_string)(T chain){
+        static if (player_string == "player"){
+            enum opponent_string = "opponent";
+        }
+        else{
+            enum opponent_string = "player";
+        }
+        mixin("
+            foreach (target; " ~ player_string ~ "_targets){
+                if (target.outside_liberties && chain & target.chain){
+                    return true;
+                }
+            }
+            return bool(chain.liberties(playing_area & ~" ~ opponent_string ~ "));
+        ");
     }
 
     void fill_opponent_outside_liberty(size_t index)
@@ -445,16 +445,12 @@ struct DefenseState(T)
     }
     body
     {
-        auto opponent_target = opponent_targets[index];
-        opponent_target.outside_liberties -= 1;
+        opponent_targets[index].outside_liberties -= 1;
         opponent_targets.sort;
-        if (!opponent_target.outside_liberties){
-            T temp = opponent_target.chain;
-            temp.flood_into(opponent);
-            if (!temp.liberties(playing_area & ~player)){
-                opponent ^= temp;
-            }
+        if (!opponent_targets[index].outside_liberties && !opponent_targets[index].chain.liberties(playing_area & ~player)){
+            opponent ^= opponent_targets[index].chain;
         }
+        passes = 0;
         swap_turns;
     }
 
@@ -537,13 +533,11 @@ struct DefenseState(T)
         return (passes >= 2 || player_target & ~player || opponent_target & ~opponent);
     }
 
-    /// Applies reducing transformations that do not affect the result.
-    int reduce()
-    {
+    void normalize_targets(bool both_players=true){
         float[T] liberties_by_chain;
         T immortal;
 
-        string normalize_targets(string player)
+        string normalize_targets_for(string player)
         {
             return "
                 foreach (ref " ~ player ~ "_target; " ~ player ~ "_targets){
@@ -562,20 +556,25 @@ struct DefenseState(T)
                 }
                 " ~ player ~ "_targets = " ~ player ~ "_targets.init;
                 foreach (chain, liberties; liberties_by_chain){
-                    " ~ player ~ "_targets ~= TargetChain8(chain, liberties);
+                    " ~ player ~ "_targets ~= TargetChain!T(chain, liberties);
                 }
                 if (immortal){
-                    " ~ player ~ "_targets ~= TargetChain8(immortal, float.infinity);
+                    " ~ player ~ "_targets ~= TargetChain!T(immortal, float.infinity);
                 }
                 " ~ player ~ "_targets.sort;
             ";
         }
+        mixin(normalize_targets_for("player"));
+        if (both_players){
+            liberties_by_chain = liberties_by_chain.init;
+            immortal = T.init;
+            mixin(normalize_targets_for("opponent"));
+        }
+    }
 
-        mixin(normalize_targets("player"));
-        liberties_by_chain = liberties_by_chain.init;
-        immortal = T.init;
-        mixin(normalize_targets("opponent"));
-
+    /// Applies reducing transformations that do not affect the result.
+    int reduce()
+    {
         if ((cast(bool)player_targets.length) ^ (cast(bool)opponent_targets.length)){
             string reduce_target(string player)
             {
@@ -780,9 +779,7 @@ struct DefenseState(T)
             return "
                 foreach (" ~ player ~ "_target; " ~ player ~ "_targets){
                     if (" ~ player ~ "_target.is_immortal){
-                        T temp = " ~ player ~ "_target.chain;
-                        temp.flood_into(" ~ player ~ ");
-                        " ~ player ~ "_unconditional |= temp;
+                        " ~ player ~ "_unconditional |= " ~ player ~ "_target.chain;
                     }
                 }
             ";
