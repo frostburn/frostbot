@@ -12,35 +12,24 @@ import state;
 struct TargetChain(T)
 {
     T chain;
-    float outside_liberties = 0;
-    //int eyes = 0;
+    int outside_liberties = 0;
 
     this(T chain)
     {
         this.chain = chain;
     }
 
-    this(T chain, float outside_liberties)
+    this(T chain, int outside_liberties)
     {
         this.chain = chain;
         this.outside_liberties = outside_liberties;
     }
-
-    /*
-    this(T chain, float outside_liberties, int eyes)
-    {
-        this.chain = chain;
-        this.outside_liberties = outside_liberties
-        this.eyes = eyes;
-    }
-    */
 
     invariant
     {
         assert(chain.valid);
         assert(chain);
         assert(outside_liberties >= 0);
-        //assert(eyes >= 0);
     }
 
     bool opEquals(in TargetChain!T rhs) const pure nothrow @nogc @safe
@@ -69,11 +58,6 @@ struct TargetChain(T)
             typeid(outside_liberties).getHash(&outside_liberties)
         );
     }
-
-    bool is_immortal()
-    {
-        return outside_liberties == float.infinity;
-    }
 }
 
 alias TargetChain8 = TargetChain!Board8;
@@ -84,6 +68,8 @@ struct DefenseState(T)
     T opponent;
     T playing_area = T.full;
     T ko;
+    T player_immortal;
+    T opponent_immortal;
     TargetChain!T[] player_targets;
     TargetChain!T[] opponent_targets;
     bool black_to_play = true;
@@ -101,12 +87,14 @@ struct DefenseState(T)
         this.opponent = opponent;
     }
 
-    this(T player, T opponent, T playing_area, T ko, TargetChain!T[] player_targets, TargetChain!T[] opponent_targets, bool black_to_play, int passes, float ko_threats)
+    this(T player, T opponent, T playing_area, T ko, T player_immortal, T opponent_immortal, TargetChain!T[] player_targets, TargetChain!T[] opponent_targets, bool black_to_play, int passes, float ko_threats)
     {
         this.player = player;
         this.opponent = opponent;
         this.playing_area = playing_area;
         this.ko = ko;
+        this.player_immortal = player_immortal;
+        this.opponent_immortal = opponent_immortal;
         this.player_targets = player_targets.dup;
         this.opponent_targets = opponent_targets.dup;
         normalize_targets;
@@ -118,7 +106,7 @@ struct DefenseState(T)
     T player_target() const @property
     {
         T result;
-        foreach (target; player_targets){
+        foreach (ref target; player_targets){
             result |= target.chain;
         }
         return result;
@@ -127,7 +115,7 @@ struct DefenseState(T)
     T opponent_target() const @property
     {
         T result;
-        foreach (target; opponent_targets){
+        foreach (ref target; opponent_targets){
             result |= target.chain;
         }
         return result;
@@ -135,14 +123,24 @@ struct DefenseState(T)
 
     void player_target(T chain) @property
     {
-        auto target_chain = TargetChain!T(chain);
-        player_targets = [target_chain];
+        if (chain){
+            auto target_chain = TargetChain!T(chain);
+            player_targets = [target_chain];
+        }
+        else{
+            player_targets = player_targets.init;
+        }
     }
 
     void opponent_target(T chain) @property
     {
-        auto target_chain = TargetChain!T(chain);
-        opponent_targets = [target_chain];
+        if (chain){
+            auto target_chain = TargetChain!T(chain);
+            opponent_targets = [target_chain];
+        }
+        else{
+            opponent_targets = opponent_targets.init;
+        }
     }
 
     DefenseState!T opAssign(DefenseState!T rhs)
@@ -151,6 +149,8 @@ struct DefenseState(T)
         this.opponent = rhs.opponent;
         this.playing_area = rhs.playing_area;
         this.ko = rhs.ko;
+        this.player_immortal = rhs.player_immortal;
+        this.opponent_immortal = rhs.opponent_immortal;
         this.player_targets = rhs.player_targets.dup;
         this.opponent_targets = rhs.opponent_targets.dup;
         this.black_to_play = rhs.black_to_play;
@@ -173,8 +173,8 @@ struct DefenseState(T)
         assert(playing_area.valid);
         assert(ko.valid);
         assert(ko.popcount <= 1);
-        //assert(player_target.valid);
-        //assert(opponent_target.valid);
+        assert(player_immortal.valid);
+        assert(opponent_immortal.valid);
 
         /*
         assert(!(player & opponent));
@@ -218,6 +218,8 @@ struct DefenseState(T)
             (opponent == rhs.opponent) &&
             (playing_area == rhs.playing_area) &&
             (ko == rhs.ko) &&
+            (player_immortal == rhs.player_immortal) &&
+            (opponent_immortal == rhs.opponent_immortal) &&
             (player_targets == rhs.player_targets) &&
             (opponent_targets == rhs.opponent_targets) &&
             (black_to_play == rhs.black_to_play) &&
@@ -248,6 +250,8 @@ struct DefenseState(T)
             return passes - rhs.passes;
         }
         mixin(compare_member("ko"));
+        mixin(compare_member("player_immortal"));
+        mixin(compare_member("opponent_immortal"));
 
         if (player_targets != rhs.player_targets){
             return compare_sorted_lists!(TargetChain!T)(player_targets, rhs.player_targets);
@@ -271,12 +275,16 @@ struct DefenseState(T)
     {
         hash_t opponent_hash = opponent.toHash;
         hash_t player_targets_hash = typeid(player_targets).getHash(&player_targets);
+        hash_t player_immortal_hash = player_immortal.toHash;
         return (
             player.toHash ^
             (opponent_hash << (hash_t.sizeof * 4)) ^
             (opponent_hash >> (hash_t.sizeof * 4)) ^
             playing_area.toHash ^
             ko.toHash ^
+            (player_immortal_hash << (hash_t.sizeof * 4)) ^
+            (player_immortal_hash >> (hash_t.sizeof * 4)) ^
+            opponent_immortal.toHash ^
             (player_targets_hash << (hash_t.sizeof * 4)) ^
             (player_targets_hash >> (hash_t.sizeof * 4)) ^
             typeid(opponent_targets).getHash(&opponent_targets) ^
@@ -370,6 +378,10 @@ struct DefenseState(T)
         player = opponent;
         opponent = temp;
 
+        temp = player_immortal;
+        player_immortal = opponent_immortal;
+        opponent_immortal = temp;
+
         auto targets_temp = player_targets;
         player_targets = opponent_targets;
         opponent_targets = targets_temp;
@@ -428,12 +440,36 @@ struct DefenseState(T)
             enum opponent_string = "player";
         }
         mixin("
+            if (chain & " ~ player_string ~ "_immortal){
+                return true;
+            }
             foreach (target; " ~ player_string ~ "_targets){
                 if (target.outside_liberties && chain & target.chain){
                     return true;
                 }
             }
             return bool(chain.liberties(playing_area & ~" ~ opponent_string ~ "));
+        ");
+    }
+
+    bool target_in_atari(string player_string)(){
+        static if (player_string == "player"){
+            enum opponent_string = "opponent";
+        }
+        else{
+            enum opponent_string = "player";
+        }
+        mixin("
+            foreach (target; " ~ player_string ~ "_targets){
+                if (target.outside_liberties < 2){
+                    foreach (chain; target.chain.chains){
+                        if (target.outside_liberties + chain.liberties(playing_area & ~" ~ opponent_string ~ ")){
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
         ");
     }
 
@@ -451,10 +487,11 @@ struct DefenseState(T)
             opponent ^= opponent_targets[index].chain;
         }
         passes = 0;
+        ko.clear;
         swap_turns;
     }
 
-    DefenseState!T[] children(T[] moves)
+    DefenseState!T[] children(T[] moves, out T[] creating_moves)
     {
         DefenseState!T[] _children = [];
 
@@ -462,21 +499,29 @@ struct DefenseState(T)
             auto child = this;
             if (child.make_move(move)){
                 _children ~= child;
+                creating_moves ~= move;
             }
         }
 
         foreach (index, opponent_target; opponent_targets){
             auto child = this;
-            if (opponent_target.outside_liberties){
+            if (opponent_target.outside_liberties > 0){
                 child.fill_opponent_outside_liberty(index);
                 _children ~= child;
+                creating_moves ~= T();
             }
         }
 
         return _children;
     }
 
-    auto children()
+    auto children(T[] moves)
+    {
+        T[] dummy;
+        return children(moves, dummy);
+    }
+
+    auto children_and_moves(out T[] creating_moves)
     {
         T[] moves;
         for (int y = 0; y < T.HEIGHT; y++){
@@ -489,13 +534,19 @@ struct DefenseState(T)
         }
         moves ~= T();
 
-        return children(moves);
+        return children(moves, creating_moves);
+    }
+
+    auto children()
+    {
+        T[] dummy;
+        return children_and_moves(dummy);
     }
 
     float liberty_score()
     {
         // Outside liberties are not counted towards or against the score.
-        if (player_target & ~player){
+        if (player_target & (~player | opponent_immortal)){
             if (black_to_play){
                 return -float.infinity;
             }
@@ -503,7 +554,7 @@ struct DefenseState(T)
                 return float.infinity;
             }
         }
-        if (opponent_target & ~opponent){
+        if (opponent_target & (~opponent | player_immortal)){
             if (black_to_play){
                 return float.infinity;
             }
@@ -530,44 +581,46 @@ struct DefenseState(T)
 
     bool is_leaf()
     {
-        return (passes >= 2 || player_target & ~player || opponent_target & ~opponent);
+        return passes >= 2 || player_target & (~player | opponent_immortal) || opponent_target & (~opponent | player_immortal);
     }
 
     void normalize_targets(bool both_players=true){
-        float[T] liberties_by_chain;
-        T immortal;
+        int[T] liberties_by_chain;
+        TargetChain!T[] temp;
 
         string normalize_targets_for(string player)
         {
             return "
                 foreach (ref " ~ player ~ "_target; " ~ player ~ "_targets){
                     " ~ player ~ "_target.chain.flood_into(" ~ player ~ "_target.chain | " ~ player ~ ");
-                    if (" ~ player ~ "_target.is_immortal){
-                        immortal |= " ~ player ~ "_target.chain;
+                }
+                temp = " ~ player ~ "_targets.init;
+                foreach(ref target; " ~ player ~ "_targets){
+                    if (target.chain & ~" ~ player ~ "_immortal){
+                        target.chain &= ~" ~ player ~ "_immortal;
+                        temp ~= target;
+                    }
+                }
+                foreach (ref " ~ player ~ "_target; temp){
+                    if (" ~ player ~ "_target.chain in liberties_by_chain){
+                        liberties_by_chain[" ~ player ~ "_target.chain] += " ~ player ~ "_target.outside_liberties;
                     }
                     else{
-                        if (" ~ player ~ "_target.chain in liberties_by_chain){
-                            liberties_by_chain[" ~ player ~ "_target.chain] += " ~ player ~ "_target.outside_liberties;
-                        }
-                        else{
-                            liberties_by_chain[" ~ player ~ "_target.chain] = " ~ player ~ "_target.outside_liberties;
-                        }
+                        liberties_by_chain[" ~ player ~ "_target.chain] = " ~ player ~ "_target.outside_liberties;
                     }
                 }
                 " ~ player ~ "_targets = " ~ player ~ "_targets.init;
                 foreach (chain, liberties; liberties_by_chain){
                     " ~ player ~ "_targets ~= TargetChain!T(chain, liberties);
                 }
-                if (immortal){
-                    " ~ player ~ "_targets ~= TargetChain!T(immortal, float.infinity);
-                }
                 " ~ player ~ "_targets.sort;
             ";
         }
+        player_immortal.flood_into(player);
+        opponent_immortal.flood_into(opponent);
         mixin(normalize_targets_for("player"));
         if (both_players){
             liberties_by_chain = liberties_by_chain.init;
-            immortal = T.init;
             mixin(normalize_targets_for("opponent"));
         }
     }
@@ -575,44 +628,48 @@ struct DefenseState(T)
     /// Applies reducing transformations that do not affect the result.
     int reduce()
     {
-        if ((cast(bool)player_targets.length) ^ (cast(bool)opponent_targets.length)){
-            string reduce_target(string player)
-            {
-                return "
-                    T space = playing_area & ~" ~ player ~ "_target;
-                    T blob = space.blob(playing_area);
-                    foreach (ref " ~ player ~ "_target; " ~ player ~ "_targets){
-                        if (" ~ player ~ "_target.is_immortal){
-                            " ~ player ~ "_target.chain &= space.liberties(playing_area);
-                        }
-                        else{
-                            T candidate_" ~ player ~ "_chain = " ~ player ~ "_target.chain & blob;
-                            if (candidate_" ~ player ~ "_chain.chains.length == " ~ player ~ "_target.chain.chains.length){
-                                " ~ player ~ "_target.chain = candidate_" ~ player ~ "_chain;
-                            }
-                        }
+        debug(reduce){
+            writeln("Before reduction:");
+            writeln(this);
+        }
+        string reduce_target(string player, string opponent)
+        {
+            return "
+                T space = playing_area & ~" ~ player ~ "_target & ~" ~ player ~ "_immortal;
+                T blob = space.blob(playing_area) & ~" ~ player ~ "_immortal;
+                foreach (ref " ~ player ~ "_target; " ~ player ~ "_targets){
+                    T candidate_" ~ player ~ "_chain = " ~ player ~ "_target.chain & blob;
+                    if (candidate_" ~ player ~ "_chain.chains.length == " ~ player ~ "_target.chain.chains.length){
+                        " ~ player ~ "_target.chain = candidate_" ~ player ~ "_chain;
                     }
-                    " ~ player ~ "_targets.sort;
-                    int old_size = playing_area.popcount;
-                    playing_area = space | " ~ player ~ "_target;
-                    player &= playing_area;
-                    opponent &= playing_area;
-                    int new_size = playing_area.popcount;
-                ";
-            }
+                }
+                " ~ player ~ "_targets.sort;
+                " ~ player ~ "_immortal &= (space & ~" ~ opponent ~ "_immortal).liberties(playing_area) | " ~ opponent ~ "_target;
+                int old_size = playing_area.popcount;
+                playing_area = space | " ~ player ~ "_target | " ~ player ~ "_immortal;
+                player &= playing_area;
+                opponent &= playing_area;
+                " ~ opponent ~ "_immortal &= playing_area;
+                int new_size = playing_area.popcount;
+            ";
+        }
 
-            if (player_targets.length){
-                mixin(reduce_target("player"));
-                return old_size - new_size;
-            }
-            else{
-                mixin(reduce_target("opponent"));
-                return new_size - old_size;
-            }
+        int reduction = 0;
+        if (player_targets.length || player_immortal){
+            mixin(reduce_target("player", "opponent"));
+            reduction += old_size - new_size;
         }
-        else{
-            return 0;
+        if (opponent_targets.length || opponent_immortal){
+            mixin(reduce_target("opponent", "player"));
+            reduction -= old_size - new_size;
         }
+        debug(reduce) {
+            writeln("After reduction:");
+            writeln(this);
+            writeln("reduction=", reduction);
+        }
+
+        return reduction;
     }
 
     void snap(out int westwards, out int northwards)
@@ -621,6 +678,8 @@ struct DefenseState(T)
         player.fix(westwards, northwards);
         opponent.fix(westwards, northwards);
         ko.fix(westwards, northwards);
+        player_immortal.fix(westwards, northwards);
+        opponent_immortal.fix(westwards, northwards);
 
         string fix_targets(string player){
             return "
@@ -660,6 +719,8 @@ struct DefenseState(T)
         opponent.rotate;
         ko.rotate;
         playing_area.rotate;
+        player_immortal.rotate;
+        opponent_immortal.rotate;
         mixin(transform_targets("player", "rotate"));
         mixin(transform_targets("opponent", "rotate"));
     }
@@ -670,6 +731,8 @@ struct DefenseState(T)
         opponent.mirror_h;
         ko.mirror_h;
         playing_area.mirror_h;
+        player_immortal.mirror_h;
+        opponent_immortal.mirror_h;
         mixin(transform_targets("player", "mirror_h"));
         mixin(transform_targets("opponent", "mirror_h"));
     }
@@ -680,6 +743,8 @@ struct DefenseState(T)
         opponent.mirror_v;
         ko.mirror_v;
         playing_area.mirror_v;
+        player_immortal.mirror_v;
+        opponent_immortal.mirror_v;
         mixin(transform_targets("player", "mirror_v"));
         mixin(transform_targets("opponent", "mirror_v"));
     }
@@ -764,28 +829,22 @@ struct DefenseState(T)
 
     /**
     * Analyzes the state for unconditional life.
-    * The arguments provide pre-calculated unconditional regions that are to be extended.
+    * To simplify reductions unconditional territory is merged into the immortal chain.
     */
-    void analyze_unconditional(ref T player_unconditional, ref T opponent_unconditional)
+    void analyze_unconditional()
     in
     {
-        assert(!(player_unconditional & opponent_unconditional));
+        assert(!(player_immortal & opponent_immortal));
+    }
+    out
+    {
+        assert(!(player_immortal & opponent_immortal));
     }
     body
     {
         // Add immortal stones to unconditionally controlled territory.
-
-        string add_immortal_chains(string player){
-            return "
-                foreach (" ~ player ~ "_target; " ~ player ~ "_targets){
-                    if (" ~ player ~ "_target.is_immortal){
-                        " ~ player ~ "_unconditional |= " ~ player ~ "_target.chain;
-                    }
-                }
-            ";
-        }
-        mixin(add_immortal_chains("player"));
-        mixin(add_immortal_chains("opponent"));
+        T player_unconditional = player_immortal;
+        T opponent_unconditional = opponent_immortal;
 
         // The unconditional regions are already analyzed and can be excluded here.
         T[] player_chains = player.chains;
@@ -827,9 +886,20 @@ struct DefenseState(T)
         foreach (opponent_enclosed_region; opponent_enclosed_regions){
             opponent_unconditional |= opponent_enclosed_region;
         }
+
+        player_immortal = player_unconditional;
+        opponent_immortal = opponent_unconditional;
+
+        player |= player_immortal;
+        opponent |= opponent_immortal;
+
+        player &= ~opponent_immortal;
+        opponent &= ~player_immortal;
+
+        normalize_targets;
     }
 
-    string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure)
+    string toString()
     {
         string r;
         T p;
@@ -838,18 +908,18 @@ struct DefenseState(T)
                 p = T(x, y);
                 if (playing_area & p){
                     r ~= "\x1b[0;30;";
-                    if (player_target & p){
+                    if ((player_immortal | opponent_immortal) & p){
+                        r ~= "42m";
+                    }
+                    else if (player_target & p){
                         r ~= "45m";
                     }
                     else if (opponent_target & p){
                         r ~= "41m";
                     }
-                    else if ((player_secure | opponent_secure) & p){
-                        r ~= "42m";
-                    }
-                    else if ((player_defendable | opponent_defendable) & p){
-                        r ~= "44m";
-                    }
+                    //else if ((player_defendable | opponent_defendable) & p){
+                    //    r ~= "44m";
+                    //}
                     else{
                         r ~= "43m";
                     }
@@ -898,10 +968,6 @@ struct DefenseState(T)
 
         return r;
     }
-
-    string toString(){
-        return _toString(T(), T(), T(), T());
-    }
 }
 
 alias DefenseState8 = DefenseState!Board8;
@@ -934,19 +1000,23 @@ body
     T player;
     T opponent;
 
-    TargetChain8[] player_targets;
-    TargetChain8[] opponent_targets;
+    T player_target;
+    T opponent_target;
 
     if (defender_to_play){
         player = edge;
-        player_targets ~= TargetChain8(player);
+        player_target = player;
     }
     else{
         opponent = edge;
-        opponent_targets ~= TargetChain8(opponent);
+        opponent_target = opponent;
     }
 
-    return DefenseState!T(player, opponent, space | edge, T(), player_targets, opponent_targets, true, 0, ko_threats);
+    auto s = DefenseState!T(player, opponent, space | edge, T(), T(), T(), [], [], true, 0, ko_threats);
+    s.player_target = player_target;
+    s.opponent_target = opponent_target;
+
+    return s;
 }
 
 
@@ -957,8 +1027,7 @@ unittest
 {
     auto s = DefenseState8();
     s.opponent = s.playing_area & ~Board8(0, 0);
-    s.opponent_target = s.opponent;
-    s.opponent_targets[0].outside_liberties = float.infinity;
+    s.opponent_immortal = s.opponent;
 
     assert(!s.make_move(Board8(0, 0)));
     assert(s.make_move(Board8()));
@@ -967,8 +1036,7 @@ unittest
 
     s = DefenseState8();
     s.opponent = Board8(0, 0);
-    s.opponent_target = s.opponent;
-    s.opponent_targets[0].outside_liberties = float.infinity;
+    s.opponent_immortal = s.opponent;
     s.player = Board8(1, 0);
 
     assert(s.make_move(Board8(0, 1)));
@@ -1005,9 +1073,10 @@ unittest
     s.reduce;
     assert(old_target_size == s.opponent_target.popcount);
 
-    s.opponent_targets[0].outside_liberties = float.infinity;
+    s.opponent_target = Board8();
+    s.opponent_immortal = s.opponent;
     s.reduce;
-    assert(s.opponent_target.popcount == 2);
+    assert(s.opponent_immortal.popcount == 2);
 }
 
 unittest
@@ -1020,4 +1089,20 @@ unittest
     foreach (c ;s.children){
         assert(c.passes > 0 || !c.player);
     }
+}
+
+unittest
+{
+    auto s = DefenseState8(Board8(0, 0) | Board8(2, 0));
+    s.player = Board8(0, 0);
+    s.player_immortal = s.player;
+    assert(s.reduce == 1);
+    assert(!s.player_immortal);
+
+    s.playing_area = Board8(0, 0) | Board8(2, 0);
+    s.player = Board8(0, 0);
+    s.player_target = s.player;
+    s.player_targets[0].outside_liberties = 1;
+    assert(s.reduce == 0);
+    assert(s.player_target);
 }

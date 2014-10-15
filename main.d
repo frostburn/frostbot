@@ -9,7 +9,7 @@ import polyomino;
 import defense_state;
 import game_state;
 //import search_state;
-//import defense_search_state;
+import defense_search_state;
 //import defense;
 import eyeshape;
 
@@ -76,6 +76,116 @@ void main()
 {
     writeln("main");
 
+    //Rectangular six in the corner with no outside liberties and infinite ko threats.
+    auto s = DefenseState8();
+    s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
+    s.opponent_target = s.opponent;
+    s.player = rectangle8(5, 4) & ~rectangle8(4, 3);
+    s.player_immortal = s.player;
+    s.playing_area = rectangle8(5, 4);
+    s.ko_threats = -float.infinity;
+    //auto ds = new DefenseSearchState8(s);
+    //ds.calculate_minimax_value;
+    //assert(ds.lower_bound == float.infinity);
+    //assert(ds.lower_bound == float.infinity);
+
+    // Rectangular six in the corner with one outside liberty and no ko threats.
+    s.opponent_targets[0].outside_liberties = 1;
+    s.ko_threats = 0;
+    auto ds = new DefenseSearchState8(s);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == float.infinity);
+    assert(ds.upper_bound == float.infinity);
+
+    // Rectangular six in the corner with one outside liberty and one ko threat.
+    s.ko_threats = -1;
+    s.make_move(Board8(1, 1));
+    s.make_move(Board8(1, 0));
+    writeln(s);
+    ds = new DefenseSearchState8(s);
+    ds.calculate_minimax_value;
+    //if (ds.lower_bound != -4 || ds.upper_bound != -4){
+        foreach(c; ds.children){
+            writeln(c);
+        }
+        writeln("---------PATH--------");
+        foreach(c; ds.principal_path!"upper"(20)){
+            writeln(c);
+        }
+    //}
+
+    /*
+    auto ss = new DefenseSearchState8(rectangle8(4, 1));
+    //ss.state.opponent = Board8(1, 0);
+    ss.calculate_minimax_value();
+
+    //foreach(c; ss.principal_path!"upper"(20)){
+    //    writeln(c);
+    //}
+    if (ss.upper_bound == 0){
+        foreach(c; ss.children){
+            writeln("**********************");
+            c.ppp;
+        }
+    }
+    */
+
+    /+
+    Transposition[DefenseState8] defense_transposition_table;
+
+    foreach (eyespace; eyespaces(4).byKey){
+        if (eyespace.space.length == 4){
+            auto s = from_eyespace8(eyespace, false, -float.infinity);
+            if (s.opponent_targets.length){
+                s.opponent_targets[0].outside_liberties = 1;
+            }
+            auto ds = new DefenseSearchState8(s);
+            ds.calculate_minimax_value;
+            if (ds.lower_bound == ds.upper_bound){
+                //writeln(s);
+                //writeln(ds.lower_bound);
+            }
+            else{
+                //writeln(ds);
+            }
+            /*
+            Board8[] creating_moves;
+            auto cs = s.children_and_moves(creating_moves);
+            foreach (index, c; cs){
+                auto cds = new DefenseSearchState8(c);
+                cds.calculate_minimax_value;
+                writeln(creating_moves[index]);
+                writeln(cds.upper_bound);
+            }
+            */
+        }
+    }
+    +/
+
+    /*
+    //Rectangular six in the corner with no outside liberties and infinite ko threats.
+    auto s = DefenseState8();
+    s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
+    s.opponent_target = s.opponent;
+    s.player = rectangle8(5, 4) & ~rectangle8(4, 3);
+    s.player_immortal = s.player;
+    s.playing_area = rectangle8(5, 4);
+    s.ko_threats = -float.infinity;
+    auto ds = new DefenseSearchState8(s);
+    
+    // Rectangular six in the corner with one outside liberty and no ko threats.
+    s.player_immortal &= ~Board8(4, 0);
+    s.player &= ~Board8(4, 0);
+    s.ko_threats = 0;
+    ds = new DefenseSearchState8(s);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == float.infinity);
+    assert(ds.upper_bound == float.infinity);
+    */
+
+    //assert(ss.lower_bound == 4);
+    //assert(ss.upper_bound == 4);
+
     /*
     auto t = Transformation.none;
     writeln(t);
@@ -120,6 +230,7 @@ void main()
     }
     */
 
+    /*
     auto s = DefenseState8(Board8(0, 0));
     s.opponent = Board8(0, 0);
     s.opponent_target = s.opponent;
@@ -128,6 +239,7 @@ void main()
     foreach (c ;s.children){
         assert(c.passes > 0 || !c.player);
     }
+    */
 
 
 

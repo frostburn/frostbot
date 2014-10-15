@@ -13,33 +13,6 @@ import defense_state;
 import defense;
 
 
-class HistoryNode(T)
-{
-    T value;
-    HistoryNode!T parent = null;
-
-    this(T value){
-        this.value = value;
-    }
-
-    this(T value, ref HistoryNode!T parent){
-        this.value = value;
-        this.parent = parent;
-    }
-
-    bool opBinaryRight(string op)(in T lhs) const pure nothrow @nogc @safe
-        if (op == "in")
-    {
-        if (lhs == value){
-            return true;
-        }
-        if (parent !is null){
-            return parent.opBinaryRight!"in"(lhs);
-        }
-        return false;
-    }
-}
-
 
 class BaseSearchState(T, S)
 {
@@ -199,33 +172,6 @@ class BaseSearchState(T, S)
         return false;
     }
 
-    void update_parents()
-    {
-        debug(update_parents) {
-            writeln("Updating parents for:");
-            writeln(this);
-        }
-        BaseSearchState!(T, S)[] queue;
-        foreach (parent; parents.byValue){
-            queue ~= parent;
-        }
-
-        while (queue.length){
-            auto search_state = queue.front;
-            queue.popFront;
-            debug(update_parents) {
-                writeln("Updating parents for:");
-                writeln(search_state);
-            }
-            bool changed = search_state.update_value;
-            if (changed){
-                foreach (parent; search_state.parents){
-                    queue ~= parent;
-                }
-            }
-        }
-    }
-
     override string toString()
     {
         return format(
@@ -237,56 +183,6 @@ class BaseSearchState(T, S)
             children.length
         );
     }
-}
-
-static bool is_better(T, S)(BaseSearchState!(T, S) a, BaseSearchState!(T, S) b){
-    if (a.is_leaf && !b.is_leaf){
-        return false;
-    }
-    if (b.is_leaf && !a.is_leaf){
-        return true;
-    }
-    if (a.state.passes < b.state.passes){
-        return true;
-    }
-    if (b.state.passes < a.state.passes){
-        return false;
-    }
-    if (a.parents.length < b.parents.length){
-        return true;
-    }
-    if (b.parents.length < a.parents.length){
-        return false;
-    }
-
-    int a_secure = a.opponent_secure.popcount - a.player_secure.popcount;
-    int b_secure = b.opponent_secure.popcount - b.player_secure.popcount;
-
-    if (a_secure > b_secure){
-        return true;
-    }
-    if (b_secure > a_secure){
-        return false;
-    }
-
-    int a_euler = a.state.opponent.euler - a.state.player.euler;
-    int b_euler = b.state.opponent.euler - b.state.player.euler;
-
-    if (a_euler < b_euler){
-        return true;
-    }
-    if (b_euler < a_euler){
-        return false;
-    }
-
-    int a_popcount = a.state.opponent.popcount - a.state.player.popcount;
-    int b_popcount = b.state.opponent.popcount - b.state.player.popcount;
-
-    if (a_popcount > b_popcount){
-        return true;
-    }
-
-    return false;
 }
 
 
@@ -559,20 +455,6 @@ class SearchState(T, S) : BaseSearchState!(T, S)
 
 alias BaseSearchState8 = BaseSearchState!(Board8, State8);
 alias SearchState8 = SearchState!(Board8, State8);
-
-unittest
-{
-    auto s = State8();
-    auto h = new HistoryNode!(State8)(s);
-
-    auto child_s = s;
-    child_s.player = Board8(3, 3);
-    auto child_h = new HistoryNode!(State8)(child_s, h);
-
-    assert(child_s !in h);
-    assert(child_s in child_h);
-    assert(s in child_h);
-}
 
 
 unittest

@@ -10,14 +10,199 @@ import utils;
 import polyomino;
 import board8;
 import defense_state;
-import search_state;
+//import search_state;
 
 
-class DefenseSearchState(T, S) : BaseSearchState!(T, S)
+static bool is_better(T, S)(DefenseSearchState!(T, S) a, DefenseSearchState!(T, S) b){
+    if (a.is_leaf && !b.is_leaf){
+        return false;
+    }
+    if (b.is_leaf && !a.is_leaf){
+        return true;
+    }
+    if (a.state.passes < b.state.passes){
+        return true;
+    }
+    if (b.state.passes < a.state.passes){
+        return false;
+    }
+    if (a.parents.length < b.parents.length){
+        return true;
+    }
+    if (b.parents.length < a.parents.length){
+        return false;
+    }
+
+    int a_immortal = a.state.opponent_immortal.popcount - a.state.player_immortal.popcount;
+    int b_immortal = b.state.opponent_immortal.popcount - b.state.player_immortal.popcount;
+
+    if (a_immortal > b_immortal){
+        return true;
+    }
+    if (b_immortal > a_immortal){
+        return false;
+    }
+
+    int a_euler = a.state.opponent.euler - a.state.player.euler;
+    int b_euler = b.state.opponent.euler - b.state.player.euler;
+
+    if (a_euler < b_euler){
+        return true;
+    }
+    if (b_euler < a_euler){
+        return false;
+    }
+
+    int a_popcount = a.state.opponent.popcount - a.state.player.popcount;
+    int b_popcount = b.state.opponent.popcount - b.state.player.popcount;
+
+    if (a_popcount > b_popcount){
+        return true;
+    }
+
+    return false;
+}
+
+class HistoryNode(T)
 {
+    T value;
+    HistoryNode!T parent = null;
+
+    this(T value){
+        this.value = value;
+    }
+
+    this(T value, ref HistoryNode!T parent){
+        this.value = value;
+        this.parent = parent;
+    }
+
+    bool opBinaryRight(string op)(in T lhs) const pure nothrow
+        if (op == "in")
+    {
+        if (lhs == value){
+            return true;
+        }
+        if (parent !is null){
+            return parent.opBinaryRight!"in"(lhs);
+        }
+        return false;
+    }
+}
+
+
+unittest
+{
+    auto s = DefenseState8();
+    auto h = new HistoryNode!(DefenseState8)(s);
+
+    auto child_s = s;
+    child_s.player = Board8(3, 3);
+    auto child_h = new HistoryNode!(DefenseState8)(child_s, h);
+
+    assert(child_s !in h);
+    assert(child_s in child_h);
+    assert(s in child_h);
+}
+
+
+struct Transposition
+{
+    private
+    {
+        float _lower_bound = -float.infinity;
+        float _upper_bound = float.infinity;
+    }
+    bool is_final = false;
+
+    this(float lower_bound, float upper_bound)
+    {
+        _lower_bound = lower_bound;
+        _upper_bound = upper_bound;
+        is_final = lower_bound == upper_bound;
+    }
+
+    this(float lower_bound, float upper_bound, bool is_final)
+    {
+        _lower_bound = lower_bound;
+        _upper_bound = upper_bound;
+        this.is_final = _lower_bound == _upper_bound || is_final;
+    }
+
+    float lower_bound() const @property
+    {
+        return _lower_bound;
+    }
+
+    float upper_bound() const @property
+    {
+        return _upper_bound;
+    }
+
+    float lower_bound(float value) @property
+    {
+        _lower_bound = value;
+        is_final = _lower_bound == _upper_bound || is_final;
+        return _lower_bound;
+    }
+
+    float upper_bound(float value) @property
+    {
+        _upper_bound = value;
+        is_final = _lower_bound == _upper_bound || is_final;
+        return _upper_bound;
+    }
+}
+
+
+class DefenseSearchState(T, S)
+{
+    S state;
+    int value_shift;
+    bool is_leaf;
+    bool is_final;
+    DefenseSearchState!(T, S)[] children;
+    DefenseSearchState!(T, S)[S] parents;
+
+    T player_useless;
+    //T opponent_useless;
+
+    Transposition[DefenseState!T] *defense_transposition_table;
+
+    private
+    {
+        float _lower_bound = -float.infinity;
+        float _upper_bound = float.infinity;
+    }
+
+    float lower_bound() const @property
+    {
+        return _lower_bound;
+    }
+
+    float upper_bound() const @property
+    {
+        return _upper_bound;
+    }
+
+    float lower_bound(float value) @property
+    {
+        _lower_bound = value;
+        is_final = _lower_bound == _upper_bound || is_final;
+        return _lower_bound;
+    }
+
+    float upper_bound(float value) @property
+    {
+        _upper_bound = value;
+        is_final = _lower_bound == _upper_bound || is_final;
+        return _upper_bound;
+    }
+
     invariant
     {
         assert(state.black_to_play);
+        assert(state.passes <= 2);
     }
 
     this(T playing_area)
@@ -25,161 +210,122 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
         this(S(playing_area));
     }
 
-    this (S state){
-        state.canonize;
+    this (S state, int value_shift=0, Transposition[DefenseState!T] *defense_transposition_table=null){
+        state.analyze_unconditional;
         this.state = state;
-        analyze_secure;
-        calculate_available_moves;
-    }
-
-    this(S state, T player_secure, T opponent_secure, T[] moves=null)
-    {
-        assert(state.black_to_play);
-        this.state = state;
-        this.player_secure = player_secure;
-        this.opponent_secure = opponent_secure;
-        analyze_secure;
-        if (state.passes >= 2){
+        //analyze_local;
+        value_shift += this.state.reduce;
+        this.value_shift = value_shift;
+        this.state.canonize;
+        if (state.is_leaf){
             is_leaf = true;
-            lower_bound = upper_bound = liberty_score;
-            return;
-        }
-
-        if (state.player_target & ~state.player || state.player_target & opponent_secure){
-            is_leaf = true;
-            lower_bound = upper_bound = -float.infinity;
-            return;
-        }
-        // Suicide is prohibited so it is not possible kill your own target.
-        assert(!(state.opponent_target & ~state.opponent));
-        // It is however possible to blunder forfeit your stones to the opponent control.
-        if (state.opponent_target & player_secure){
-            is_leaf = true;
-            lower_bound = upper_bound = float.infinity;
-            return;
-        }
-
-        if (moves is null){
-            calculate_available_moves;
+            lower_bound = upper_bound = state.liberty_score + value_shift;
         }
         else{
-            this.moves = moves;
-            prune_moves;
+            this.defense_transposition_table = defense_transposition_table;
+            update_bounds;
         }
+    }
+
+    void update_bounds(){
+        if (defense_transposition_table !is null && state in *defense_transposition_table){
+            auto transposition = (*defense_transposition_table)[state];
+            lower_bound = transposition.lower_bound + value_shift;
+            upper_bound = transposition.upper_bound + value_shift;
+            is_final = transposition.is_final;
+        }
+        else{
+            float size = state.playing_area.popcount;
+            if (!state.player_target){
+                lower_bound = 2 * state.player_immortal.popcount - size + value_shift;
+            }
+            if (!state.opponent_target){
+                upper_bound = -(2 * state.opponent_immortal.popcount - size) + value_shift;
+            }
+        }
+    }
+
+    T[] effective_moves()
+    {
+        T[] moves;
+        for (int y = 0; y < T.HEIGHT; y++){
+            for (int x = 0; x < T.WIDTH; x++){
+                T move = T(x, y);
+                if (move & state.playing_area & ~player_useless){
+                    moves ~= move;
+                }
+            }
+        }
+        moves ~= T.init;
+        return moves;
     }
 
     void make_children(ref DefenseSearchState!(T, S)[S] state_pool)
     {
         children = [];
-        auto child_states = state.children(moves);
-
-        // Prune out transpositions?
+        auto child_states = state.children(effective_moves);
 
         foreach (child_state; child_states){
             child_state.black_to_play = true;
-            if (child_state in state_pool){
-                auto child = state_pool[child_state];
-                children ~= child;
-                child.parents[state] = this;
-            }
-            else{
-                assert(child_state.black_to_play == state.black_to_play);
-                auto child = new DefenseSearchState!(T, S)(
-                    child_state,
-                    opponent_secure,
-                    player_secure,
-                    moves
-                );
-                allocated_children ~= child;
-                children ~= child;
-                child.parents[state] = this;
-                state_pool[child_state] = child;
-            }
+            auto child = new DefenseSearchState!(T, S)(child_state, -value_shift, defense_transposition_table);
+            children ~= child;
         }
 
-        children.randomShuffle;
-
-        sort!(is_better!(T, S))(children);
-
-    }
-
-    /*
-    void make_children(ref DefenseSearchState!(T, S)[S] state_pool)
-    {
-        children = [];
-
-        // Prune out transpositions.
-        S[] child_states;
-        Transformation[] child_transformations;
-        int[] child_fixes;
+        DefenseSearchState!(T, S)[] unique_children;
         bool[S] seen;
-        foreach (child_state; state.children(effective_moves)){
-            int westwards, northwards;
-            auto child_transformation = child_state.canonize(westwards, northwards);
-            if (child_state !in seen){
-                seen[child_state] = true;
-                child_states ~= child_state;
-                child_transformations ~= child_transformation;
-                child_fixes ~= westwards;
-                child_fixes ~= northwards;
+        foreach (child; children){
+            if (child.state !in seen){
+                seen[child.state] = true;
+                unique_children ~= child;
             }
         }
 
-        foreach (index, child_state; child_states){
-            if (child_state in state_pool){
-                auto child = state_pool[child_state];
-                children ~= child;
-                child.parents[state] = this;
+        children = [];
+        foreach (child; unique_children){
+            if (child.state in state_pool && state_pool[child.state].value_shift == child.value_shift){
+                auto pool_child = state_pool[child.state];
+                children ~= pool_child;
+                pool_child.parents[state] = this;
             }
             else{
-                assert(child_state.black_to_play);
-
-                auto child_player_defendable = opponent_defendable;
-                auto child_opponent_defendable = player_defendable;
-                auto child_player_secure = opponent_secure;
-                auto child_opponent_secure = player_secure;
-
-                auto child_transformation = child_transformations[index];
-                int westwards = child_fixes[2 * index];
-                int northwards = child_fixes[2 * index + 1];
-
-                child_player_defendable.transform(child_transformation);
-                child_player_defendable.fix(westwards, northwards);
-                child_opponent_defendable.transform(child_transformation);
-                child_opponent_defendable.fix(westwards, northwards);
-                child_player_secure.transform(child_transformation);
-                child_player_secure.fix(westwards, northwards);
-                child_opponent_secure.transform(child_transformation);
-                child_opponent_secure.fix(westwards, northwards);
-
-                T[] child_moves;
-                foreach(move; moves){
-                    move.transform(child_transformation);
-                    move.fix(westwards, northwards);
-                    child_moves ~= move;
-                }
-
-                auto child = new DefenseSearchState!(T, S)(
-                    child_state,
-                    //child_player_defendable,
-                    //child_opponent_defendable,
-                    child_player_secure,
-                    child_opponent_secure,
-                    //defense_table,
-                    child_moves,
-                );
-                allocated_children ~= child;
                 children ~= child;
                 child.parents[state] = this;
-                state_pool[child_state] = child;
+                state_pool[child.state] = child;
             }
         }
 
         children.randomShuffle;
 
         sort!(is_better!(T, S))(children);
+
     }
-    */
+
+    void update_parents()
+    {
+        debug(update_parents) {
+            writeln("Updating parents for:");
+            writeln(this);
+        }
+        DefenseSearchState!(T, S)[] queue;
+        foreach (parent; parents.byValue){
+            queue ~= parent;
+        }
+
+        while (queue.length){
+            auto search_state = queue.front;
+            queue.popFront;
+            debug(update_parents) {
+                writeln("Updating parents for:");
+                writeln(search_state);
+            }
+            bool changed = search_state.update_value;
+            if (changed){
+                foreach (parent; search_state.parents){
+                    queue ~= parent;
+                }
+            }
+        }
+    }
 
     void calculate_minimax_value(
         ref DefenseSearchState!(T, S)[S] state_pool,
@@ -193,6 +339,10 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
             return;
         }
 
+        if (is_final){
+            return;
+        }
+
         if (depth <= 0){
             return;
         }
@@ -202,9 +352,7 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
             return;
         }
 
-
         auto my_history = new HistoryNode!(S)(state, history);
-        allocated_history_nodes ~= my_history;
 
         if (!children.length){
             make_children(state_pool);
@@ -228,12 +376,18 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
                 return;
             }
 
-            (cast(DefenseSearchState!(T, S))child).calculate_minimax_value(state_pool, my_history, depth - 1, -beta, -alpha);
+            child.calculate_minimax_value(state_pool, my_history, depth - 1, -beta, -alpha);
 
             changed = update_value; // TODO: Do single updates.
             if (changed){
                 //update_parents;
             }
+        }
+
+        // No alpha-beta break means that this state was searched thoroughly.
+        is_final = true;
+        if (defense_transposition_table !is null){
+            (*defense_transposition_table)[state] = Transposition(lower_bound - value_shift, upper_bound - value_shift, is_final);
         }
     }
 
@@ -255,7 +409,7 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
     }
 
 
-    override bool update_value()
+    bool update_value()
     {
         if (is_leaf){
             // The value should've been set in the constructor.
@@ -288,12 +442,90 @@ class DefenseSearchState(T, S) : BaseSearchState!(T, S)
             }
         }
 
-        return (old_lower_bound != lower_bound) || (old_upper_bound != upper_bound);
+        bool changed = old_lower_bound != lower_bound || old_upper_bound != upper_bound;
+
+        if (changed && defense_transposition_table !is null){
+            if (state in *defense_transposition_table){
+                auto transposition = (*defense_transposition_table)[state];
+                if (transposition.lower_bound + value_shift < lower_bound){
+                    transposition.lower_bound = lower_bound - value_shift;
+                }
+                if (transposition.upper_bound + value_shift < upper_bound){
+                    transposition.upper_bound = upper_bound - value_shift;
+                }
+            }
+            else{
+                (*defense_transposition_table)[state] = Transposition(lower_bound - value_shift, upper_bound - value_shift);
+            }
+        }
+
+        return changed;
+    }
+
+    DefenseSearchState!(T, S)[] principal_path(string type)(int max_depth=100)
+    {
+        static assert(type == "lower" || type == "upper");
+        static if (type == "lower"){
+            enum other_type = "upper";
+        }
+        else{
+            enum other_type = "lower";
+        }
+        if (max_depth <= 0){
+            return [];
+        }
+        DefenseSearchState!(T, S)[] result = [this];
+        bool found_one = false;
+        foreach(child; children){
+            if (mixin("-child." ~ other_type ~ "_bound == " ~ type ~ "_bound && -child." ~ type ~ "_bound == " ~ other_type ~ "_bound")){
+                result ~= child.principal_path!type(max_depth - 1);
+                found_one = true;
+                break;
+            }
+        }
+
+        if (!found_one){
+            foreach(child; children){
+                if (mixin("-child." ~ other_type ~ "_bound == " ~ type ~ "_bound")){
+                    result ~= child.principal_path!type(max_depth - 1);
+                    break;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    override string toString()
+    {
+        return format(
+            "%s\nlower bound=%s upper bound=%s value shift=%s leaf=%s number of children=%s",
+            state,
+            lower_bound,
+            upper_bound,
+            value_shift,
+            is_leaf,
+            children.length
+        );
     }
 }
 
+
 alias DefenseSearchState8 = DefenseSearchState!(Board8, DefenseState8);
 
+void ppp(DefenseSearchState8 dss, int max_depth=20)
+{
+    foreach (p; dss.principal_path!"upper"(max_depth)){
+        writeln(p);
+    }
+}
+
+void pc(DefenseSearchState8 dss)
+{
+    foreach (c; dss.children){
+        writeln(c);
+    }
+}
 
 unittest
 {
@@ -313,7 +545,7 @@ unittest
     assert(ss.upper_bound == 3);
 
     ss = new DefenseSearchState8(rectangle8(4, 1));
-    ss.calculate_minimax_value(9);
+    ss.calculate_minimax_value;
     assert(ss.lower_bound == 4);
     assert(ss.upper_bound == 4);
 
@@ -407,7 +639,7 @@ unittest
     s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
     s.opponent_target = s.opponent;
     s.player = rectangle8(5, 4) & ~rectangle8(4, 3);
-    s.player_outside_liberties = s.player;
+    s.player_immortal = s.player;
     s.playing_area = rectangle8(5, 4);
     s.ko_threats = -float.infinity;
     auto ds = new DefenseSearchState8(s);
@@ -415,10 +647,51 @@ unittest
     assert(ds.lower_bound == float.infinity);
     assert(ds.lower_bound == float.infinity);
 
-    // Rectangular six in the corner with one outside liberty and no ko threats.
+    // Rectangular six in the corner with one physical outside liberty and no ko threats.
+    s.player_immortal &= ~Board8(4, 0);
     s.player &= ~Board8(4, 0);
     s.ko_threats = 0;
     ds = new DefenseSearchState8(s);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == float.infinity);
+    assert(ds.upper_bound == float.infinity);
+
+    // Rectangular six in the corner with one physical outside liberty and one ko threat.
+    s.ko_threats = -1;
+    ds = new DefenseSearchState8(s);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == -4);
+    assert(ds.upper_bound == -4);
+
+    // Rectangular six in the corner with two physical outside liberties and infinite ko threats for the invader.
+    s.player &= ~Board8(4, 1);
+    s.player_immortal &= ~Board8(4, 1);
+    s.ko_threats = float.infinity;
+    ds = new DefenseSearchState8(s);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == -4);
+    assert(ds.upper_bound == -4);
+}
+
+unittest
+{
+    //Rectangular six in the corner with no outside liberties and infinite ko threats.
+    auto s = DefenseState8();
+    s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
+    s.opponent_target = s.opponent;
+    s.player = rectangle8(5, 4) & ~rectangle8(4, 3);
+    s.player_immortal = s.player;
+    s.playing_area = rectangle8(5, 4);
+    s.ko_threats = -float.infinity;
+    //auto ds = new DefenseSearchState8(s);
+    //ds.calculate_minimax_value;
+    //assert(ds.lower_bound == float.infinity);
+    //assert(ds.lower_bound == float.infinity);
+
+    // Rectangular six in the corner with one outside liberty and no ko threats.
+    s.opponent_targets[0].outside_liberties = 1;
+    s.ko_threats = 0;
+    auto ds = new DefenseSearchState8(s);
     ds.calculate_minimax_value;
     assert(ds.lower_bound == float.infinity);
     assert(ds.upper_bound == float.infinity);
@@ -431,7 +704,7 @@ unittest
     assert(ds.upper_bound == -4);
 
     // Rectangular six in the corner with two outside liberties and infinite ko threats for the invader.
-    s.player &= ~Board8(4, 1);
+    s.opponent_targets[0].outside_liberties = 2;
     s.ko_threats = float.infinity;
     ds = new DefenseSearchState8(s);
     ds.calculate_minimax_value;

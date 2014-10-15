@@ -16,7 +16,7 @@ import defense_state;
 import defense_search_state;
 
 
-enum Status {unknown, dead, killable, resurrectable, contested, defendable, secure}
+enum Status {unknown, dead, killable, resurrectable, contested, retainable, defendable, secure}
 
 
 struct DefenseResult(T)
