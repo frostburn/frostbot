@@ -465,7 +465,7 @@ struct Board8
         return extent;
     }
 
-    /// Euler charasteristic of the board
+    /// Euler characteristic of the board treating each stone as a square. (Connects vertically, horicontally and *diagonally*)
     int euler()
     in
     {
@@ -494,6 +494,32 @@ struct Board8
         int characteristic = -(utils.popcount(temp) + 50);  // vertical edges
     }
     */
+
+    /// Euler characteristic of the board treating each stone as a diamond. (Connects only vertically and horicontally)
+    int diamond_euler()
+    in
+    {
+        assert(valid);
+    }
+    body
+    {
+        int characteristic = utils.popcount(bits & NORTH_WALL);  // northern vertices
+        characteristic += utils.popcount(bits | (bits >> V_SHIFT));  // rest of the vertical vertices
+        characteristic += utils.popcount(bits | (bits << H_SHIFT));  // horizontal vertices
+        return characteristic - 3 * utils.popcount(bits);  // edges and pixels
+    }
+
+    /// Euler characteristic of the board treating each stone as a diamond and filling up sigle diamond shaped holes.
+    int true_euler()
+    in
+    {
+        assert(valid);
+    }
+    body
+    {
+        ulong temp = bits & (bits >> H_SHIFT);
+        return diamond_euler + utils.popcount(temp & (temp >> V_SHIFT));
+    }
 
     // TODO: Optimize forage tables based on the extent of the playing area.
     Board8[] chains() const
@@ -757,11 +783,37 @@ unittest
     assert((Board8(0, 0) | Board8(5, 0)).east(3) == Board8(3, 0));
 }
 
-unittest{
+unittest
+{
     auto b = Board8(0, 0) | Board8(1, 0);
     assert(b.euler == 1);
+    assert(b.diamond_euler == 1);
+    assert(b.true_euler == 1);
+
     b |= Board8(5, 5);
     assert(b.euler == 2);
+    assert(b.diamond_euler == 2);
+    assert(b.true_euler == 2);
+
+    b = Board8(0, 0) | Board8(1, 1) | Board8(2, 0);
+    assert(b.euler == 1);
+    assert(b.diamond_euler == 3);
+    assert(b.true_euler == 3);
+
+    b = Board8(1, 0) | Board8(0, 1) | Board8(1, 2) | Board8(2, 1);
+    assert(b.euler == 0);
+    assert(b.diamond_euler == 4);
+    assert(b.true_euler == 4);
+
+    b = rectangle8(2, 2);
+    assert(b.euler == 1);
+    assert(b.diamond_euler == 0);
+    assert(b.true_euler == 1);
+
+    b = rectangle8(3, 3) & ~Board8(1, 1);
+    assert(b.euler == 0);
+    assert(b.diamond_euler == 0);
+    assert(b.true_euler == 0);
 }
 
 /*

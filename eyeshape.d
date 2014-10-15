@@ -22,9 +22,20 @@ in
 {
     assert(space.popcount == 3);
 }
+out(result)
+{
+    if (result.shape == ThreeShape.unknown){
+        assert(!result.middle);
+        assert(!result.wings);
+    }
+    else{
+        assert(result.middle.popcount == 1);
+        assert(result.wings.popcount == 2);
+    }
+}
 body
 {
-    if (space.euler != 1){
+    if (space.diamond_euler != 1){
         return ThreeSpace!T(ThreeShape.unknown, T(), T());
     }
     auto shape = ThreeShape.unknown;
@@ -98,6 +109,12 @@ unittest
     mixin(check_all_transformations);
 }
 
+unittest
+{
+    auto space = Board8(0, 0) | Board8(1, 1) | Board8(2, 0);
+    assert(get_three_space8(space).shape == ThreeShape.unknown);
+}
+
 
 enum FourShape {unknown, straight_four, bent_four, farmers_hat, twisted_four, square_four}
 
@@ -119,9 +136,20 @@ in
 {
     assert(space.popcount == 4);
 }
+out(result)
+{
+    if (result.shape == FourShape.unknown){
+        assert(!result.middle);
+        assert(!result.wings);
+    }
+    else{
+        assert(result.middle.popcount <= 2);
+        assert(result.wings.popcount == 3 || result.wings.popcount == 2 || result.wings.popcount == 0);
+    }
+}
 body
 {
-    if (space.euler != 1){
+    if (space.true_euler != 1){
         return FourSpace!T(FourShape.unknown, T(), T());
     }
     auto shape = FourShape.unknown;
@@ -287,4 +315,11 @@ unittest
     wings = Board8();
     shape = FourShape.square_four;
     mixin(check_all_transformations);
+}
+
+
+unittest
+{
+    auto space = Board8(1, 0) | Board8(0, 1) | Board8(1, 2) | Board8(2, 1);
+    assert(get_four_space8(space).shape == ThreeShape.unknown);
 }
