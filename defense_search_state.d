@@ -689,7 +689,7 @@ unittest
     //assert(ds.lower_bound == float.infinity);
 
     // Rectangular six in the corner with one outside liberty and no ko threats.
-    s.opponent_targets[0].outside_liberties = 1;
+    s.opponent_outside_liberties = 1;
     s.ko_threats = 0;
     auto ds = new DefenseSearchState8(s);
     ds.calculate_minimax_value;
@@ -704,7 +704,7 @@ unittest
     assert(ds.upper_bound == -4);
 
     // Rectangular six in the corner with two outside liberties and infinite ko threats for the invader.
-    s.opponent_targets[0].outside_liberties = 2;
+    s.opponent_outside_liberties = 2;
     s.ko_threats = float.infinity;
     ds = new DefenseSearchState8(s);
     ds.calculate_minimax_value;

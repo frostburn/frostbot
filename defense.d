@@ -38,8 +38,8 @@ struct DefenseResult(T)
     }
 }
 
+alias DefenseResult8 = DefenseResult!Board8;
 
-enum MAX_SPACE_SIZE = 6;
 
 
 DefenseState!T[] extract_player_eyespaces(T, S)(S state, T player_secure, T opponent_secure)
@@ -52,7 +52,7 @@ DefenseState!T[] extract_player_eyespaces(T, S)(S state, T player_secure, T oppo
             continue;
         }
         auto chain_size = player_chain.popcount;
-        auto number_of_liberties = player_chain.liberties(state.playing_area & ~state.opponent).popcount;
+        auto number_of_liberties = state.chain_liberties!"player"(player_chain);
         if (chain_size > 1 && number_of_liberties > 1){
             player_edges |= player_chain;
         }
@@ -71,37 +71,54 @@ DefenseState!T[] extract_player_eyespaces(T, S)(S state, T player_secure, T oppo
         if (state.ko & region){
             continue;
         }
-        auto blob = region.blob(state.playing_area);
-        auto player_target = blob;
+        T blob = region.blob(state.playing_area);
+        T player_target = blob;
         player_target.flood_into(player_edges);
-        auto potential_outside_liberties = player_target.liberties(state.playing_area & ~region);
+        T outside_liberties = player_target.liberties(state.playing_area & ~region);
 
-        T outside_liberties;
-        foreach (target_chain; player_target.chains){
-            // Check if the outside liberties can actually be filled out to cause an atari.
-            auto halo = target_chain.liberties(state.playing_area) & outside_liberties;
-            foreach (halo_piece; halo.chains){
-                if (halo_piece.liberties(state.playing_area & ~player_secure & ~player_target)){
-                    opponent_outside_liberties |= halo_piece;
+        auto player_target_chains = player_target.chains;
+        T[T] chains_per_liberty;
+        foreach (target_chain; player_target_chains){
+            T halo = target_chain.liberties(state.playing_area) & outside_liberties;
+            foreach (halo_piece; halo.pieces){
+                if (halo_piece in chains_per_liberty){
+                    chains_per_liberty[halo_piece] |= target_chain;
                 }
-                // Otherwise they can act as eyes for the target. :)
                 else{
-                    add_eye.blah;
-                    outside_liberties &= ~halo_piece;
+                    chains_per_liberty[halo_piece] = target_chain;
                 }
             }
         }
+        int[T] liberties_per_chain;
+        foreach (chain; chains_per_liberty){
+            if (chain in liberties_per_chain){
+                liberties_per_chain[chain] += 1;
+            }
+            else{
+                liberties_per_chain[chain] = 1;
+            }
+        }
 
-        auto playing_area = blob | player_target | outside_liberties | secure;
+        TargetChain!T[] player_targets;
+        foreach (chain; player_target_chains){
+            if (chain !in liberties_per_chain){
+                player_targets ~= TargetChain!T(chain);
+            }
+        }
+        foreach (chain, liberties; liberties_per_chain){
+            player_targets ~= TargetChain!T(chain, liberties);
+        }
+
+        auto playing_area = blob | player_target | secure;
         auto defense_state = DefenseState!T(
-            state.opponent & playing_area,
             state.player & playing_area,
+            state.opponent & playing_area,
             playing_area,
             T(),
-            T(),
-            player_target,
-            opponent_outside_liberties,
-            T(),
+            player_secure,
+            opponent_secure,
+            player_targets,
+            [],
             true,
             0,
             float.infinity
@@ -119,59 +136,7 @@ void extract_eyespaces(T, S)(S state, T player_secure, T opponent_secure, out De
     opponent_eyespaces = extract_player_eyespaces!(T, S)(state, opponent_secure, player_secure);
 }
 
-
-DefenseResult!T calculate_status(T)(DefenseState!T defense_state, ref DefenseResult!T[DefenseState!T] transposition_table, in T player_secure, in T opponent_secure)
-{
-    auto canonical_defense_state = defense_state;
-    canonical_defense_state.canonize;
-    if (canonical_defense_state !in transposition_table){
-        auto result = calculate_status!T(defense_state, player_secure, opponent_secure);
-        transposition_table[canonical_defense_state] = result;
-        debug(calculate_status_transpositions){
-            if (results.status == Status.defendable){
-                writeln("Saving status for:");
-                writeln(defense_state);
-                writeln(status);
-                writeln;
-            }
-        }
-        return result;
-    }
-    else{
-        return transposition_table[canonical_defense_state];
-    }
-}
-
-
-DefenseResult!T calculate_status(T)(DefenseState!T defense_state, in T player_secure, in T opponent_secure)
-in
-{
-    assert(!defense_state.player_target);
-    assert(!defense_state.opponent_outside_liberties);
-    assert(defense_state.black_to_play);
-    assert(defense_state.ko_threats == float.infinity);
-}
-body
-{
-    debug(calculate_status) {
-        writeln("Calculating status for:");
-        writeln(defense_state);
-    }
-    if (!defense_state.opponent_target){
-        return DefenseResult!T(Status.unknown);
-    }
-
-    // Check if target is in atari.
-    foreach (target_chain; defense_state.opponent_target.chains){
-        if (target_chain.liberties(defense_state.playing_area & ~defense_state.opponent).popcount <= 1){
-            return DefenseResult!T(Status.killable);
-        }
-    }
-
-    auto space = defense_state.playing_area & ~defense_state.opponent_target & ~defense_state.player_outside_liberties;
-    auto space_size = space.popcount;
-
-
+/*
     string return_winged_defense_result(string number)
     {
         return "
@@ -273,120 +238,188 @@ body
         }
     }
 
-    if (space_size <= MAX_SPACE_SIZE){
-        // Analyzing defendable territory. No outside forcing moves allowed.
-        auto outside_liberties = defense_state.player_outside_liberties;
-        defense_state.player_outside_liberties = T();
-        defense_state.player &= ~outside_liberties;
-        defense_state.playing_area &= ~outside_liberties;
+*/
 
-        auto defense_search_state = scoped!(DefenseSearchState!(T, DefenseState!T))(defense_state);
-        defense_search_state.player_secure = player_secure;
-        defense_search_state.opponent_secure = opponent_secure;
+enum MAX_SPACE_SIZE = 7;
+enum MAX_OUTSIDE_LIBERTIES = 4;
+
+DefenseResult!T calculate_status(T)(DefenseState!T defense_state, Transposition[DefenseState!T] *defense_transposition_table)
+in
+{
+    assert(!defense_state.opponent_target);
+    assert(!defense_state.opponent_immortal);
+    assert(defense_state.black_to_play);
+}
+body
+{
+    debug(calculate_status) {
+        writeln("Calculating status for:");
+        writeln(defense_state);
+    }
+    if (!defense_state.player_target){
+        return DefenseResult!T(Status.unknown);
+    }
+
+    if (defense_state.target_in_atari!"player"){
+        return DefenseResult!T(Status.killable);
+    }
+
+    auto space = defense_state.playing_area & ~(defense_state.player_target | defense_state.player_immortal);
+    auto space_size = space.popcount;
+
+    if (space_size > MAX_SPACE_SIZE){
+        return DefenseResult!T(Status.unknown);
+    }
+
+    float max_score = defense_state.playing_area.popcount;
+    DefenseSearchState!(T, DefenseState!T) defense_search_state;
+    T[] moves;
+
+    if (defense_state.player_outside_liberties > MAX_OUTSIDE_LIBERTIES){
+        // Let the attacker go first, remove the outside liberties and press the attack.
+        defense_state.swap_turns;
+        defense_state.black_to_play = true;
+        defense_state.ko_threats = float.infinity;
+        foreach (ref target; defense_state.opponent_targets){
+            target.outside_liberties = 0;
+        }
+        defense_search_state = new DefenseSearchState!(T, DefenseState!T)(defense_state, 0, defense_transposition_table);
         defense_search_state.calculate_minimax_value;
+        if (defense_search_state.upper_bound > -max_score){
+            return DefenseResult!T(Status.unknown);
+        }
 
-        if (defense_search_state.lower_bound == float.infinity && defense_search_state.upper_bound == float.infinity){
+        // Let the attacker go twice in a row for the ultimate invasion.
+        foreach (child_state; defense_state.children_and_moves(moves)){
+            child_state.swap_turns;
+            assert(child_state.black_to_play);
+            assert(child_state.ko_threats == float.infinity);
+            defense_search_state = new DefenseSearchState!(T, DefenseState!T)(child_state, 0, defense_transposition_table);
+            defense_search_state.calculate_minimax_value;
+            if (defense_search_state.upper_bound > -max_score){
+                return DefenseResult!T(Status.defendable);
+            }
+        }
+
+        // That's one tough cookie right here.
+        return DefenseResult!T(Status.secure);
+    }
+    else{
+        // Make everything favor the defender to see if she can live in the first place with two moves in a row.
+        defense_state.ko_threats = float.infinity;
+        bool all_children_dead = true;
+        foreach (child_state; defense_state.children_and_moves(moves)){
+            if (!child_state.passes){
+                child_state.swap_turns;
+                assert(child_state.black_to_play);
+                assert(child_state.ko_threats == float.infinity);
+                defense_search_state = new DefenseSearchState!(T, DefenseState!T)(child_state, 0, defense_transposition_table);
+                defense_search_state.calculate_minimax_value;
+                if (defense_search_state.upper_bound > -float.infinity){
+                    all_children_dead = false;
+                    break;
+                }
+            }
+        }
+        if (all_children_dead){
+            return DefenseResult!T(Status.dead);
+        }
+
+        // Now with only first move advantage.
+        defense_search_state = new DefenseSearchState!(T, DefenseState!T)(defense_state, 0, defense_transposition_table);
+        defense_search_state.calculate_minimax_value;
+        if (defense_search_state.lower_bound < max_score){
             return DefenseResult!T(Status.killable);
         }
 
-        int min_score = defense_state.playing_area.popcount;
-        min_score = -min_score;
-        if (defense_search_state.lower_bound > min_score){
-            // Probably a seki.
-            return DefenseResult!T(Status.unknown);
+        // Make everything favor the attacker but keep the outside liberties.
+        defense_state.swap_turns;
+        defense_state.black_to_play = true;
+        defense_state.ko_threats = float.infinity;
+        defense_search_state = new DefenseSearchState!(T, DefenseState!T)(defense_state, 0, defense_transposition_table);
+        defense_search_state.calculate_minimax_value;
+        if (defense_search_state.upper_bound > -max_score){
+            return DefenseResult!T(Status.contested);
         }
-        if (defense_search_state.lower_bound == min_score && defense_search_state.upper_bound == min_score){
-            foreach (child_state; defense_state.children){
-                child_state.swap_turns;
-                assert(child_state.black_to_play);
-                auto child_search_state = new DefenseSearchState!(T, DefenseState!T)(child_state);
-                child_search_state.calculate_minimax_value;
-                debug(calculate_status){
-                    writeln("Child state:");
-                    writeln(child_search_state);
-                }
-                if (child_search_state.lower_bound > min_score){
-                    return DefenseResult!T(Status.defendable);
-                }
-                destroy(child_search_state);
+
+        // Remove the outside liberties to press the attack even further.
+        foreach (ref target; defense_state.opponent_targets){
+            target.outside_liberties = 0;
+        }
+        defense_search_state = new DefenseSearchState!(T, DefenseState!T)(defense_state, 0, defense_transposition_table);
+        defense_search_state.calculate_minimax_value;
+        if (defense_search_state.upper_bound > -max_score){
+            return DefenseResult!T(Status.retainable);
+        }
+
+        // Let the attacker go twice in a row for the ultimate invasion.
+        foreach (child_state; defense_state.children_and_moves(moves)){
+            child_state.swap_turns;
+            assert(child_state.black_to_play);
+            assert(child_state.ko_threats == float.infinity);
+            defense_search_state = new DefenseSearchState!(T, DefenseState!T)(child_state, 0, defense_transposition_table);
+            defense_search_state.calculate_minimax_value;
+            if (defense_search_state.upper_bound > -max_score){
+                return DefenseResult!T(Status.defendable);
             }
-            return DefenseResult!T(Status.secure);
         }
+
+        // That's one tough cookie right here.
+        return DefenseResult!T(Status.secure);
     }
-
-    return DefenseResult!T(Status.unknown);
 }
 
-alias DefenseResult8 = DefenseResult!Board8;
-
-// Hmmm?? No double specializations?
-// alias calculate_status8 = calculate_status!Board8;
-
-DefenseResult8 calculate_status8(DefenseState8 defense_state,ref DefenseResult8[DefenseState8] transposition_table, in Board8 player_secure, in Board8 opponent_secure)
-{
-    return calculate_status!Board8(defense_state, transposition_table, player_secure, opponent_secure);
-}
-
-DefenseResult8 calculate_status8(DefenseState8 defense_state, in Board8 player_secure, out Board8 opponent_secure)
-{
-    return calculate_status!Board8(defense_state, player_secure, opponent_secure);
-}
-
+alias calculate_status8 = calculate_status!Board8;
 
 
 unittest
 {
-    Board8 player_secure, opponent_secure;
-    DefenseState8 s;
-    s.ko_threats = float.infinity;
+    Transposition[DefenseState8] *defense_transposition_table;
+
     auto space = rectangle8(3, 1).south.east;
-    auto opponent = rectangle8(5, 3) & ~space;
-    s.playing_area = space | opponent;
-    s.opponent = opponent;
-    s.opponent_target = opponent;
-    auto result = calculate_status8(s, player_secure, opponent_secure);
+    auto player = rectangle8(5, 3) & ~space;
+    auto s = DefenseState8(space | player);
+    s.player = player;
+    s.player_target = player;
+    auto result = calculate_status8(s, defense_transposition_table);
     assert(result.status == Status.contested);
-    assert(!result.player_useless && !result.opponent_useless);
 
-    s.playing_area |= Board8(0, 3);
-    s.player_outside_liberties = Board8(0, 3);
-    Board8 wings = Board8(1, 1) | Board8(3, 1);
-    result = calculate_status8(s, player_secure, opponent_secure);
+    s.player_targets[0].outside_liberties = 2;
+    result = calculate_status8(s, defense_transposition_table);
     assert(result.status == Status.contested);
-    assert(result.player_useless == wings);
-    assert(result.opponent_useless == wings);
 
-    s.player |= Board8(2, 1);
-    result = calculate_status8(s, player_secure, opponent_secure);
+    s.opponent |= Board8(2, 1);
+    result = calculate_status8(s, defense_transposition_table);
     assert(result.status == Status.dead);
-    assert(!result.player_useless && !result.opponent_useless);
 
     space = rectangle8(4, 1).south.east;
-    opponent = rectangle8(6, 3) & ~space;
-    s = DefenseState8(space | opponent);
-    s.ko_threats = float.infinity;
-    s.opponent = opponent;
-    s.opponent_target = opponent;
-    assert(calculate_status8(s, player_secure, opponent_secure).status == Status.defendable);
+    player = rectangle8(6, 3) & ~space;
+    s = DefenseState8(space | player);
+    s.player = player;
+    s.player_target = player;
+    assert(calculate_status8(s, defense_transposition_table).status == Status.defendable);
 
     s.playing_area &= ~Board8(0, 0) & ~Board8(0, 2);
-    s.opponent &= ~Board8(0, 0) & ~Board8(0, 2);
-    s.opponent_target = s.opponent;
-    assert(calculate_status8(s, player_secure, opponent_secure).status == Status.killable);
+    s.player &= ~Board8(0, 0) & ~Board8(0, 2);
+    s.player_target = s.player;
+    assert(calculate_status8(s, defense_transposition_table).status == Status.killable);
+
 
     space = rectangle8(5, 1).south.east;
-    opponent = rectangle8(7, 3) & ~space;
+    player = rectangle8(7, 3) & ~space;
 
-    s.playing_area = space | opponent;
-    s.opponent = opponent;
-    s.opponent_target = opponent;
-    assert(calculate_status8(s, player_secure, opponent_secure).status == Status.secure);
+    s.playing_area = space | player;
+    s.player = player;
+    s.player_target = player;
+    assert(calculate_status8(s, defense_transposition_table).status == Status.secure);
 }
 
 unittest
 {
+    Transposition[DefenseState8] *defense_transposition_table;
+
     Board8 player_secure, opponent_secure;
-    State8 s;
+    DefenseState8 s;
     s.player = rectangle8(5, 2) & ~rectangle8(4, 1);
     s.opponent = (rectangle8(6, 2) & ~rectangle8(5, 1).south).south(5);
 
@@ -398,15 +431,15 @@ unittest
     DefenseState8[] player_eyespaces;
     DefenseState8[] opponent_eyespaces;
 
-    extract_eyespaces!(Board8, State8)(s, player_secure, opponent_secure, player_eyespaces, opponent_eyespaces);
+    extract_eyespaces!(Board8, DefenseState8)(s, player_secure, opponent_secure, player_eyespaces, opponent_eyespaces);
 
     foreach (player_eyespace; player_eyespaces){
-        calculate_status8(player_eyespace, player_secure, opponent_secure);
+        calculate_status8(player_eyespace, defense_transposition_table);
     }
 
     bool opponent_has_a_defendable_group;
     foreach (opponent_eyespace; opponent_eyespaces){
-        if (calculate_status(opponent_eyespace, player_secure, opponent_secure).status == Status.defendable){
+        if (calculate_status(opponent_eyespace, defense_transposition_table).status == Status.defendable){
             opponent_has_a_defendable_group = true;
         }
     }

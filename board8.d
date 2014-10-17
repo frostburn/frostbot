@@ -521,6 +521,29 @@ struct Board8
         return diamond_euler + utils.popcount(temp & (temp >> V_SHIFT));
     }
 
+    Board8[] pieces() const
+    in
+    {
+        assert(valid);
+    }
+    out(result)
+    {
+        assert(result.length <= WIDTH * HEIGHT);
+    }
+    body
+    {
+        Board8[] result;
+        for (int y = 0; y < HEIGHT; y++){
+            for (int x = 0; x < WIDTH; x++){
+                auto piece = Board8(x, y);
+                if (piece & this){
+                    result ~= piece;
+                }
+            }
+        }
+        return result;
+    }
+
     // TODO: Optimize forage tables based on the extent of the playing area.
     Board8[] chains() const
     in

@@ -121,7 +121,7 @@ struct DefenseState(T)
         return result;
     }
 
-    void player_target(T chain) @property
+    T player_target(T chain) @property
     {
         if (chain){
             auto target_chain = TargetChain!T(chain);
@@ -130,9 +130,10 @@ struct DefenseState(T)
         else{
             player_targets = player_targets.init;
         }
+        return chain;
     }
 
-    void opponent_target(T chain) @property
+    T opponent_target(T chain) @property
     {
         if (chain){
             auto target_chain = TargetChain!T(chain);
@@ -141,7 +142,49 @@ struct DefenseState(T)
         else{
             opponent_targets = opponent_targets.init;
         }
+        return chain;
     }
+
+    int player_outside_liberties() @property
+    {
+        int result = 0;
+        foreach (ref target; player_targets){
+            result += target.outside_liberties;
+        }
+        return result;
+    }
+
+    int opponent_outside_liberties() @property
+    {
+        int result = 0;
+        foreach (ref target; opponent_targets){
+            result += target.outside_liberties;
+        }
+        return result;
+    }
+
+    int player_outside_liberties(int liberties) @property
+    in
+    {
+        assert(player_targets.length == 1);
+    }
+    body
+    {
+        player_targets[0].outside_liberties = liberties;
+        return liberties;
+    }
+
+    int opponent_outside_liberties(int liberties) @property
+    in
+    {
+        assert(opponent_targets.length == 1);
+    }
+    body
+    {
+        opponent_targets[0].outside_liberties = liberties;
+        return liberties;
+    }
+
 
     DefenseState!T opAssign(DefenseState!T rhs)
     {
@@ -452,6 +495,28 @@ struct DefenseState(T)
         ");
     }
 
+    float chain_liberties(string player_string)(T chain){
+        static if (player_string == "player"){
+            enum opponent_string = "opponent";
+        }
+        else{
+            enum opponent_string = "player";
+        }
+        mixin("
+            if (chain & " ~ player_string ~ "_immortal){
+                return float.infinity;
+            }
+            float outside_liberties = 0;
+            foreach (target; " ~ player_string ~ "_targets){
+                if (chain & target.chain){
+                    outside_liberties += target.outside_liberties;
+                }
+            }
+            return outside_liberties + chain.liberties(playing_area & ~" ~ opponent_string ~ ").popcount;
+        ");
+    }
+
+
     bool target_in_atari(string player_string)(){
         static if (player_string == "player"){
             enum opponent_string = "opponent";
@@ -463,7 +528,7 @@ struct DefenseState(T)
             foreach (target; " ~ player_string ~ "_targets){
                 if (target.outside_liberties < 2){
                     foreach (chain; target.chain.chains){
-                        if (target.outside_liberties + chain.liberties(playing_area & ~" ~ opponent_string ~ ")){
+                        if (target.outside_liberties + chain.liberties(playing_area & ~" ~ opponent_string ~ ").popcount < 2){
                             return true;
                         }
                     }
@@ -493,7 +558,8 @@ struct DefenseState(T)
 
     DefenseState!T[] children(T[] moves, out T[] creating_moves)
     {
-        DefenseState!T[] _children = [];
+        creating_moves = creating_moves.init;
+        DefenseState!T[] _children;
 
         foreach (move; moves){
             auto child = this;
@@ -1084,7 +1150,7 @@ unittest
     auto s = DefenseState8(Board8(0, 0));
     s.opponent = Board8(0, 0);
     s.opponent_target = s.opponent;
-    s.opponent_targets[0].outside_liberties = 1;
+    s.opponent_outside_liberties = 1;
 
     foreach (c ;s.children){
         assert(c.passes > 0 || !c.player);
@@ -1102,7 +1168,7 @@ unittest
     s.playing_area = Board8(0, 0) | Board8(2, 0);
     s.player = Board8(0, 0);
     s.player_target = s.player;
-    s.player_targets[0].outside_liberties = 1;
+    s.player_outside_liberties = 1;
     assert(s.reduce == 0);
     assert(s.player_target);
 }
