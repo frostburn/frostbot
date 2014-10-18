@@ -244,7 +244,7 @@ DefenseResult!T calculate_status(T)(DefenseState!T defense_state, Transposition[
 in
 {
     assert(!defense_state.opponent_target);
-    assert(!defense_state.opponent_immortal);
+    //assert(!defense_state.opponent_immortal);
     assert(defense_state.black_to_play);
 }
 body
@@ -419,7 +419,8 @@ alias calculate_status8 = calculate_status!Board8;
 
 unittest
 {
-    Transposition[DefenseState8] *defense_transposition_table;
+    Transposition[DefenseState8] empty;
+    auto defense_transposition_table = &empty;
 
     auto space = rectangle8(3, 1).south.east;
     auto wings = Board8(1, 1) | Board8(3, 1);
@@ -495,14 +496,9 @@ unittest
     assert(result.status == Status.retainable);
     assert(result.player_useless == wings);
     assert(!result.opponent_useless);
-}
-
-unittest
-{
-    Transposition[DefenseState8] *defense_transposition_table;
 
     Board8 player_secure, opponent_secure;
-    DefenseState8 s;
+    s = DefenseState8();
     s.player = rectangle8(5, 2) & ~rectangle8(4, 1);
     s.opponent = (rectangle8(6, 2) & ~rectangle8(5, 1).south).south(5);
 

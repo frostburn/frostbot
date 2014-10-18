@@ -11,6 +11,7 @@ import polyomino;
 import board8;
 import defense_state;
 //import search_state;
+import defense;
 
 
 static bool is_better(T, S)(DefenseSearchState!(T, S) a, DefenseSearchState!(T, S) b){
@@ -205,15 +206,20 @@ class DefenseSearchState(T, S)
         assert(state.passes <= 2);
     }
 
-    this(T playing_area)
+    this(T playing_area, Transposition[DefenseState!T] *defense_transposition_table=null)
     {
-        this(S(playing_area));
+        this(S(playing_area), 0, defense_transposition_table);
     }
 
     this (S state, int value_shift=0, Transposition[DefenseState!T] *defense_transposition_table=null){
+        this.defense_transposition_table = defense_transposition_table;
         state.analyze_unconditional;
         this.state = state;
-        //analyze_local;
+        T player_retainable;
+        T opponent_retainable;
+        if (defense_transposition_table !is null){
+            analyze_local(player_retainable, opponent_retainable);
+        }
         value_shift += this.state.reduce;
         this.value_shift = value_shift;
         this.state.canonize;
@@ -222,12 +228,43 @@ class DefenseSearchState(T, S)
             lower_bound = upper_bound = state.liberty_score + value_shift;
         }
         else{
-            this.defense_transposition_table = defense_transposition_table;
-            update_bounds;
+            update_bounds(player_retainable, opponent_retainable);
         }
     }
 
-    void update_bounds(){
+    void analyze_local(out T player_retainable, out T opponent_retainable)
+    {
+        T opponent_useless;
+        DefenseState!T[] player_eyespaces;
+        DefenseState!T[] opponent_eyespaces;
+
+        extract_eyespaces!(T, S)(state, state.player_immortal, state.opponent_immortal, player_eyespaces, opponent_eyespaces);
+
+        string analyze_eyespaces(string player, string opponent)
+        {
+            return "
+                foreach (eyespace; " ~ player ~ "_eyespaces){
+                    if (eyespace.playing_area.popcount < state.playing_area.popcount){
+                        auto result = calculate_status!T(eyespace, defense_transposition_table);
+                        if (result.status == Status.retainable || result.status == Status.defendable){
+                            " ~ player ~ "_retainable |= eyespace.playing_area & ~state." ~ opponent ~ "_immortal;
+                        }
+                        else if (result.status == Status.secure){
+                            state." ~ player ~ "_immortal |= eyespace.playing_area & ~state." ~ opponent ~ "_immortal;
+                        }
+
+                        " ~ player ~ "_useless |= result.player_useless;
+                        " ~ opponent ~ "_useless |= result.opponent_useless;
+                    }
+                }
+            ";
+        }
+
+        mixin(analyze_eyespaces("player", "opponent"));
+        mixin(analyze_eyespaces("opponent", "player"));
+    }
+
+    void update_bounds(T player_retainable, T opponent_retainable){
         if (defense_transposition_table !is null && state in *defense_transposition_table){
             auto transposition = (*defense_transposition_table)[state];
             lower_bound = transposition.lower_bound + value_shift;
@@ -237,10 +274,10 @@ class DefenseSearchState(T, S)
         else{
             float size = state.playing_area.popcount;
             if (!state.player_target){
-                lower_bound = 2 * state.player_immortal.popcount - size + value_shift;
+                lower_bound = 2 * (state.player_immortal.popcount + player_retainable.popcount) - size + value_shift;
             }
             if (!state.opponent_target){
-                upper_bound = -(2 * state.opponent_immortal.popcount - size) + value_shift;
+                upper_bound = -(2 * (state.opponent_immortal.popcount + opponent_retainable.popcount) - size) + value_shift;
             }
         }
     }
@@ -531,43 +568,44 @@ void pc(DefenseSearchState8 dss)
 
 unittest
 {
-    auto ss = new DefenseSearchState8(rectangle8(1, 1));
+    Transposition[DefenseState8] empty;
+    auto defense_transposition_table = &empty;
+
+    auto ss = new DefenseSearchState8(rectangle8(1, 1), defense_transposition_table);
     ss.calculate_minimax_value;
     assert(ss.lower_bound == 0);
     assert(ss.upper_bound == 0);
 
-    ss = new DefenseSearchState8(rectangle8(2, 1));
+    ss = new DefenseSearchState8(rectangle8(2, 1), defense_transposition_table);
     ss.calculate_minimax_value;
     assert(ss.lower_bound == -2);
     assert(ss.upper_bound == 2);
 
-    ss = new DefenseSearchState8(rectangle8(3, 1));
+    ss = new DefenseSearchState8(rectangle8(3, 1), defense_transposition_table);
     ss.calculate_minimax_value;
     assert(ss.lower_bound == 3);
     assert(ss.upper_bound == 3);
 
-    ss = new DefenseSearchState8(rectangle8(4, 1));
+    ss = new DefenseSearchState8(rectangle8(4, 1), defense_transposition_table);
     ss.calculate_minimax_value;
     assert(ss.lower_bound == 4);
     assert(ss.upper_bound == 4);
 
-    ss = new DefenseSearchState8(rectangle8(2, 2));
+    ss = new DefenseSearchState8(rectangle8(2, 2), defense_transposition_table);
     ss.calculate_minimax_value(8);
     assert(ss.lower_bound == -4);
     assert(ss.upper_bound == 4);
 
-    ss = new DefenseSearchState8(rectangle8(3, 2));
+    ss = new DefenseSearchState8(rectangle8(3, 2), defense_transposition_table);
     ss.calculate_minimax_value(9);
     assert(ss.lower_bound == -6);
     assert(ss.upper_bound == 6);
-}
 
-unittest
-{
+
     auto s = DefenseState8(rectangle8(3, 2));
     s.player = Board8(0, 0) | Board8(1, 0) | Board8(2, 0);
     s.player_target = s.player;
-    auto ds = new DefenseSearchState8(s);
+    auto ds = new DefenseSearchState8(s, 0, defense_transposition_table);
 
     ds.calculate_minimax_value;
     assert(ds.lower_bound == 6);
@@ -576,7 +614,7 @@ unittest
     s = DefenseState8(rectangle8(3, 2));
     s.opponent = Board8(0, 0) | Board8(1, 0) | Board8(2, 0);
     s.opponent_target = s.opponent;
-    ds = new DefenseSearchState8(s);
+    ds = new DefenseSearchState8(s, 0, defense_transposition_table);
 
     ds.calculate_minimax_value;
     assert(ds.lower_bound == float.infinity);
@@ -585,11 +623,100 @@ unittest
     s = DefenseState8(rectangle8(4, 2));
     s.opponent = Board8(0, 0) | Board8(1, 0) | Board8(2, 0) | Board8(3, 0);
     s.opponent_target = s.opponent;
-    ds = new DefenseSearchState8(s);
+    ds = new DefenseSearchState8(s, 0, defense_transposition_table);
 
     ds.calculate_minimax_value;
     assert(ds.lower_bound == -8);
     assert(ds.upper_bound == -8);
+
+    //Rectangular six in the corner with no outside liberties and infinite ko threats.
+    s = DefenseState8();
+    s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
+    s.opponent_target = s.opponent;
+    s.player = rectangle8(5, 4) & ~rectangle8(4, 3);
+    s.player_immortal = s.player;
+    s.playing_area = rectangle8(5, 4);
+    s.ko_threats = -float.infinity;
+    ds = new DefenseSearchState8(s, 0, defense_transposition_table);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == float.infinity);
+    assert(ds.lower_bound == float.infinity);
+
+    // Rectangular six in the corner with one physical outside liberty and no ko threats.
+    s.player_immortal &= ~Board8(4, 0);
+    s.player &= ~Board8(4, 0);
+    s.ko_threats = 0;
+    ds = new DefenseSearchState8(s, 0, defense_transposition_table);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == float.infinity);
+    assert(ds.upper_bound == float.infinity);
+
+    // Rectangular six in the corner with one physical outside liberty and one ko threat.
+    s.ko_threats = -1;
+    ds = new DefenseSearchState8(s, 0, defense_transposition_table);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == -4);
+    assert(ds.upper_bound == -4);
+
+    // Rectangular six in the corner with two physical outside liberties and infinite ko threats for the invader.
+    s.player &= ~Board8(4, 1);
+    s.player_immortal &= ~Board8(4, 1);
+    s.ko_threats = float.infinity;
+    ds = new DefenseSearchState8(s, 0, defense_transposition_table);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == -4);
+    assert(ds.upper_bound == -4);
+
+
+    //Rectangular six in the corner with no outside liberties and infinite ko threats.
+    s = DefenseState8();
+    s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
+    s.opponent_target = s.opponent;
+    s.player = rectangle8(5, 4) & ~rectangle8(4, 3);
+    s.player_immortal = s.player;
+    s.playing_area = rectangle8(5, 4);
+    s.ko_threats = -float.infinity;
+    ds = new DefenseSearchState8(s, 0, defense_transposition_table);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == float.infinity);
+    assert(ds.lower_bound == float.infinity);
+
+    // Rectangular six in the corner with one outside liberty and no ko threats.
+    s.opponent_outside_liberties = 1;
+    s.ko_threats = 0;
+    ds = new DefenseSearchState8(s, 0, defense_transposition_table);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == float.infinity);
+    assert(ds.upper_bound == float.infinity);
+
+    // Rectangular six in the corner with one outside liberty and one ko threat.
+    s.ko_threats = -1;
+    ds = new DefenseSearchState8(s);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == -4);
+    assert(ds.upper_bound == -4);
+
+    // Rectangular six in the corner with two outside liberties and infinite ko threats for the invader.
+    s.opponent_outside_liberties = 2;
+    s.ko_threats = float.infinity;
+    ds = new DefenseSearchState8(s, 0, defense_transposition_table);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == -4);
+    assert(ds.upper_bound == -4);
+
+
+    // Test a state where the opponent can forfeit her stones.
+    auto opponent = Board8(0, 0) | Board8(1, 0) | Board8(2, 0);
+    auto space = Board8(0, 1) | Board8(1, 1) | Board8(2, 1) | Board8(1, 2);
+    s = DefenseState8();
+    s.playing_area = space | opponent;
+    s.opponent = opponent;
+    s.opponent_target = opponent;
+
+    ds = new DefenseSearchState8(s, 0, defense_transposition_table);
+    ds.calculate_minimax_value;
+    assert(ds.lower_bound == float.infinity);
+    assert(ds.upper_bound == float.infinity);
 }
 
 version(all_tests){
@@ -632,100 +759,4 @@ version(all_tests){
         assert(ds.lower_bound == 4);
         assert(ds.upper_bound == 4);
     }
-}
-
-unittest
-{
-    //Rectangular six in the corner with no outside liberties and infinite ko threats.
-    auto s = DefenseState8();
-    s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
-    s.opponent_target = s.opponent;
-    s.player = rectangle8(5, 4) & ~rectangle8(4, 3);
-    s.player_immortal = s.player;
-    s.playing_area = rectangle8(5, 4);
-    s.ko_threats = -float.infinity;
-    auto ds = new DefenseSearchState8(s);
-    ds.calculate_minimax_value;
-    assert(ds.lower_bound == float.infinity);
-    assert(ds.lower_bound == float.infinity);
-
-    // Rectangular six in the corner with one physical outside liberty and no ko threats.
-    s.player_immortal &= ~Board8(4, 0);
-    s.player &= ~Board8(4, 0);
-    s.ko_threats = 0;
-    ds = new DefenseSearchState8(s);
-    ds.calculate_minimax_value;
-    assert(ds.lower_bound == float.infinity);
-    assert(ds.upper_bound == float.infinity);
-
-    // Rectangular six in the corner with one physical outside liberty and one ko threat.
-    s.ko_threats = -1;
-    ds = new DefenseSearchState8(s);
-    ds.calculate_minimax_value;
-    assert(ds.lower_bound == -4);
-    assert(ds.upper_bound == -4);
-
-    // Rectangular six in the corner with two physical outside liberties and infinite ko threats for the invader.
-    s.player &= ~Board8(4, 1);
-    s.player_immortal &= ~Board8(4, 1);
-    s.ko_threats = float.infinity;
-    ds = new DefenseSearchState8(s);
-    ds.calculate_minimax_value;
-    assert(ds.lower_bound == -4);
-    assert(ds.upper_bound == -4);
-}
-
-unittest
-{
-    //Rectangular six in the corner with no outside liberties and infinite ko threats.
-    auto s = DefenseState8();
-    s.opponent = rectangle8(4, 3) & ~rectangle8(3, 2);
-    s.opponent_target = s.opponent;
-    s.player = rectangle8(5, 4) & ~rectangle8(4, 3);
-    s.player_immortal = s.player;
-    s.playing_area = rectangle8(5, 4);
-    s.ko_threats = -float.infinity;
-    //auto ds = new DefenseSearchState8(s);
-    //ds.calculate_minimax_value;
-    //assert(ds.lower_bound == float.infinity);
-    //assert(ds.lower_bound == float.infinity);
-
-    // Rectangular six in the corner with one outside liberty and no ko threats.
-    s.opponent_outside_liberties = 1;
-    s.ko_threats = 0;
-    auto ds = new DefenseSearchState8(s);
-    ds.calculate_minimax_value;
-    assert(ds.lower_bound == float.infinity);
-    assert(ds.upper_bound == float.infinity);
-
-    // Rectangular six in the corner with one outside liberty and one ko threat.
-    s.ko_threats = -1;
-    ds = new DefenseSearchState8(s);
-    ds.calculate_minimax_value;
-    assert(ds.lower_bound == -4);
-    assert(ds.upper_bound == -4);
-
-    // Rectangular six in the corner with two outside liberties and infinite ko threats for the invader.
-    s.opponent_outside_liberties = 2;
-    s.ko_threats = float.infinity;
-    ds = new DefenseSearchState8(s);
-    ds.calculate_minimax_value;
-    assert(ds.lower_bound == -4);
-    assert(ds.upper_bound == -4);
-}
-
-unittest
-{
-    // Test a state where the opponent can forfeit her stones.
-    auto opponent = Board8(0, 0) | Board8(1, 0) | Board8(2, 0);
-    auto space = Board8(0, 1) | Board8(1, 1) | Board8(2, 1) | Board8(1, 2);
-    auto s = DefenseState8();
-    s.playing_area = space | opponent;
-    s.opponent = opponent;
-    s.opponent_target = opponent;
-
-    auto ds = new DefenseSearchState8(s);
-    ds.calculate_minimax_value;
-    assert(ds.lower_bound == float.infinity);
-    assert(ds.upper_bound == float.infinity);
 }
