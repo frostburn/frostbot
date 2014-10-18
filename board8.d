@@ -23,7 +23,7 @@ struct Board8
     enum SOUTH_WALL = 0x3FC0000000000000UL;
     enum OUTSIDE = 0xC020100804020100UL;
 
-    static immutable Board8[WIDTH * HEIGHT / 2] FORAGE_TABLE = mixin(get_forage_table);
+    static immutable ulong[WIDTH * HEIGHT / 2] FORAGE_TABLE = mixin(get_forage_table);
 
     static immutable ulong[1 << HEIGHT] ROTATION_TABLE = mixin(get_rotation_table);
 
@@ -289,9 +289,9 @@ struct Board8
     }
     body
     {
-        version(assert){
-            auto rotated_bits = naive_rotate;
-        }
+        //version(assert){
+        //    auto rotated_bits = naive_rotate;
+        //}
         auto old_bits = bits;
         bits = EMPTY;
         assert(HEIGHT <= WIDTH);
@@ -300,9 +300,9 @@ struct Board8
             bits |= ROTATION_TABLE[north_line] >> (y * H_SHIFT);
         }
         assert(old_bits.popcount == bits.popcount);
-        version(assert){
-            assert(bits == rotated_bits);
-        }
+        //version(assert){
+        //    assert(bits == rotated_bits);
+        //}
     }
 
     private ulong naive_rotate() pure nothrow @nogc @safe
@@ -545,7 +545,7 @@ struct Board8
     }
 
     // TODO: Optimize forage tables based on the extent of the playing area.
-    Board8[] chains() const
+    Board8[] unoptimized_chains()
     in
     {
         assert(valid);
@@ -560,8 +560,45 @@ struct Board8
         foreach (block; FORAGE_TABLE){
             Board8 temp = foragee & block;
             if (temp){
-                foragee ^= temp.flood_into(foragee);  // TODO: Implement unsafe ulong flood for this.
+                foragee ^= temp.flood_into(foragee);
                 result ~= temp;
+            }
+            if (!foragee){
+                break;
+            }
+        }
+        return result;
+    }
+
+    Board8[] chains() const
+    in
+    {
+        assert(valid);
+    }
+    out(result)
+    {
+        assert(result.length <= WIDTH * HEIGHT / 2 + 1);
+    }
+    body
+    {
+        ulong foragee = bits;
+        ulong temp, temp2;
+        Board8[] result;
+        foreach (block; FORAGE_TABLE){
+            temp = foragee & block;
+            if (temp){
+                temp |= (~(temp + foragee)) & foragee;
+                do{
+                    temp2 = temp;
+                    temp |= (
+                        (temp >> H_SHIFT) |
+                        (temp << V_SHIFT) |
+                        (temp >> V_SHIFT)
+                    ) & foragee;
+                    temp |= (~(temp + foragee)) & foragee;
+                } while(temp2 != temp);
+                foragee ^= temp;
+                result ~= Board8(temp);
             }
             if (!foragee){
                 break;
@@ -741,6 +778,17 @@ string get_forage_table()
 
     r ~= "[";
     foreach (index, block; forage){
+        r ~= format("%sUL", block.bits);
+        if (index < forage.length - 1){
+            r ~= ", ";
+        }
+    }
+    r ~= "]";
+    return r;
+
+    /*
+    r ~= "[";
+    foreach (index, block; forage){
         r ~= block.repr;
         if (index < forage.length - 1){
             r ~= ", ";
@@ -748,6 +796,7 @@ string get_forage_table()
     }
     r ~= "]";
     return r;
+    */
 }
 
 string get_rotation_table(){

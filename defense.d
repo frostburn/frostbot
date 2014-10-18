@@ -52,7 +52,7 @@ DefenseState!T[] extract_player_eyespaces(T, S)(S state, T player_secure, T oppo
             continue;
         }
         auto chain_size = player_chain.popcount;
-        auto number_of_liberties = state.chain_liberties!"player"(player_chain);
+        auto number_of_liberties = state.player_chain_liberties(player_chain);
         if (chain_size > 1 && number_of_liberties > 1){
             player_edges |= player_chain;
         }
@@ -61,66 +61,70 @@ DefenseState!T[] extract_player_eyespaces(T, S)(S state, T player_secure, T oppo
     T secure = player_secure | opponent_secure;
 
     // TODO: Check region pairs too.
-    foreach (region; (state.playing_area & ~player_edges).chains){
-        if (!(region & ~secure)){
-            continue;
-        }
-        if (region.popcount <= 2){
-            continue;
-        }
-        if (state.ko & region){
-            continue;
-        }
-        T blob = region.blob(state.playing_area);
-        T player_target = blob;
-        player_target.flood_into(player_edges);
-        T outside_liberties = player_target.liberties(state.playing_area & ~region);
+    auto regions = (state.playing_area & ~player_edges).chains;
+    foreach (index, region1; regions){
+        for (size_t i = index; i < regions.length; i++){
+            auto region = region1 | regions[i];
+            if (!(region & ~secure)){
+                continue;
+            }
+            if (region.popcount <= 2){
+                continue;
+            }
+            if (state.ko & region){
+                continue;
+            }
+            T blob = region.blob(state.playing_area);
+            T player_target = blob;
+            player_target.flood_into(player_edges);
+            T outside_liberties = player_target.liberties(state.playing_area & ~region);
 
-        auto player_target_chains = player_target.chains;
-        T[T] chains_per_liberty;
-        foreach (target_chain; player_target_chains){
-            T halo = target_chain.liberties(state.playing_area) & outside_liberties;
-            foreach (halo_piece; halo.pieces){
-                if (halo_piece in chains_per_liberty){
-                    chains_per_liberty[halo_piece] |= target_chain;
+            auto player_target_chains = player_target.chains;
+            T[T] chains_per_liberty;
+            foreach (target_chain; player_target_chains){
+                T halo = target_chain.liberties(state.playing_area) & outside_liberties;
+                foreach (halo_piece; halo.pieces){
+                    if (halo_piece in chains_per_liberty){
+                        chains_per_liberty[halo_piece] |= target_chain;
+                    }
+                    else{
+                        chains_per_liberty[halo_piece] = target_chain;
+                    }
+                }
+            }
+            int[T] liberties_per_chain;
+            foreach (chain; chains_per_liberty){
+                if (chain in liberties_per_chain){
+                    liberties_per_chain[chain] += 1;
                 }
                 else{
-                    chains_per_liberty[halo_piece] = target_chain;
+                    liberties_per_chain[chain] = 1;
                 }
             }
-        }
-        int[T] liberties_per_chain;
-        foreach (chain; chains_per_liberty){
-            if (chain in liberties_per_chain){
-                liberties_per_chain[chain] += 1;
-            }
-            else{
-                liberties_per_chain[chain] = 1;
-            }
-        }
 
-        TargetChain!T[] player_targets;
-        foreach (chain, liberties; liberties_per_chain){
-            player_targets ~= TargetChain!T(chain, liberties);
-        }
+            TargetChain!T[] player_targets;
+            foreach (chain, liberties; liberties_per_chain){
+                player_targets ~= TargetChain!T(chain, liberties);
+            }
 
-        auto playing_area = blob | player_target | secure;
-        auto defense_state = DefenseState!T(
-            state.player & playing_area,
-            state.opponent & playing_area,
-            playing_area,
-            T(),
-            player_secure,
-            opponent_secure,
-            player_target,
-            T(),
-            player_targets,
-            [],
-            true,
-            0,
-            float.infinity
-        );
-        result ~= defense_state;
+            auto playing_area = blob | player_target | secure;
+            auto defense_state = DefenseState!T(
+                state.player & playing_area,
+                state.opponent & playing_area,
+                playing_area,
+                T(),
+                player_secure,
+                opponent_secure,
+                player_target,
+                T(),
+                player_targets,
+                [],
+                true,
+                0,
+                float.infinity
+            );
+            result ~= defense_state;
+        }
     }
     return result;
 }
@@ -133,22 +137,13 @@ void extract_eyespaces(T, S)(S state, T player_secure, T opponent_secure, out De
     opponent_eyespaces = extract_player_eyespaces!(T, S)(state, opponent_secure, player_secure);
 }
 
-/*
-    string return_winged_defense_result(string number)
-    {
-        return "
-            auto result = DefenseResult!T(Status.contested);
-            if (defense_state.player_outside_liberties & ~defense_state.player){
-                result.player_useless = result.opponent_useless = " ~ number ~ "_space.wings;
-            }
-            return result;
-        ";
-    }
 
-
+DefenseResult!T static_analysis(T)(DefenseState!T defense_state, T space, int space_size, out bool use_result)
+{
+    use_result = true;
     // TODO: Create asserts with naive shape recognition.
     // Static analysis for small contiguous spaces.
-    if (space.euler == 1){
+    if (space.true_euler == 1){
         // Small spaces cannot be divided into two eyes.
         if (space_size <= 2){
             // TODO: Analyze if the group is part of a killing shape.
@@ -163,11 +158,11 @@ void extract_eyespaces(T, S)(S state, T player_secure, T opponent_secure, out De
 
             auto three_space = get_three_space!T(space);
 
-            if (defense_state.player & three_space.middle){
+            if (defense_state.opponent & three_space.middle){
                 return DefenseResult!T(Status.dead);
             }
             else{
-                mixin(return_winged_defense_result("three"));
+                return DefenseResult!T(Status.contested, three_space.wings, three_space.wings);
             }
         }
 
@@ -175,34 +170,30 @@ void extract_eyespaces(T, S)(S state, T player_secure, T opponent_secure, out De
             auto four_space = get_four_space!T(space);
 
             if (four_space.shape == FourShape.farmers_hat){
-                if (defense_state.player & four_space.middle){
+                if (defense_state.opponent & four_space.middle){
                     return DefenseResult!T(Status.dead);
                 }
                 else{
-                    mixin(return_winged_defense_result("four"));
+                    return DefenseResult!T(Status.contested, four_space.wings, four_space.wings);
                 }
             }
             else if (four_space.shape == FourShape.straight_four){
-                auto number_of_attacking_stones = (defense_state.player & four_space.middle).popcount;
+                auto number_of_attacking_stones = (defense_state.opponent & four_space.middle).popcount;
                 if (number_of_attacking_stones == 2){
                     return DefenseResult!T(Status.dead);
                 }
                 else if (number_of_attacking_stones == 1){
-                    mixin(return_winged_defense_result("four"));
+                    return DefenseResult!T(Status.contested, four_space.wings, four_space.wings);
                 }
                 else{
-                    return DefenseResult!T(Status.defendable);
+                    return DefenseResult!T(Status.defendable, four_space.wings, four_space.wings);
                 }
             }
             else if (four_space.shape == FourShape.bent_four){
-                auto number_of_attacking_stones = (defense_state.player & four_space.middle).popcount;
+                auto number_of_attacking_stones = (defense_state.opponent & four_space.middle).popcount;
                 if (number_of_attacking_stones == 2){
                     return DefenseResult!T(Status.dead);
                 }
-                else if (number_of_attacking_stones == 1){
-                    mixin(return_winged_defense_result("four"));
-                }
-                // Bent four in the corner needs to fall through.
             }
             else if (four_space.shape == FourShape.square_four){
                 if (defense_state.opponent & space){
@@ -210,11 +201,11 @@ void extract_eyespaces(T, S)(S state, T player_secure, T opponent_secure, out De
                     if (smaller_space.popcount == 3){
                         auto three_space = get_three_space!T(smaller_space);
 
-                        if (defense_state.player & three_space.middle){
+                        if (defense_state.opponent & three_space.middle){
                             return DefenseResult!T(Status.dead);
                         }
                         else{
-                            mixin(return_winged_defense_result("three"));
+                            return DefenseResult!T(Status.contested, three_space.wings, three_space.wings);
                         }
                     }
                 }
@@ -223,22 +214,19 @@ void extract_eyespaces(T, S)(S state, T player_secure, T opponent_secure, out De
                 }
             }
             else if (four_space.shape == FourShape.twisted_four){
-                auto number_of_attacking_stones = (defense_state.player & four_space.middle).popcount;
+                auto number_of_attacking_stones = (defense_state.opponent & four_space.middle).popcount;
                 if (number_of_attacking_stones == 2){
                     return DefenseResult!T(Status.dead);
                 }
-                else if (number_of_attacking_stones == 1){
-                    mixin(return_winged_defense_result("four"));
-                }
-                // TODO: Consider static defendability analysis
             }
         }
     }
+    use_result = false;
+    return DefenseResult!T(Status.unknown);
+}
 
-*/
-
-enum MAX_SPACE_SIZE = 7;
-enum MAX_OUTSIDE_LIBERTIES = 4;
+enum MAX_SPACE_SIZE = 8;
+enum MAX_OUTSIDE_LIBERTIES = 5;
 
 DefenseResult!T calculate_status(T)(DefenseState!T defense_state, Transposition[DefenseState!T] *defense_transposition_table)
 in
@@ -264,12 +252,20 @@ body
     auto space = defense_state.playing_area & ~(defense_state.player_target | defense_state.player_immortal);
     auto space_size = space.popcount;
 
+    if (space_size <= 4 && !defense_state.opponent_immortal){
+        bool use_result = false;
+        auto result = static_analysis!T(defense_state, space, space_size, use_result);
+        if (use_result){
+            return result;
+        }
+    }
+
     if (space_size > MAX_SPACE_SIZE){
         return DefenseResult!T(Status.unknown);
     }
 
     float max_score = defense_state.playing_area.popcount;
-    DefenseSearchState!(T, DefenseState!T) defense_search_state;
+    DefenseSearchState!T defense_search_state;
     T[] moves;
     T player_useless;
     T opponent_useless;
@@ -282,7 +278,7 @@ body
         foreach (ref target; defense_state.opponent_targets){
             target.outside_liberties = 0;
         }
-        defense_search_state = new DefenseSearchState!(T, DefenseState!T)(defense_state, 0, defense_transposition_table);
+        defense_search_state = new DefenseSearchState!T(defense_state, defense_transposition_table);
         defense_search_state.calculate_minimax_value;
         if (defense_search_state.upper_bound > -max_score){
             return DefenseResult!T(Status.unknown);
@@ -293,7 +289,7 @@ body
             child_state.swap_turns;
             assert(child_state.black_to_play);
             assert(child_state.ko_threats == float.infinity);
-            defense_search_state = new DefenseSearchState!(T, DefenseState!T)(child_state, 0, defense_transposition_table);
+            defense_search_state = new DefenseSearchState!T(child_state, defense_transposition_table);
             defense_search_state.calculate_minimax_value;
             if (defense_search_state.upper_bound > -max_score){
                 return DefenseResult!T(Status.defendable);
@@ -313,7 +309,7 @@ body
                     child_state.swap_turns;
                     assert(child_state.black_to_play);
                     assert(child_state.ko_threats == float.infinity);
-                    defense_search_state = new DefenseSearchState!(T, DefenseState!T)(child_state, 0, defense_transposition_table);
+                    defense_search_state = new DefenseSearchState!T(child_state, defense_transposition_table);
                     defense_search_state.calculate_minimax_value;
                     if (defense_search_state.upper_bound > -float.infinity){
                         all_children_dead = false;
@@ -332,7 +328,7 @@ body
         foreach (index, child_state; defense_state.children_and_moves(moves)){
             auto move = moves[index];
             child_state.black_to_play = true;
-            defense_search_state = new DefenseSearchState!(T, DefenseState!T)(child_state, 0, defense_transposition_table);
+            defense_search_state = new DefenseSearchState!T(child_state, defense_transposition_table);
             defense_search_state.calculate_minimax_value;
             if (defense_search_state.upper_bound > -max_score){
                 player_useless |= move;
@@ -353,7 +349,7 @@ body
         foreach (index, child_state; defense_state.children_and_moves(moves)){
             auto move = moves[index];
             child_state.black_to_play = true;
-            defense_search_state = new DefenseSearchState!(T, DefenseState!T)(child_state, 0, defense_transposition_table);
+            defense_search_state = new DefenseSearchState!T(child_state, defense_transposition_table);
             defense_search_state.calculate_minimax_value;
             if (defense_search_state.lower_bound < max_score){
                 is_contested = true;
@@ -369,20 +365,22 @@ body
         // Check for potential ko-threats.
         opponent_useless = T();
         foreach (index, child_state; defense_state.children_and_moves(moves)){
-            auto move = moves[index];
-            child_state.swap_turns;
-            assert(child_state.black_to_play);
-            assert(child_state.ko_threats == float.infinity);
-            defense_search_state = new DefenseSearchState!(T, DefenseState!T)(child_state, 0, defense_transposition_table);
-            defense_search_state.calculate_minimax_value;
-            if (defense_search_state.upper_bound == -max_score){
-                opponent_useless |= move;
+            if (!child_state.passes){
+                auto move = moves[index];
+                child_state.swap_turns;
+                assert(child_state.black_to_play);
+                assert(child_state.ko_threats == float.infinity);
+                defense_search_state = new DefenseSearchState!T(child_state, defense_transposition_table);
+                defense_search_state.calculate_minimax_value;
+                if (defense_search_state.upper_bound == -max_score){
+                    opponent_useless |= move;
+                }
             }
         }
 
         // Remove the outside liberties to press the attack even further.
         defense_state.opponent_outside_liberties = 0;
-        defense_search_state = new DefenseSearchState!(T, DefenseState!T)(defense_state, 0, defense_transposition_table);
+        defense_search_state = new DefenseSearchState!T(defense_state, defense_transposition_table);
         defense_search_state.calculate_minimax_value;
         if (defense_search_state.upper_bound > -max_score){
             return DefenseResult!T(Status.retainable, player_useless, opponent_useless);
@@ -392,17 +390,19 @@ body
         bool is_defendable = false;
         opponent_useless = T();
         foreach (index, child_state; defense_state.children_and_moves(moves)){
-            auto move = moves[index];
-            child_state.swap_turns;
-            assert(child_state.black_to_play);
-            assert(child_state.ko_threats == float.infinity);
-            defense_search_state = new DefenseSearchState!(T, DefenseState!T)(child_state, 0, defense_transposition_table);
-            defense_search_state.calculate_minimax_value;
-            if (defense_search_state.upper_bound > -max_score){
-                is_defendable = true;
-            }
-            else{
-                opponent_useless |= move;
+            if (!child_state.passes){
+                auto move = moves[index];
+                child_state.swap_turns;
+                assert(child_state.black_to_play);
+                assert(child_state.ko_threats == float.infinity);
+                defense_search_state = new DefenseSearchState!T(child_state, defense_transposition_table);
+                defense_search_state.calculate_minimax_value;
+                if (defense_search_state.upper_bound > -max_score){
+                    is_defendable = true;
+                }
+                else{
+                    opponent_useless |= move;
+                }
             }
         }
         if (is_defendable){
@@ -441,12 +441,7 @@ unittest
 
     s.opponent |= Board8(2, 1);
     result = calculate_status8(s, defense_transposition_table);
-    version(calculate_death){
-        assert(result.status == Status.dead);
-    }
-    else{
-        assert(result.status == Status.killable);
-    }
+    assert(result.status == Status.dead || result.status == Status.killable);
 
     space = rectangle8(4, 1).south.east;
     wings = Board8(1, 1) | Board8(4, 1);
@@ -497,7 +492,26 @@ unittest
     assert(result.player_useless == wings);
     assert(!result.opponent_useless);
 
+    s = DefenseState8(rectangle8(4, 3));
+    s.player = rectangle8(4, 3) & ~(rectangle8(2, 2) | Board8(3, 0) | Board8(3, 1));
+    s.player_target = s.player;
+    result = calculate_status8(s, defense_transposition_table);
+    assert(result.status == Status.secure);
+
     Board8 player_secure, opponent_secure;
+    DefenseState8[] player_eyespaces;
+    DefenseState8[] opponent_eyespaces;
+
+    extract_eyespaces!(Board8, DefenseState8)(s, player_secure, opponent_secure, player_eyespaces, opponent_eyespaces);
+
+    bool all_extracted = false;
+    foreach (player_eyespace; player_eyespaces){
+        if (player_eyespace.playing_area.popcount == s.playing_area.popcount){
+            all_extracted = true;
+        }
+    }
+    assert(all_extracted);
+
     s = DefenseState8();
     s.player = rectangle8(5, 2) & ~rectangle8(4, 1);
     s.opponent = (rectangle8(6, 2) & ~rectangle8(5, 1).south).south(5);
@@ -507,8 +521,6 @@ unittest
     s.player |= Board8(3, 3) | Board8(4, 3) | Board8(6, 6);
     s.opponent |= Board8(5, 0) | Board8(6, 4);
 
-    DefenseState8[] player_eyespaces;
-    DefenseState8[] opponent_eyespaces;
 
     extract_eyespaces!(Board8, DefenseState8)(s, player_secure, opponent_secure, player_eyespaces, opponent_eyespaces);
 

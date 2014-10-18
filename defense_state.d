@@ -494,6 +494,9 @@ struct DefenseState(T)
         ");
     }
 
+    alias player_chain_liberties = chain_liberties!"player";
+    alias opponent_chain_liberties = chain_liberties!"opponent";
+
 
     bool target_in_atari(string player_string)(){
         static if (player_string == "player"){
@@ -589,9 +592,8 @@ struct DefenseState(T)
         return children_and_moves(dummy);
     }
 
-    float liberty_score()
+    float target_score()
     {
-        // Outside liberties are not counted towards or against the score.
         if (player_target & (~player | opponent_immortal)){
             if (black_to_play){
                 return -float.infinity;
@@ -608,20 +610,30 @@ struct DefenseState(T)
                 return -float.infinity;
             }
         }
+        return 0;
+    }
 
-        float score = 0;
+    float liberty_score()
+    {
+        // Outside liberties are not counted towards or against the score.
+        float score = target_score;
 
-        score += player.popcount;
-        score -= opponent.popcount;
+        if (score == 0){
+            score += player.popcount;
+            score -= opponent.popcount;
 
-        score += player.liberties(playing_area & ~opponent).popcount;
-        score -= opponent.liberties(playing_area & ~player).popcount;
+            score += player.liberties(playing_area & ~opponent).popcount;
+            score -= opponent.liberties(playing_area & ~player).popcount;
 
-        if (black_to_play){
-            return score;
+            if (black_to_play){
+                return score;
+            }
+            else{
+                return -score;
+            }
         }
         else{
-            return -score;
+            return score;
         }
     }
 
@@ -1011,6 +1023,9 @@ struct DefenseState(T)
             r ~= "\x1b[0m";
             r ~= "\n";
         }
+        if (!playing_area){
+            r ~= "\n";
+        }
 
         if (black_to_play){
             r ~= "Black to play,";
@@ -1029,6 +1044,149 @@ struct DefenseState(T)
 }
 
 alias DefenseState8 = DefenseState!Board8;
+
+
+struct CanonicalDefenseState(T)
+{
+    DefenseState!T state;
+    int value_shift;
+
+    this(T playing_area)
+    {
+        this(DefenseState!T(playing_area));
+    }
+
+    this(DefenseState!T state, int value_shift=0)
+    {
+        state.analyze_unconditional;
+        value_shift += state.reduce;
+        state.canonize;
+        this.state = state;
+        this.value_shift = value_shift;
+    }
+
+    bool opEquals(in CanonicalDefenseState!T rhs) const pure nothrow
+    {
+        return state == rhs.state && value_shift == rhs.value_shift;
+    }
+
+    int opCmp(in CanonicalDefenseState!T rhs) const pure nothrow
+    {
+        if (state != rhs.state){
+            return state.opCmp(rhs.state);
+        }
+        return value_shift - rhs.value_shift;
+    }
+
+    hash_t toHash() const nothrow @safe
+    {
+        return (
+            state.toHash ^
+            typeid(value_shift).getHash(&value_shift)
+        );
+    }
+
+    int passes() const @property
+    {
+        return state.passes;
+    }
+
+    bool is_leaf()
+    {
+        return state.is_leaf;
+    }
+
+    T playing_area() const @property
+    {
+        return state.playing_area;
+    }
+
+    T player() const @property
+    {
+        return state.player;
+    }
+
+    T opponent() const @property
+    {
+        return state.opponent;
+    }
+
+    T ko() const @property
+    {
+        return state.ko;
+    }
+
+    T player_immortal() const @property
+    {
+        return state.player_immortal;
+    }
+
+    T opponent_immortal() const @property
+    {
+        return state.opponent_immortal;
+    }
+
+    T player_immortal(T immortal) @property
+    {
+        return state.player_immortal = immortal;
+    }
+
+    T opponent_immortal(T immortal) @property
+    {
+        return state.opponent_immortal = immortal;
+    }
+
+    T player_target() const @property
+    {
+        return state.player_target;
+    }
+
+    T opponent_target() const @property
+    {
+        return state.opponent_target;
+    }
+
+    float target_score()
+    {
+        return state.target_score;
+    }
+
+    float liberty_score()
+    {
+        return state.liberty_score + value_shift;
+    }
+
+    float player_chain_liberties(T chain){
+        return state.player_chain_liberties(chain);
+    }
+
+    float opponent_chain_liberties(T chain){
+        return state.opponent_chain_liberties(chain);
+    }
+
+    void swap_turns(){
+        state.swap_turns;
+    }
+
+    CanonicalDefenseState!T[] children(T[] moves)
+    {
+        CanonicalDefenseState!T[] _children;
+        bool[CanonicalDefenseState!T] seen;
+        foreach (child; state.children(moves)){
+            auto canonical_child = CanonicalDefenseState!T(child, -value_shift);
+            if (canonical_child !in seen){
+                seen[canonical_child] = true;
+                _children ~= canonical_child;
+            }
+        }
+        return _children;
+    }
+
+    string toString()
+    {
+        return format("%s shift=%s", state, value_shift);
+    }
+}
 
 
 bool eyespace_fits(T)(Eyespace eyespace)
