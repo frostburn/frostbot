@@ -100,11 +100,6 @@ DefenseState!T[] extract_player_eyespaces(T, S)(S state, T player_secure, T oppo
         }
 
         TargetChain!T[] player_targets;
-        foreach (chain; player_target_chains){
-            if (chain !in liberties_per_chain){
-                player_targets ~= TargetChain!T(chain);
-            }
-        }
         foreach (chain, liberties; liberties_per_chain){
             player_targets ~= TargetChain!T(chain, liberties);
         }
@@ -117,6 +112,8 @@ DefenseState!T[] extract_player_eyespaces(T, S)(S state, T player_secure, T oppo
             T(),
             player_secure,
             opponent_secure,
+            player_target,
+            T(),
             player_targets,
             [],
             true,
@@ -384,7 +381,7 @@ unittest
     auto result = calculate_status8(s, defense_transposition_table);
     assert(result.status == Status.contested);
 
-    s.player_targets[0].outside_liberties = 2;
+    s.player_outside_liberties = 2;
     result = calculate_status8(s, defense_transposition_table);
     assert(result.status == Status.contested);
 

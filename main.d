@@ -10,7 +10,7 @@ import defense_state;
 import game_state;
 //import search_state;
 import defense_search_state;
-import defense;
+//import defense;
 import eyeshape;
 
 /*
