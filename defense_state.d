@@ -128,14 +128,24 @@ struct DefenseState(T)
     int player_outside_liberties(int liberties) @property
     body
     {
-        player_targets = [TargetChain!T(player_target, liberties)];
+        if (liberties){
+            player_targets = [TargetChain!T(player_target, liberties)];
+        }
+        else{
+            player_targets = player_targets.init;
+        }
         return liberties;
     }
 
     int opponent_outside_liberties(int liberties) @property
     body
     {
-        opponent_targets = [TargetChain!T(opponent_target, liberties)];
+        if (liberties){
+            opponent_targets = [TargetChain!T(opponent_target, liberties)];
+        }
+        else{
+            opponent_targets = opponent_targets.init;
+        }
         return liberties;
     }
 

@@ -384,10 +384,12 @@ class DefenseSearchState(T, S)
             }
         }
 
-        // No alpha-beta break means that this state was searched thoroughly.
-        is_final = true;
-        if (defense_transposition_table !is null){
-            (*defense_transposition_table)[state] = Transposition(lower_bound - value_shift, upper_bound - value_shift, is_final);
+        if (depth == float.infinity){
+            // No alpha-beta break with an unlimited search means that this state was searched thoroughly.
+            is_final = true;
+            if (defense_transposition_table !is null){
+                (*defense_transposition_table)[state] = Transposition(lower_bound - value_shift, upper_bound - value_shift, is_final);
+            }
         }
     }
 
