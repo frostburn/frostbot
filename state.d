@@ -472,6 +472,16 @@ struct State(T)
         }
     }
 
+    float target_score()
+    {
+        return 0;
+    }
+
+    int value_shift()
+    {
+        return 0;
+    }
+
     string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure)
     {
         string r;
@@ -616,6 +626,118 @@ void examine_state_playout(bool canonize=false)
         }
     }
 }
+
+
+struct CanonicalState(T)
+{
+    State!T state;
+
+    this(T playing_area)
+    {
+        this(State!T(playing_area));
+    }
+
+    this(State!T state)
+    {
+        state.canonize;
+        this.state = state;
+    }
+
+    bool opEquals(in CanonicalState!T rhs) const pure nothrow
+    {
+        return state == rhs.state;
+    }
+
+    int opCmp(in CanonicalState!T rhs) const pure nothrow
+    {
+        return state.opCmp(rhs.state);
+    }
+
+    hash_t toHash() const nothrow @safe
+    {
+        return state.toHash;
+    }
+
+    int passes() const @property
+    {
+        return state.passes;
+    }
+
+    bool is_leaf()
+    {
+        return state.is_leaf;
+    }
+
+    T playing_area() const @property
+    {
+        return state.playing_area;
+    }
+
+    T player() const @property
+    {
+        return state.player;
+    }
+
+    T opponent() const @property
+    {
+        return state.opponent;
+    }
+
+    T ko() const @property
+    {
+        return state.ko;
+    }
+
+    float liberty_score()
+    {
+        return state.liberty_score;
+    }
+
+    void swap_turns(){
+        state.swap_turns;
+    }
+
+    CanonicalState!T[] children(T[] moves)
+    {
+        CanonicalState!T[] _children;
+        bool[CanonicalState!T] seen;
+        foreach (child; state.children(moves)){
+            auto canonical_child = CanonicalState!T(child);
+            if (canonical_child !in seen){
+                seen[canonical_child] = true;
+                _children ~= canonical_child;
+            }
+        }
+        return _children;
+    }
+
+    void analyze_unconditional(ref T player_unconditional, ref T opponent_unconditional)
+    {
+        state.analyze_unconditional(player_unconditional, opponent_unconditional);
+    }
+
+    float target_score()
+    {
+        return state.target_score;
+    }
+
+    int value_shift()
+    {
+        return state.value_shift;
+    }
+
+    string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure)
+    {
+        return state._toString(player_defendable, opponent_defendable, player_secure, opponent_secure);
+    }
+
+    string toString()
+    {
+        return state.toString;
+    }
+}
+
+alias CanonicalState8 = CanonicalState!Board8;
 
 
 unittest

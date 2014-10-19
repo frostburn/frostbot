@@ -6,12 +6,13 @@ import board8;
 import bit_matrix;
 import state;
 import polyomino;
-import defense_state;
-import game_state;
+//import defense_state;
+//import game_state;
 //import search_state;
-import defense_search_state;
-import defense;
-import eyeshape;
+//import defense_search_state;
+//import defense;
+//import eyeshape;
+import monte_carlo;
 
 /*
 void print_state(SearchState!Board8 ss, int depth){
@@ -76,15 +77,35 @@ void main()
 {
     writeln("main");
 
+    TreeNode8[CanonicalState8] empty;
+    auto node_pool = &empty;
+
+    auto t = new TreeNode8(rectangle8(5, 5), node_pool);
+
+    while (!t.is_leaf){
+        writeln(t.default_playout_statistics(6000));
+        writeln(t.statistics);
+        writeln(t);
+        foreach (i; 0..30000){
+            t.playout;
+        }
+        foreach (c; t.children){
+            writeln(c.value, ", ", c.visits);
+        }
+        t = t.best_child;
+    }
+
+    /*
     Transposition[DefenseState8] empty;
     auto defense_transposition_table = &empty;
 
 
     auto ds = new DefenseSearchState8(rectangle8(4, 3), defense_transposition_table);
     //ss.state.opponent = Board8(1, 0);
-    ds.iterative_deepening_search(30);
+    ds.calculate_minimax_value(20);
 
     ds.ppp;
+    */
 
     /+
     Transposition[DefenseState8] defense_transposition_table;
