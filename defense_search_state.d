@@ -105,9 +105,13 @@ struct Transposition
 
     void set_bounds(float lower_bound, float upper_bound)
     {
-        _lower_bound = lower_bound;
-        _upper_bound = upper_bound;
-        is_final = lower_bound == upper_bound || is_final;
+        if (lower_bound > _lower_bound){
+            _lower_bound = lower_bound;
+        }
+        if (upper_bound < _upper_bound){
+            _upper_bound = upper_bound;
+        }
+        is_final = _lower_bound == _upper_bound || is_final;
     }
 }
 
@@ -143,11 +147,14 @@ class DefenseSearchState(T)
 
     void set_bounds(float lower_bound, float upper_bound)
     {
-        _lower_bound = lower_bound;
-        _upper_bound = upper_bound;
-        is_final = lower_bound == upper_bound || is_final;
+        if (lower_bound > _lower_bound){
+            _lower_bound = lower_bound;
+        }
+        if (upper_bound < _upper_bound){
+            _upper_bound = upper_bound;
+        }
+        is_final = _lower_bound == _upper_bound || is_final;
     }
-
 
     invariant
     {
@@ -442,20 +449,14 @@ class DefenseSearchState(T)
         }
 
         set_bounds(new_lower_bound, new_upper_bound);
+
         bool changed = old_lower_bound != lower_bound || old_upper_bound != upper_bound;
 
         if (changed && defense_transposition_table !is null){
             if (state.state in *defense_transposition_table){
                 auto transposition = (*defense_transposition_table)[state.state];
-                float transposition_lower_bound = transposition.lower_bound;
-                if (transposition_lower_bound + state.value_shift < lower_bound){
-                    transposition_lower_bound = lower_bound - state.value_shift;
-                }
-                float transposition_upper_bound = transposition.upper_bound;
-                if (transposition_upper_bound + state.value_shift < upper_bound){
-                    transposition_upper_bound = upper_bound - state.value_shift;
-                }
-                transposition.set_bounds(transposition_lower_bound, transposition_upper_bound);
+                transposition.set_bounds(lower_bound - state.value_shift, upper_bound - state.value_shift);
+                (*defense_transposition_table)[state.state] = transposition;
             }
             else{
                 (*defense_transposition_table)[state.state] = Transposition(lower_bound - state.value_shift, upper_bound - state.value_shift);
