@@ -82,14 +82,19 @@ void main()
 
     auto t = new TreeNode8(rectangle8(5, 5), node_pool);
 
+    //t.state.state.make_move(Board8(2, 2));
+    //t.state.state.canonize;
+
     while (!t.is_leaf){
-        writeln(t.default_playout_statistics(6000));
+        //writeln(t.default_playout_statistics(6000));
         writeln(t.statistics);
         writeln(t);
         foreach (i; 0..30000){
             t.playout;
         }
         foreach (c; t.children){
+            //writeln("Child:");
+            //writeln(c);
             writeln(c.value, ", ", c.visits);
         }
         t = t.best_child;

@@ -6,6 +6,7 @@ import std.random;
 import std.conv;
 import std.math;
 
+import utils;
 import board8;
 import state;
 
@@ -59,17 +60,30 @@ struct DefaultNode(T, S)
             }
             else{
                 move = moves[r % moves.length];
+                r /= moves.length;
             }
-            T blob = move.blob(state.playing_area);
-            if (blob.popcount == 9){
-                if ((blob & state.player).popcount >= 8){
+            if (move){
+                T blob = move.blob(state.playing_area);
+                if (blob.popcount == 9){
+                    if ((blob & state.player).popcount >= 8){
+                        continue;
+                    }
+                }
+                else if (!(blob & ~state.player)){
                     continue;
                 }
             }
-            else if (!(blob & ~state.player)){
-                continue;
+            else{
+                temp = r & 7;
+                temp >>= 3;
+                if (temp > 0){
+                    continue;
+                }
             }
             success = state.make_move(move);
+            if (state.is_leaf){
+                break;
+            }
             ko1 = ko2;
             ko2 = state.ko;
         }
@@ -236,6 +250,7 @@ class TreeNode(T, S, C)
     {
         this.state = state;
         if (state.is_leaf){
+            visits = ulong.max;
             is_leaf = true;
         }
         else{
@@ -258,21 +273,27 @@ class TreeNode(T, S, C)
         return r;
     }
 
-    float playout()
+    float playout(){
+        HistoryNode!C history = null;
+        return playout(history);
+    }
+
+    float playout(ref HistoryNode!C history)
     {
         if (is_leaf){
             return this.value;
         }
         else{
             float value;
-            if (visits < 12){
+            if (visits < 12 || history !is null && state in history){
                 auto default_node = DefaultNode!(T, S)(state.state, player_unconditional, opponent_unconditional, moves);
                 default_node.playout;
                 value = default_node.value;
             }
             else{
+                auto my_history = new HistoryNode!C(state, history);
                 auto child = choose_child;
-                value = -child.playout;
+                value = -child.playout(my_history);
             }
             statistics.add_value(value);
             visits++;
@@ -401,7 +422,12 @@ float controlled_liberty_score(T, S)(S state, T player_unconditional, T opponent
         score += player_controlled_terrirory.liberties(state.playing_area & ~opponent_controlled_terrirory).popcount;
         score -= opponent_controlled_terrirory.liberties(state.playing_area & ~player_controlled_terrirory).popcount;
 
-        return score + state.value_shift;
+        if (state.black_to_play){
+            return score + state.value_shift;
+        }
+        else{
+            return -score + state.value_shift;
+        }
     }
     else{
         return score;

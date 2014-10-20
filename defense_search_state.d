@@ -69,48 +69,6 @@ static bool is_better(T)(DefenseSearchState!T a, DefenseSearchState!T b){
     return false;
 }
 
-class HistoryNode(T)
-{
-    T value;
-    HistoryNode!T parent = null;
-
-    this(T value){
-        this.value = value;
-    }
-
-    this(T value, ref HistoryNode!T parent){
-        this.value = value;
-        this.parent = parent;
-    }
-
-    bool opBinaryRight(string op)(in T lhs) const pure nothrow
-        if (op == "in")
-    {
-        if (lhs == value){
-            return true;
-        }
-        if (parent !is null){
-            return parent.opBinaryRight!"in"(lhs);
-        }
-        return false;
-    }
-}
-
-
-unittest
-{
-    auto s = DefenseState8();
-    auto h = new HistoryNode!(DefenseState8)(s);
-
-    auto child_s = s;
-    child_s.player = Board8(3, 3);
-    auto child_h = new HistoryNode!(DefenseState8)(child_s, h);
-
-    assert(child_s !in h);
-    assert(child_s in child_h);
-    assert(s in child_h);
-}
-
 
 struct Transposition
 {

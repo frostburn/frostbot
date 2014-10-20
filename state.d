@@ -688,6 +688,11 @@ struct CanonicalState(T)
         return state.ko;
     }
 
+    bool black_to_play() const @property
+    {
+        return state.black_to_play;
+    }
+
     float liberty_score()
     {
         return state.liberty_score;
