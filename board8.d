@@ -45,7 +45,7 @@ struct Board8
         this.bits = bits;
     }
 
-    this(in int x, in int y) pure nothrow @nogc @safe
+    this(in ulong x, in ulong y) pure nothrow @nogc @safe
     in
     {
         assert((0 <= x) && (x < WIDTH) && (0 <= y) && (y < HEIGHT));
@@ -110,7 +110,7 @@ struct Board8
         return typeid(bits).getHash(&bits);
     }
 
-    uint popcount() const pure nothrow @nogc @safe
+    int popcount() const pure nothrow @nogc @safe
     {
         return bits.popcount;
     }
@@ -121,6 +121,11 @@ struct Board8
         return Board8(
             (temp | (temp << V_SHIFT) | (temp >> V_SHIFT)) & playing_area.bits
         );
+    }
+
+    Board8 cross_unsafe()
+    {
+        return Board8(bits | (bits << H_SHIFT) | (bits >> H_SHIFT) | (bits << V_SHIFT) | (bits >> V_SHIFT));
     }
 
     Board8 liberties(in Board8 playing_area) const pure nothrow @nogc @safe
@@ -431,7 +436,7 @@ struct Board8
         }
     }
 
-    int horizontal_extent()
+    int horizontal_extent() const pure nothrow @nogc @safe
     in
     {
         assert(valid);
@@ -448,7 +453,7 @@ struct Board8
         return extent;
     }
 
-    int vertical_extent()
+    int vertical_extent() const pure nothrow @nogc @safe
     in
     {
         assert(valid);

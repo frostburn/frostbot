@@ -13,6 +13,7 @@ import polyomino;
 //import defense;
 //import eyeshape;
 import monte_carlo;
+import heuristic;
 
 /*
 void print_state(SearchState!Board8 ss, int depth){
@@ -77,6 +78,21 @@ void main()
 {
     writeln("main");
 
+    Board8 playing_area = rectangle8(8, 7) & ~ Board8(0, 0);
+    Board8 player = Board8(3, 3) | Board8(3, 4) | Board8(3, 5);
+    Board8 opponent = Board8(4, 3) | Board8(5, 4);
+
+    auto g = Grid(playing_area, player, opponent);
+    g.bouzy;
+    writeln(g);
+    writeln;
+    g.divide_by_influence;
+
+    writeln(g);
+    writeln(g.score);
+    writeln(heuristic_value(playing_area, player, opponent));
+
+    /*
     TreeNode8[CanonicalState8] empty;
     auto node_pool = &empty;
 
@@ -99,6 +115,7 @@ void main()
         }
         t = t.best_child;
     }
+    */
 
     /*
     Transposition[DefenseState8] empty;

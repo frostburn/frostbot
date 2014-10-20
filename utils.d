@@ -1,7 +1,7 @@
 module utils;
 
 
-uint popcount(ulong b) pure nothrow @nogc @safe
+int popcount(ulong b) pure nothrow @nogc @safe
 {
      b = (b & 0x5555555555555555UL) + (b >> 1 & 0x5555555555555555UL);
      b = (b & 0x3333333333333333UL) + (b >> 2 & 0x3333333333333333UL);
@@ -15,13 +15,13 @@ uint popcount(ulong b) pure nothrow @nogc @safe
 
 
 version(no_popcnt){
-    uint popcnt (ulong bits) pure nothrow @nogc @safe
+    int popcnt (ulong bits) pure nothrow @nogc @safe
     {
         return bits.popcount;
     }
 }
 else{
-    uint popcnt (ulong bits) pure nothrow @nogc @trusted
+    int popcnt (ulong bits) pure nothrow @nogc @trusted
     {
         asm {
            mov RAX, bits ;
@@ -156,12 +156,11 @@ class HistoryNode(T)
 
 unittest
 {
-    auto s = DefenseState8();
-    auto h = new HistoryNode!(DefenseState8)(s);
+    int s = 0;
+    auto h = new HistoryNode!int(s);
 
-    auto child_s = s;
-    child_s.player = Board8(3, 3);
-    auto child_h = new HistoryNode!(DefenseState8)(child_s, h);
+    int child_s = 1;
+    auto child_h = new HistoryNode!int(child_s, h);
 
     assert(child_s !in h);
     assert(child_s in child_h);
