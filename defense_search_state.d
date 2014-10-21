@@ -9,12 +9,13 @@ import std.random;
 import utils;
 import polyomino;
 import board8;
+import state;
 import defense_state;
 //import search_state;
 import defense;
 
 
-static bool is_better(T)(DefenseSearchState!T a, DefenseSearchState!T b){
+static bool is_better(T, C)(DefenseSearchState!(T, C) a, DefenseSearchState!(T, C) b){
     if (a.is_leaf && !b.is_leaf){
         return false;
     }
@@ -36,13 +37,17 @@ static bool is_better(T)(DefenseSearchState!T a, DefenseSearchState!T b){
         return false;
     }
 
-    int a_immortal = a.state.opponent_immortal.popcount - a.state.player_immortal.popcount - a.state.value_shift;
-    int b_immortal = b.state.opponent_immortal.popcount - b.state.player_immortal.popcount - b.state.value_shift;
+    T player_secure;
+    T opponent_secure;
+    a.get_secure_areas(player_secure, opponent_secure);
+    int a_secure = opponent_secure.popcount - player_secure.popcount - a.state.value_shift;
+    b.get_secure_areas(player_secure, opponent_secure);
+    int b_secure = opponent_secure.popcount - player_secure.popcount - b.state.value_shift;
 
-    if (a_immortal > b_immortal){
+    if (a_secure > b_secure){
         return true;
     }
-    if (b_immortal > a_immortal){
+    if (b_secure > a_secure){
         return false;
     }
 
@@ -116,18 +121,24 @@ struct Transposition
 }
 
 
-class DefenseSearchState(T)
+class DefenseSearchState(T, C)
 {
-    CanonicalDefenseState!T state;
+    C state;
     bool is_leaf;
     bool is_final;
-    DefenseSearchState!T[] children;
-    DefenseSearchState!T[CanonicalDefenseState!T] parents;
+    DefenseSearchState!(T, C)[] children;
+    DefenseSearchState!(T, C)[C] parents;
 
     T player_useless;
     //T opponent_useless;
 
     Transposition[DefenseState!T] *defense_transposition_table;
+    bool do_local_analysis = true;
+
+    static if (is (C == CanonicalState!T)){
+        T player_secure;
+        T opponent_secure;
+    }
 
     private
     {
@@ -161,27 +172,44 @@ class DefenseSearchState(T)
         assert(state.passes <= 2);
     }
 
-    this(T playing_area, Transposition[DefenseState!T] *defense_transposition_table=null)
+    this(T playing_area, Transposition[DefenseState!T] *defense_transposition_table=null, bool do_local_analysis=true)
     {
-        this(CanonicalDefenseState!T(playing_area), defense_transposition_table);
+        this(C(playing_area), defense_transposition_table, do_local_analysis);
     }
 
-    this(DefenseState!T state, Transposition[DefenseState!T] *defense_transposition_table=null)
-    {
-        this(CanonicalDefenseState!T(state), defense_transposition_table);
+    static if (is (C == CanonicalDefenseState!T)){
+        this(DefenseState!T state, Transposition[DefenseState!T] *defense_transposition_table=null, bool do_local_analysis=true)
+        {
+            this(C(state), defense_transposition_table, do_local_analysis);
+        }
+    }
+    else static if (is (C == CanonicalState!T)){
+        this(State!T state, Transposition[DefenseState!T] *defense_transposition_table=null, bool do_local_analysis=true)
+        {
+            this(C(state), defense_transposition_table, do_local_analysis);
+        }
+    }
+    else{
+        static assert(false);
     }
 
-    this (CanonicalDefenseState!T state, Transposition[DefenseState!T] *defense_transposition_table=null){
-        this.defense_transposition_table = defense_transposition_table;
+    this (C state, Transposition[DefenseState!T] *defense_transposition_table=null, bool do_local_analysis=true){
         this.state = state;
+        this.defense_transposition_table = defense_transposition_table;
+        this.do_local_analysis = do_local_analysis;
+
+        static if (is (C == CanonicalState!T)){
+            state.analyze_unconditional(player_secure, opponent_secure);
+        }
+
         T player_retainable;
         T opponent_retainable;
-        if (defense_transposition_table !is null && state.playing_area.popcount >= 10){
+        if (defense_transposition_table !is null && do_local_analysis){
             analyze_local(player_retainable, opponent_retainable);
         }
         if (state.is_leaf){
             is_leaf = true;
-            float value = liberty_score(player_retainable, opponent_retainable);
+            float value = score(player_retainable, opponent_retainable);
             set_bounds(value, value);
         }
         else{
@@ -189,13 +217,28 @@ class DefenseSearchState(T)
         }
     }
 
-    float liberty_score(T player_retainable, T opponent_retainable)
+    float score(T player_retainable, T opponent_retainable)
+    {
+        static if (is (C == CanonicalDefenseState!T)){
+            return controlled_liberty_score(player_retainable, opponent_retainable, state.player_immortal, state.opponent_immortal);
+        }
+        else static if (is (C == CanonicalState!T)){
+            return controlled_liberty_score(player_retainable, opponent_retainable, player_secure, opponent_secure);
+        }
+    }
+
+    float controlled_liberty_score(T player_retainable, T opponent_retainable, T player_secure, T opponent_secure)
+    in
+    {
+        assert(state.black_to_play);
+    }
+    body
     {
         float score = state.target_score;
 
         if (score == 0){
-            auto player_controlled_terrirory = (state.player | player_retainable| state.player_immortal) & ~(opponent_retainable | state.opponent_immortal);
-            auto opponent_controlled_terrirory = (state.opponent | opponent_retainable | state.opponent_immortal) & ~(player_retainable | state.player_immortal);
+            auto player_controlled_terrirory = (state.player | player_retainable| player_secure) & ~(opponent_retainable | opponent_secure);
+            auto opponent_controlled_terrirory = (state.opponent | opponent_retainable | opponent_secure) & ~(player_retainable | player_secure);
 
             score += player_controlled_terrirory.popcount;
             score -= opponent_controlled_terrirory.popcount;
@@ -210,13 +253,41 @@ class DefenseSearchState(T)
         }
     }
 
+    void get_secure_areas(out T player_secure, out T opponent_secure)
+    {
+        static if (is (C == CanonicalDefenseState!T)){
+            player_secure = state.player_immortal;
+            opponent_secure = state.opponent_immortal;
+        }
+        else static if (is (C == CanonicalState!T)){
+            player_secure = this.player_secure;
+            opponent_secure = this.opponent_secure;
+        }
+    }
+
+    void set_secure_areas(in T player_secure, in T opponent_secure)
+    {
+        static if (is (C == CanonicalDefenseState!T)){
+            state.player_immortal = player_secure;
+            state.opponent_immortal = opponent_secure;
+        }
+        else static if (is (C == CanonicalState!T)){
+            this.player_secure = player_secure;
+            this.opponent_secure = opponent_secure;
+        }
+    }
+
     void analyze_local(out T player_retainable, out T opponent_retainable)
     {
         T opponent_useless;
         DefenseState!T[] player_eyespaces;
         DefenseState!T[] opponent_eyespaces;
 
-        extract_eyespaces!(T, CanonicalDefenseState!T)(state, state.player_immortal, state.opponent_immortal, player_eyespaces, opponent_eyespaces);
+        T player_secure;
+        T opponent_secure;
+        get_secure_areas(player_secure, opponent_secure);
+
+        extract_eyespaces!(T, C)(state, player_secure, opponent_secure, player_eyespaces, opponent_eyespaces);
 
         string analyze_eyespaces(string player, string opponent)
         {
@@ -225,13 +296,13 @@ class DefenseSearchState(T)
                     if (eyespace.playing_area.popcount < state.playing_area.popcount){
                         auto result = calculate_status!T(eyespace, defense_transposition_table);
                         if (result.status == Status.retainable){
-                            " ~ player ~ "_retainable |= eyespace.playing_area & ~state." ~ opponent ~ "_immortal;
+                            " ~ player ~ "_retainable |= eyespace.playing_area & ~" ~ opponent ~ "_secure;
                             if (!state.ko){
                                 " ~ opponent ~ "_useless |= eyespace.playing_area;
                             }
                         }
                         if (result.status == Status.defendable){
-                            " ~ player ~ "_retainable |= eyespace.playing_area & ~state." ~ opponent ~ "_immortal;
+                            " ~ player ~ "_retainable |= eyespace.playing_area & ~" ~ opponent ~ "_secure;
                             " ~ player ~ "_useless |= eyespace.playing_area;
                             if (!state.ko){
                                 " ~ opponent ~ "_useless |= eyespace.playing_area;
@@ -239,7 +310,7 @@ class DefenseSearchState(T)
 
                         }
                         else if (result.status == Status.secure){
-                            state." ~ player ~ "_immortal |= eyespace.playing_area & ~state." ~ opponent ~ "_immortal;
+                            " ~ player ~ "_secure |= eyespace.playing_area & ~" ~ opponent ~ "_secure;
                         }
 
                         //" ~ player ~ "_useless |= result.player_useless;
@@ -251,23 +322,36 @@ class DefenseSearchState(T)
 
         mixin(analyze_eyespaces("player", "opponent"));
         mixin(analyze_eyespaces("opponent", "player"));
+
+        set_secure_areas(player_secure, opponent_secure);
     }
 
     void update_bounds(T player_retainable, T opponent_retainable){
-        if (defense_transposition_table !is null && state.state in *defense_transposition_table){
-            auto transposition = (*defense_transposition_table)[state.state];
-            set_bounds(transposition.lower_bound + state.value_shift, transposition.upper_bound + state.value_shift);
-            is_final = transposition.is_final;
+        static if (is (C == CanonicalDefenseState!T)){
+            if (defense_transposition_table !is null && state.state in *defense_transposition_table){
+                auto transposition = (*defense_transposition_table)[state.state];
+                set_bounds(transposition.lower_bound + state.value_shift, transposition.upper_bound + state.value_shift);
+                is_final = transposition.is_final;
+            }
+            else{
+                float size = state.playing_area.popcount;
+                float lower_bound, upper_bound;
+                if (!state.player_target){
+                    lower_bound = 2 * (state.player_immortal | player_retainable).popcount - size + state.value_shift;
+                }
+                if (!state.opponent_target){
+                    upper_bound = -(2 * (state.opponent_immortal | opponent_retainable).popcount - size) + state.value_shift;
+                }
+                set_bounds(lower_bound, upper_bound);
+            }
         }
         else{
             float size = state.playing_area.popcount;
-            if (!state.player_target){
-                _lower_bound = 2 * (state.player_immortal.popcount + player_retainable.popcount) - size + state.value_shift;
-            }
-            if (!state.opponent_target){
-                _upper_bound = -(2 * (state.opponent_immortal.popcount + opponent_retainable.popcount) - size) + state.value_shift;
-            }
-            set_bounds(_lower_bound, _upper_bound);
+
+            float lower_bound = 2 * (player_secure | player_retainable).popcount - size;
+            float upper_bound = -(2 * (opponent_secure | opponent_retainable).popcount - size);
+
+            set_bounds(lower_bound, upper_bound);
         }
     }
 
@@ -286,7 +370,7 @@ class DefenseSearchState(T)
         return moves;
     }
 
-    void make_children(ref DefenseSearchState!T[CanonicalDefenseState!T] state_pool)
+    void make_children(ref DefenseSearchState!(T, C)[C] state_pool)
     {
         children = [];
         auto child_states = state.children(effective_moves);
@@ -298,7 +382,7 @@ class DefenseSearchState(T)
                 pool_child.parents[state] = this;
             }
             else{
-                auto child = new DefenseSearchState!T(child_state, defense_transposition_table);
+                auto child = new DefenseSearchState!(T, C)(child_state, defense_transposition_table, do_local_analysis);
                 children ~= child;
                 child.parents[state] = this;
                 state_pool[child_state] = child;
@@ -307,7 +391,7 @@ class DefenseSearchState(T)
 
         children.randomShuffle;
 
-        sort!(is_better!T)(children);
+        sort!(is_better!(T, C))(children);
 
     }
 
@@ -317,7 +401,7 @@ class DefenseSearchState(T)
             writeln("Updating parents for:");
             writeln(this);
         }
-        DefenseSearchState!T[] queue;
+        DefenseSearchState!(T, C)[] queue;
         foreach (parent; parents.byValue){
             queue ~= parent;
         }
@@ -339,8 +423,8 @@ class DefenseSearchState(T)
     }
 
     void calculate_minimax_value(
-        ref DefenseSearchState!T[CanonicalDefenseState!T] state_pool,
-        ref HistoryNode!(CanonicalDefenseState!T) history,
+        ref DefenseSearchState!(T, C)[C] state_pool,
+        ref HistoryNode!(C) history,
         float depth=float.infinity,
         float alpha=-float.infinity,
         float beta=float.infinity
@@ -364,7 +448,7 @@ class DefenseSearchState(T)
             return;
         }
 
-        auto my_history = new HistoryNode!(CanonicalDefenseState!T)(state, history);
+        auto my_history = new HistoryNode!(C)(state, history);
 
         if (!children.length){
             make_children(state_pool);
@@ -398,8 +482,10 @@ class DefenseSearchState(T)
 
         if (full_search){
             is_final = true;
-            if (defense_transposition_table !is null){
-                (*defense_transposition_table)[state.state] = Transposition(lower_bound - state.value_shift, upper_bound - state.value_shift, is_final);
+            static if (is (C == CanonicalDefenseState!T)){
+                if (defense_transposition_table !is null){
+                    (*defense_transposition_table)[state.state] = Transposition(lower_bound - state.value_shift, upper_bound - state.value_shift, is_final);
+                }
             }
         }
     }
@@ -407,15 +493,15 @@ class DefenseSearchState(T)
     void calculate_minimax_value(float depth=float.infinity)
     {
 
-        DefenseSearchState!T[CanonicalDefenseState!T] state_pool;
-        HistoryNode!(CanonicalDefenseState!T) history = null;
+        DefenseSearchState!(T, C)[C] state_pool;
+        HistoryNode!(C) history = null;
         calculate_minimax_value(state_pool, history, depth, -float.infinity, float.infinity);
     }
 
     void iterative_deepening_search(int min_depth, int max_depth)
     {
-        DefenseSearchState!T[CanonicalDefenseState!T] state_pool;
-        HistoryNode!(CanonicalDefenseState!T) history = null;
+        DefenseSearchState!(T, C)[C] state_pool;
+        HistoryNode!(C) history = null;
         for (int i = min_depth; i <= max_depth; i++){
             calculate_minimax_value(state_pool, history, i, lower_bound, upper_bound);
         }
@@ -452,21 +538,23 @@ class DefenseSearchState(T)
 
         bool changed = old_lower_bound != lower_bound || old_upper_bound != upper_bound;
 
-        if (changed && defense_transposition_table !is null){
-            if (state.state in *defense_transposition_table){
-                auto transposition = (*defense_transposition_table)[state.state];
-                transposition.set_bounds(lower_bound - state.value_shift, upper_bound - state.value_shift);
-                (*defense_transposition_table)[state.state] = transposition;
-            }
-            else{
-                (*defense_transposition_table)[state.state] = Transposition(lower_bound - state.value_shift, upper_bound - state.value_shift);
+        static if (is (C == CanonicalDefenseState!T)){
+            if (changed && defense_transposition_table !is null){
+                if (state.state in *defense_transposition_table){
+                    auto transposition = (*defense_transposition_table)[state.state];
+                    transposition.set_bounds(lower_bound - state.value_shift, upper_bound - state.value_shift);
+                    (*defense_transposition_table)[state.state] = transposition;
+                }
+                else{
+                    (*defense_transposition_table)[state.state] = Transposition(lower_bound - state.value_shift, upper_bound - state.value_shift);
+                }
             }
         }
 
         return changed;
     }
 
-    DefenseSearchState!T[] principal_path(string type)(int max_depth=100)
+    DefenseSearchState!(T, C)[] principal_path(string type)(int max_depth=100)
     {
         static assert(type == "lower" || type == "upper");
         static if (type == "lower"){
@@ -478,7 +566,7 @@ class DefenseSearchState(T)
         if (max_depth <= 0){
             return [];
         }
-        DefenseSearchState!T[] result = [this];
+        DefenseSearchState!(T, C)[] result = [this];
         bool found_one = false;
         foreach(child; children){
             if (mixin("-child." ~ other_type ~ "_bound == " ~ type ~ "_bound && -child." ~ type ~ "_bound == " ~ other_type ~ "_bound")){
@@ -514,8 +602,9 @@ class DefenseSearchState(T)
     }
 }
 
+alias SearchState8 = DefenseSearchState!(Board8, CanonicalState!Board8);
 
-alias DefenseSearchState8 = DefenseSearchState!Board8;
+alias DefenseSearchState8 = DefenseSearchState!(Board8, CanonicalDefenseState!Board8);
 
 void ppp(DefenseSearchState8 dss, int max_depth=20)
 {
@@ -729,4 +818,44 @@ version(all_tests){
         assert(ds.lower_bound == 4);
         assert(ds.upper_bound == 4);
     }
+}
+
+unittest
+{
+    auto ss = new SearchState8(rectangle8(1, 1));
+    ss.calculate_minimax_value;
+    assert(ss.lower_bound == 0);
+    assert(ss.upper_bound == 0);
+
+    ss = new SearchState8(rectangle8(2, 1));
+    ss.calculate_minimax_value;
+    assert(ss.lower_bound == -2);
+    assert(ss.upper_bound == 2);
+
+    ss = new SearchState8(rectangle8(3, 1));
+    ss.calculate_minimax_value;
+    assert(ss.lower_bound == 3);
+    assert(ss.upper_bound == 3);
+
+    ss = new SearchState8(rectangle8(4, 1));
+    ss.calculate_minimax_value(9);
+    assert(ss.lower_bound == 4);
+    assert(ss.upper_bound == 4);
+
+    ss = new SearchState8(rectangle8(2, 2));
+    ss.calculate_minimax_value(8);
+    assert(ss.lower_bound == -4);
+    assert(ss.upper_bound == 4);
+    assert(ss.children.length == 2);
+
+    ss = new SearchState8(rectangle8(3, 2));
+    ss.calculate_minimax_value(9);
+    assert(ss.lower_bound == -6);
+    assert(ss.upper_bound == 6);
+
+    ss = new SearchState8(rectangle8(3, 3));
+    ss.calculate_minimax_value(20);
+    assert(ss.lower_bound == 9);
+    assert(ss.upper_bound == 9);
+    assert(ss.children.length == 4);
 }

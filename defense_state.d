@@ -150,7 +150,7 @@ struct DefenseState(T)
     }
 
 
-    DefenseState!T opAssign(DefenseState!T rhs)
+    ref DefenseState!T opAssign(DefenseState!T rhs)
     {
         this.player = rhs.player;
         this.opponent = rhs.opponent;
@@ -1144,6 +1144,11 @@ struct CanonicalDefenseState(T)
     T opponent_target() const @property
     {
         return state.opponent_target;
+    }
+
+    bool black_to_play() const @property
+    {
+        return state.black_to_play;
     }
 
     float target_score()

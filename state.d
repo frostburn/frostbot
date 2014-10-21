@@ -482,6 +482,16 @@ struct State(T)
         return 0;
     }
 
+    float player_chain_liberties(T chain)
+    {
+        return chain.liberties(playing_area & ~opponent).popcount;
+    }
+
+    float opponent_chain_liberties(T chain)
+    {
+        return chain.liberties(playing_area & ~player).popcount;
+    }
+
     string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure)
     {
         string r;
@@ -729,6 +739,16 @@ struct CanonicalState(T)
     int value_shift()
     {
         return state.value_shift;
+    }
+
+    float player_chain_liberties(T chain)
+    {
+        return state.player_chain_liberties(chain);
+    }
+
+    float opponent_chain_liberties(T chain)
+    {
+        return state.opponent_chain_liberties(chain);
     }
 
     string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure)

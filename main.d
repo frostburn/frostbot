@@ -3,6 +3,7 @@ import core.thread;
 
 import utils;
 import board8;
+import board11;
 import bit_matrix;
 import state;
 import polyomino;
@@ -78,6 +79,20 @@ void main()
 {
     writeln("main");
 
+    print_constants;
+
+    auto b = Board11(0, 4) | Board11(0, 5) | Board11(0, 6) | Board11(1, 5) | Board11(2, 5) | Board11(2, 6) | Board11(2, 7) | Board11(2, 8) | Board11(1, 8) | Board11(0, 8);
+    auto c = b | Board11(3, 9);
+    auto d = Board11(0, 4);
+    d.flood_into(c);
+
+    assert(d == b);
+
+    writeln(b);
+    writeln(c);
+    writeln(d);
+
+    /*
     Board8 playing_area = rectangle8(8, 7) & ~ Board8(0, 0);
     Board8 player = Board8(3, 3) | Board8(3, 4) | Board8(3, 5);
     Board8 opponent = Board8(4, 3) | Board8(5, 4);
@@ -91,6 +106,7 @@ void main()
     writeln(g);
     writeln(g.score);
     writeln(heuristic_value(playing_area, player, opponent));
+    */
 
     /*
     TreeNode8[CanonicalState8] empty;
