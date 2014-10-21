@@ -56,7 +56,7 @@ struct Board8
     }
     body
     {
-        bits = (1UL << (x * H_SHIFT)) << (y * V_SHIFT);
+        bits = 1UL << (x * H_SHIFT + y * V_SHIFT);
     }
 
     static Board8 full()
@@ -143,12 +143,12 @@ struct Board8
 
     Board8 east() const
     {
-        return (this << H_SHIFT) & FULL;
+        return Board8((bits << H_SHIFT) & FULL);
     }
 
     Board8 west() const
     {
-        return (this >> H_SHIFT) & FULL;
+        return Board8((bits >> H_SHIFT) & FULL);
     }
 
     Board8 east(in int n=1) const
@@ -171,12 +171,12 @@ struct Board8
 
     Board8 south(in int n=1) const
     {
-        return (this << (V_SHIFT* n)) & FULL;
+        return Board8((bits << (V_SHIFT* n)) & FULL);
     }
 
     Board8 north(in int n=1) const
     {
-        return (this >> (V_SHIFT * n)) & FULL;
+        return Board8(bits >> (V_SHIFT * n));
     }
 
     /**
@@ -893,6 +893,26 @@ unittest
     assert(b.true_euler == 0);
 }
 
+unittest
+{
+    auto b = Board8(0, 0);
+    assert(!b.west);
+    assert(b.east);
+    assert(!b.north);
+    assert(b.south);
+
+    b = Board8(0, Board8.HEIGHT - 1);
+    assert(!b.west);
+    assert(b.east);
+    assert(b.north);
+    assert(!b.south);
+
+    b = Board8(Board8.WIDTH - 1, Board8.HEIGHT - 1);
+    assert(b.west);
+    assert(!b.east);
+    assert(b.north);
+    assert(!b.south);
+}
 /*
 void main()
 {
