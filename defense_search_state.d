@@ -128,17 +128,20 @@ class DefenseSearchState(T, C)
     bool is_leaf;
     bool is_final;
     DefenseSearchState!(T, C)[] children;
-    DefenseSearchState!(T, C)[C] parents;
+    DefenseSearchState!(T, C) parent;
 
     T player_useless;
-    //T opponent_useless;
 
-    Transposition[DefenseState!T] *defense_transposition_table;
+    alias DefenseTranspositionTable = Transposition[DefenseState!T];
+    DefenseTranspositionTable *defense_transposition_table;
     bool do_local_analysis = true;
 
     static if (is (C == CanonicalState!T)){
         T player_secure;
         T opponent_secure;
+
+        alias TranspositionTable = Transposition[CanonicalState!T];
+        TranspositionTable *transposition_table;
     }
 
     float heuristic_value;
@@ -171,6 +174,9 @@ class DefenseSearchState(T, C)
             _upper_bound = upper_bound;
         }
         is_final = _lower_bound == _upper_bound || is_final;
+        if (is_final){
+            //children = children.init;
+        }
     }
 
     float heuristic_lower_bound() const @property
@@ -185,9 +191,7 @@ class DefenseSearchState(T, C)
 
     float heuristic_lower_bound(float value) @property
     {
-        if (value > _heuristic_lower_bound){
-            _heuristic_lower_bound = value;
-        }
+        _heuristic_lower_bound = value;
         if (_heuristic_lower_bound < _lower_bound){
             _heuristic_lower_bound = _lower_bound;
         }
@@ -199,9 +203,7 @@ class DefenseSearchState(T, C)
 
     float heuristic_upper_bound(float value) @property
     {
-        if (value < _heuristic_upper_bound){
-            _heuristic_upper_bound = value;
-        }
+        _heuristic_upper_bound = value;
         if (_heuristic_upper_bound > _upper_bound){
             _heuristic_upper_bound = _upper_bound;
         }
@@ -213,10 +215,13 @@ class DefenseSearchState(T, C)
 
     void reset_heuristic_values()
     {
-        _heuristic_lower_bound = -float.infinity;
-        _heuristic_upper_bound = float.infinity;
-        heuristic_lower_bound = _heuristic_lower_bound;
-        heuristic_upper_bound = _heuristic_upper_bound;
+        if (!is_leaf){
+            last_heuristic_value = _heuristic_lower_bound;
+            _heuristic_lower_bound = -float.infinity;
+            _heuristic_upper_bound = float.infinity;
+            heuristic_lower_bound = _heuristic_lower_bound;
+            heuristic_upper_bound = _heuristic_upper_bound;
+        }
     }
 
     invariant
@@ -224,28 +229,41 @@ class DefenseSearchState(T, C)
         assert(state.passes <= 2);
     }
 
-    this(T playing_area, Transposition[DefenseState!T] *defense_transposition_table=null, bool do_local_analysis=true)
-    {
-        this(C(playing_area), defense_transposition_table, do_local_analysis);
-    }
-
     static if (is (C == CanonicalDefenseState!T)){
-        this(DefenseState!T state, Transposition[DefenseState!T] *defense_transposition_table=null, bool do_local_analysis=true)
+        this(T playing_area, DefenseTranspositionTable *defense_transposition_table=null, bool do_local_analysis=true)
+        {
+            this(C(playing_area), defense_transposition_table, do_local_analysis);
+        }
+
+        this(DefenseState!T state, DefenseTranspositionTable *defense_transposition_table=null, bool do_local_analysis=true)
         {
             this(C(state), defense_transposition_table, do_local_analysis);
         }
     }
     else static if (is (C == CanonicalState!T)){
-        this(State!T state, Transposition[DefenseState!T] *defense_transposition_table=null, bool do_local_analysis=true)
+        this(T playing_area, TranspositionTable *transposition_table=null, DefenseTranspositionTable *defense_transposition_table=null, bool do_local_analysis=true)
         {
+            this.transposition_table = transposition_table;
+            this(C(playing_area), defense_transposition_table, do_local_analysis);
+        }
+
+        this(State!T state, TranspositionTable *transposition_table=null, DefenseTranspositionTable *defense_transposition_table=null, bool do_local_analysis=true)
+        {
+            this.transposition_table = transposition_table;
             this(C(state), defense_transposition_table, do_local_analysis);
+        }
+
+        this(C state, TranspositionTable *transposition_table, DefenseTranspositionTable *defense_transposition_table=null, bool do_local_analysis=true)
+        {
+            this.transposition_table = transposition_table;
+            this(state, defense_transposition_table, do_local_analysis);
         }
     }
     else{
         static assert(false);
     }
 
-    this (C state, Transposition[DefenseState!T] *defense_transposition_table=null, bool do_local_analysis=true){
+    this (C state, DefenseTranspositionTable *defense_transposition_table=null, bool do_local_analysis=true){
         this.state = state;
         this.defense_transposition_table = defense_transposition_table;
         this.do_local_analysis = do_local_analysis;
@@ -254,31 +272,35 @@ class DefenseSearchState(T, C)
             state.analyze_unconditional(player_secure, opponent_secure);
         }
 
-        T player_retainable;
-        T opponent_retainable;
+        T _player_secure;
+        T _opponent_secure;
+        get_secure_areas(_player_secure, _opponent_secure);
+
+        DefenseAnalysisResult!T result;
         if (defense_transposition_table !is null && do_local_analysis){
-            analyze_local(player_retainable, opponent_retainable);
+            result = analyze_state!(T, C)(state, _player_secure, _opponent_secure, defense_transposition_table);
+        }
+        else{
+            result = analyze_state_light!(T, C)(state, _player_secure, _opponent_secure);
         }
         if (state.is_leaf){
             is_leaf = true;
-            float value = score(player_retainable, opponent_retainable);
+            float value = result.score;
             set_bounds(value, value);
-            heuristic_lower_bound = heuristic_upper_bound = value;
+            last_heuristic_value = heuristic_lower_bound = heuristic_upper_bound = value;
         }
         else{
-            update_bounds(player_retainable, opponent_retainable);
+            update_bounds(result);
 
-            T player_secure;
-            T opponent_secure;
-            get_secure_areas(player_secure, opponent_secure);
             last_heuristic_value = this.heuristic_value = heuristic_lower_bound = heuristic_upper_bound = heuristic.heuristic_value!T(
                 state.playing_area,
-                state.player | player_retainable | player_secure ,
-                state.opponent | opponent_retainable | opponent_secure
+                state.player | result.player_retainable | result.player_secure ,
+                state.opponent | result.opponent_retainable | result.opponent_secure
             );
         }
     }
 
+    /*
     float score(T player_retainable, T opponent_retainable)
     {
         static if (is (C == CanonicalDefenseState!T)){
@@ -314,6 +336,7 @@ class DefenseSearchState(T, C)
             return score;
         }
     }
+    */
 
     void get_secure_areas(out T player_secure, out T opponent_secure)
     {
@@ -339,6 +362,7 @@ class DefenseSearchState(T, C)
         }
     }
 
+    /*
     void analyze_local(out T player_retainable, out T opponent_retainable)
     {
         T opponent_useless;
@@ -351,6 +375,10 @@ class DefenseSearchState(T, C)
 
         extract_eyespaces!(T, C)(state, player_secure, opponent_secure, player_eyespaces, opponent_eyespaces);
 
+        // TODO: Move this to defense.d
+        // NOTE: Dead territory surrounded by secure territory is secure territory.
+        //       You can crawl from secure and defendable territory giving better bounds.
+        // TODO: Move score analysis to defense.d
         string analyze_eyespaces(string player, string opponent)
         {
             return "
@@ -387,8 +415,26 @@ class DefenseSearchState(T, C)
 
         set_secure_areas(player_secure, opponent_secure);
     }
+    */
 
-    void update_bounds(T player_retainable, T opponent_retainable){
+    void update_from_transposition(){
+        static if (is (C == CanonicalDefenseState!T)){
+            if (defense_transposition_table !is null && state.state in *defense_transposition_table){
+                auto transposition = (*defense_transposition_table)[state.state];
+                set_bounds(transposition.lower_bound + state.value_shift, transposition.upper_bound + state.value_shift);
+                is_final = transposition.is_final;
+            }
+        }
+        else static if (is (C == CanonicalState!T)){
+            if (transposition_table !is null && state in *transposition_table){
+                auto transposition = (*transposition_table)[state];
+                set_bounds(transposition.lower_bound, transposition.upper_bound);
+                is_final = transposition.is_final;
+            }
+        }
+    }
+
+    void update_bounds(DefenseAnalysisResult!T result){
         static if (is (C == CanonicalDefenseState!T)){
             if (defense_transposition_table !is null && state.state in *defense_transposition_table){
                 auto transposition = (*defense_transposition_table)[state.state];
@@ -396,24 +442,18 @@ class DefenseSearchState(T, C)
                 is_final = transposition.is_final;
             }
             else{
-                float size = state.playing_area.popcount;
-                float lower_bound, upper_bound;
-                if (!state.player_target){
-                    lower_bound = 2 * (state.player_immortal | player_retainable).popcount - size + state.value_shift;
-                }
-                if (!state.opponent_target){
-                    upper_bound = -(2 * (state.opponent_immortal | opponent_retainable).popcount - size) + state.value_shift;
-                }
-                set_bounds(lower_bound, upper_bound);
+                set_bounds(result.lower_bound, result.upper_bound);
             }
         }
-        else{
-            float size = state.playing_area.popcount;
-
-            float lower_bound = 2 * (player_secure | player_retainable).popcount - size;
-            float upper_bound = -(2 * (opponent_secure | opponent_retainable).popcount - size);
-
-            set_bounds(lower_bound, upper_bound);
+        else static if (is (C == CanonicalState!T)){
+            if (transposition_table !is null && state in *transposition_table){
+                auto transposition = (*transposition_table)[state];
+                set_bounds(transposition.lower_bound, transposition.upper_bound);
+                is_final = transposition.is_final;
+            }
+            else{
+                set_bounds(result.lower_bound, result.upper_bound);
+            }
         }
     }
 
@@ -432,28 +472,26 @@ class DefenseSearchState(T, C)
         return moves;
     }
 
-    void make_children(ref DefenseSearchState!(T, C)[C] state_pool)
+    void make_children()
     {
         children = [];
         auto child_states = state.children(effective_moves);
 
         foreach (child_state; child_states){
-            if (child_state in state_pool){
-                auto pool_child = state_pool[child_state];
-                children ~= pool_child;
-                pool_child.parents[state] = this;
-            }
-            else{
+            static if(is (C == CanonicalDefenseState!T)){
                 auto child = new DefenseSearchState!(T, C)(child_state, defense_transposition_table, do_local_analysis);
-                children ~= child;
-                child.parents[state] = this;
-                state_pool[child_state] = child;
             }
+            else static if (is (C == CanonicalState!T)){
+                auto child = new DefenseSearchState!(T, C)(child_state, transposition_table, defense_transposition_table, do_local_analysis);
+            }
+            children ~= child;
+            child.parent = this;
         }
 
         children.randomShuffle;
     }
 
+    /*
     void update_parents()
     {
         debug(update_parents) {
@@ -480,6 +518,7 @@ class DefenseSearchState(T, C)
             }
         }
     }
+    */
 
     /*
     void reset_heuristics()
@@ -505,16 +544,19 @@ class DefenseSearchState(T, C)
     }
     */
 
-    void reset_heuristics(ref DefenseSearchState!(T, C)[C] state_pool)
+    bool is_repetition()
     {
-        foreach (ref search_state; state_pool.byValue){
-            search_state.reset_heuristic_values;
+        auto search_state = this;
+        while(search_state.parent !is null){
+            search_state = search_state.parent;
+            if (search_state.state == state){
+                return true;
+            }
         }
+        return false;
     }
 
     void calculate_minimax_value(
-        ref DefenseSearchState!(T, C)[C] state_pool,
-        ref HistoryNode!(C) history,
         float depth=float.infinity,
         float alpha=-float.infinity,
         float beta=float.infinity
@@ -525,15 +567,27 @@ class DefenseSearchState(T, C)
             return;
         }
 
-        if (history !is null && state in history){
+        if (is_repetition){
             // Do a short search instead?
             return;
         }
 
-        auto my_history = new HistoryNode!(C)(state, history);
-
         if (!children.length){
-            make_children(state_pool);
+            make_children;
+        }
+        else{
+            foreach (child; children){
+                child.update_from_transposition;
+            }
+        }
+
+        // Reset heuristic values for alpha beta search and set last_heuristic_value.
+        if (depth > 1){
+            foreach (child; children){
+                if (!child.is_leaf && !child.is_final){
+                    child.reset_heuristic_values;
+                }
+            }
         }
 
         static bool by_heuristic_value(DefenseSearchState!(T, C) a, DefenseSearchState!(T, C) b){
@@ -566,9 +620,9 @@ class DefenseSearchState(T, C)
 
         // Check for leaves and transpositions.
         bool changed = update_value(depth > 1);
-        if (changed){
-            //update_parents;
-        }
+        //if (changed){
+            //do something?
+        //}
 
         foreach (child; children){
             if (heuristic_lower_bound > alpha){
@@ -579,48 +633,44 @@ class DefenseSearchState(T, C)
             }
 
             if (beta <= alpha){
-                last_heuristic_value = heuristic_lower_bound;
                 return;
             }
 
-            child.calculate_minimax_value(state_pool, my_history, depth - 1, -beta, -alpha);
+            child.calculate_minimax_value(depth - 1, -beta, -alpha);
 
             changed = update_value(depth > 1); // TODO: Do single updates.
-            if (changed){
-                //update_parents;
-            }
+            //if (changed){
+                //do something?;
+            //}
         }
 
         if (full_search){
             is_final = true;
+            //children = children.init;
             static if (is (C == CanonicalDefenseState!T)){
                 if (defense_transposition_table !is null){
                     (*defense_transposition_table)[state.state] = Transposition(lower_bound - state.value_shift, upper_bound - state.value_shift, is_final);
                 }
             }
+            else static if (is (C == CanonicalState!T)){
+                if (transposition_table !is null){
+                    (*transposition_table)[state] = Transposition(lower_bound, upper_bound, is_final);
+                }
+            }
         }
-
-        last_heuristic_value = heuristic_lower_bound;
     }
 
     void calculate_minimax_value(float depth=float.infinity)
     {
-
-        DefenseSearchState!(T, C)[C] state_pool;
-        state_pool[state] = this;
-        HistoryNode!(C) history = null;
-        reset_heuristics(state_pool);
-        calculate_minimax_value(state_pool, history, depth, -float.infinity, float.infinity);
+        reset_heuristic_values;
+        calculate_minimax_value(depth, -float.infinity, float.infinity);
     }
 
     void iterative_deepening(int min_depth, int max_depth)
     {
-        DefenseSearchState!(T, C)[C] state_pool;
-        state_pool[state] = this;
-        HistoryNode!(C) history = null;
         for (int i = min_depth; i <= max_depth; i++){
-            reset_heuristics(state_pool);
-            calculate_minimax_value(state_pool, history, i, lower_bound, upper_bound);
+            reset_heuristic_values;
+            calculate_minimax_value(i, lower_bound, upper_bound);
             debug (iterative_deepening){
                 writeln("Depth=", i);
                 writeln(this);
@@ -694,6 +744,18 @@ class DefenseSearchState(T, C)
                 }
                 else{
                     (*defense_transposition_table)[state.state] = Transposition(lower_bound - state.value_shift, upper_bound - state.value_shift);
+                }
+            }
+        }
+        else static if (is (C == CanonicalState!T)){
+            if (changed && transposition_table !is null){
+                if (state in *transposition_table){
+                    auto transposition = (*transposition_table)[state];
+                    transposition.set_bounds(lower_bound, upper_bound);
+                    (*transposition_table)[state] = transposition;
+                }
+                else{
+                    (*transposition_table)[state] = Transposition(lower_bound, upper_bound);
                 }
             }
         }

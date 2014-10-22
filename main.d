@@ -82,9 +82,19 @@ void main()
     Transposition[DefenseState8] empty;
     auto defense_transposition_table = &empty;
 
-    auto ss = new SearchState8(rectangle8(4, 4));
-    ss.iterative_deepening(1, 6);
+    Transposition[CanonicalState8] empty2;
+    auto transposition_table = &empty2;
+
+    auto ss = new DefenseSearchState8(rectangle8(3, 1), defense_transposition_table);
+    ss.calculate_minimax_value;
     writeln(ss);
+    assert(ss.lower_bound == 3);
+    assert(ss.upper_bound == 3);
+
+
+    //auto ss = new SearchState8(rectangle8(4, 3), transposition_table, defense_transposition_table);
+    //ss.iterative_deepening(1, 17);
+    //writeln(ss);
     //ss.pc;
     //writeln(ss.children[0].children[0]);
     //ss.children[0].children[0].pc;

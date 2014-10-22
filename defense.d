@@ -300,7 +300,7 @@ body
         return DefenseResult!T(Status.secure);
     }
     else{
-        version(calculate_death){
+        //version(calculate_death){
             // Make everything favor the defender to see if she can live in the first place with two moves in a row.
             defense_state.ko_threats = float.infinity;
             bool all_children_dead = true;
@@ -320,7 +320,7 @@ body
             if (all_children_dead){
                 return DefenseResult!T(Status.dead);
             }
-        }
+        //}
 
         // Now with only first move advantage.
         defense_state.ko_threats = float.infinity;
@@ -415,6 +415,200 @@ body
 }
 
 alias calculate_status8 = calculate_status!Board8;
+
+
+struct DefenseAnalysisResult(T)
+{
+    T player_secure;
+    T opponent_secure;
+    T player_retainable;
+    T opponent_retainable;
+    T player_useless;
+
+    float lower_bound;
+    float upper_bound;
+    float score;
+}
+
+DefenseAnalysisResult!T analyze_state(T, C)(C state, T player_secure, T opponent_secure, Transposition[DefenseState!T] *defense_transposition_table)
+{
+    DefenseState!T[] player_eyespaces;
+    DefenseState!T[] opponent_eyespaces;
+
+    extract_eyespaces!(T, C)(state, player_secure, opponent_secure, player_eyespaces, opponent_eyespaces);
+
+    T player_useless;
+
+    T player_defendable;
+    T opponent_defendable;
+    T player_retainable;
+    T opponent_retainable;
+
+    static if (is (C == CanonicalDefenseState!T)){
+        float size_limit = state.playing_area.popcount;
+    }
+    else{
+        float size_limit = float.infinity;
+    }
+
+    DefenseResult!T[DefenseState!T] player_deferred;
+    DefenseResult!T[DefenseState!T] opponent_deferred;
+
+    string analyze_eyespaces(string player, string opponent)
+    {
+        return "
+            foreach (eyespace; " ~ player ~ "_eyespaces){
+                if (eyespace.playing_area.popcount < size_limit){
+                    auto result = calculate_status!T(eyespace, defense_transposition_table);
+                    if (result.status == Status.retainable){
+                        " ~ player ~ "_retainable |= eyespace.playing_area & ~" ~ opponent ~ "_secure;
+                    }
+                    else if (result.status == Status.defendable){
+                        " ~ player ~ "_defendable |= eyespace.playing_area & ~" ~ opponent ~ "_secure;
+                    }
+                    else if (result.status == Status.secure){
+                        " ~ player ~ "_secure |= eyespace.playing_area & ~" ~ opponent ~ "_secure;
+                    }
+                    else{
+                        " ~ player ~ "_deferred[eyespace] = result;
+                    }
+
+                    //" ~ player ~ "_useless |= result.player_useless;
+                    //" ~ opponent ~ "_useless |= result.opponent_useless;
+                }
+            }
+        ";
+    }
+
+    mixin(analyze_eyespaces("player", "opponent"));
+    mixin(analyze_eyespaces("opponent", "player"));
+
+    string analyze_death(string player, string opponent)
+    {
+        return "
+            foreach (eyespace, result; " ~ player ~"_deferred){
+                auto liberties = eyespace.playing_area.liberties(state.playing_area);
+                auto defendable = " ~ opponent ~ "_defendable | " ~ opponent ~ "_secure;
+                if (result.status == Status.dead){
+                    if (!(liberties & ~" ~ opponent ~ "_secure)){
+                        " ~ opponent ~ "_secure |= eyespace.playing_area;
+                    }
+                    else if (!(liberties & ~defendable)){
+                        " ~ opponent ~ "_defendable |= eyespace.playing_area;
+                    }
+                }
+                else if (result.status == Status.killable){
+                    if (!(liberties & ~defendable)){
+                        " ~ opponent ~ "_defendable |= eyespace.playing_area;
+                    }
+                }
+            }
+        ";
+    }
+
+    mixin(analyze_death("player", "opponent"));
+    mixin(analyze_death("opponent", "player"));
+
+    if (!state.ko){
+        player_useless = opponent_retainable | opponent_defendable;
+    }
+
+    float lower_bound;
+    float upper_bound;
+
+    calculate_bounds!(T, C)(
+        state, player_retainable, opponent_retainable, player_defendable, opponent_defendable, player_secure, opponent_secure,
+        lower_bound, upper_bound
+    );
+
+    static if (is (C == CanonicalDefenseState!T)){
+        if (state.player_target){
+            lower_bound = -float.infinity;
+        }
+        if (state.opponent_target){
+            upper_bound = float.infinity;
+        }
+    }
+
+    float score = controlled_liberty_score!(T, C)(state, player_retainable, opponent_retainable, player_defendable, opponent_defendable, player_secure, opponent_secure);
+
+    return DefenseAnalysisResult!T(
+        player_secure, opponent_secure,
+        player_defendable | player_retainable, opponent_defendable | opponent_retainable,
+        player_useless, lower_bound, upper_bound, score
+    );
+}
+
+DefenseAnalysisResult!T analyze_state_light(T, C)(C state, T player_secure, T opponent_secure)
+{
+    float lower_bound;
+    float upper_bound;
+
+    calculate_bounds!(T, C)(
+        state, T(), T(), T(), T(), player_secure, opponent_secure,
+        lower_bound, upper_bound
+    );
+
+    static if (is (C == CanonicalDefenseState!T)){
+        if (state.player_target){
+            lower_bound = -float.infinity;
+        }
+        if (state.opponent_target){
+            upper_bound = float.infinity;
+        }
+    }
+
+    float score = controlled_liberty_score!(T, C)(state, T(), T(), T(), T(), player_secure, opponent_secure);
+
+    return DefenseAnalysisResult!T(player_secure, opponent_secure, T(), T(), T(), lower_bound, upper_bound, score);
+}
+
+void calculate_bounds(T, C)(
+    C state, T player_retainable, T opponent_retainable, T player_defendable, T opponent_defendable, T player_secure, T opponent_secure,
+    out float lower_bound, out float upper_bound
+)
+{
+    auto player_crawlable = (player_secure | player_defendable).liberties(state.playing_area & ~(state.player | state.opponent));
+    auto opponent_crawlable = (opponent_secure | opponent_defendable).liberties(state.playing_area & ~(state.player | state.opponent));
+
+    int player_crawl_score = player_crawlable.popcount;
+    player_crawl_score = (player_crawl_score / 2) + (player_crawl_score & 1);
+    int opponent_crawl_score = opponent_crawlable.popcount / 2;
+
+    float size = state.playing_area.popcount;
+
+    lower_bound = 2 * (player_secure | player_defendable | player_retainable).popcount + player_crawl_score - size + state.value_shift;
+    upper_bound = -(2 * (opponent_secure | opponent_defendable | opponent_retainable).popcount + opponent_crawl_score - size) + state.value_shift;
+}
+
+float controlled_liberty_score(T, C)(C state, T player_retainable, T opponent_retainable, T player_defendable, T opponent_defendable, T player_secure, T opponent_secure)
+in
+{
+    assert(state.black_to_play);
+}
+body
+{
+    float score = state.target_score;
+
+    if (score == 0){
+        player_retainable |= player_defendable | player_secure;
+        opponent_retainable |= opponent_defendable | opponent_secure;
+
+        auto player_controlled_terrirory = (state.player | player_retainable) & ~opponent_retainable;
+        auto opponent_controlled_terrirory = (state.opponent | opponent_retainable) & ~player_retainable;
+
+        score += player_controlled_terrirory.popcount;
+        score -= opponent_controlled_terrirory.popcount;
+
+        score += player_controlled_terrirory.liberties(state.playing_area & ~opponent_controlled_terrirory).popcount;
+        score -= opponent_controlled_terrirory.liberties(state.playing_area & ~player_controlled_terrirory).popcount;
+
+        return score + state.value_shift;
+    }
+    else{
+        return score;
+    }
+}
 
 
 unittest
