@@ -13,6 +13,7 @@ import state;
 import defense_state;
 //import search_state;
 import defense;
+import heuristic;
 
 
 static bool is_better(T, C)(DefenseSearchState!(T, C) a, DefenseSearchState!(T, C) b){
@@ -140,10 +141,15 @@ class DefenseSearchState(T, C)
         T opponent_secure;
     }
 
+    float heuristic_value;
+    float last_heuristic_value;
+
     private
     {
         float _lower_bound = -float.infinity;
         float _upper_bound = float.infinity;
+        float _heuristic_lower_bound = -float.infinity;
+        float _heuristic_upper_bound = float.infinity;
     }
 
     float lower_bound() const @property
@@ -165,6 +171,52 @@ class DefenseSearchState(T, C)
             _upper_bound = upper_bound;
         }
         is_final = _lower_bound == _upper_bound || is_final;
+    }
+
+    float heuristic_lower_bound() const @property
+    {
+        return _heuristic_lower_bound;
+    }
+
+    float heuristic_upper_bound() const @property
+    {
+        return _heuristic_upper_bound;
+    }
+
+    float heuristic_lower_bound(float value) @property
+    {
+        if (value > _heuristic_lower_bound){
+            _heuristic_lower_bound = value;
+        }
+        if (_heuristic_lower_bound < _lower_bound){
+            _heuristic_lower_bound = _lower_bound;
+        }
+        else if (_heuristic_lower_bound > _upper_bound){
+            _heuristic_lower_bound = _upper_bound;
+        }
+        return value;
+    }
+
+    float heuristic_upper_bound(float value) @property
+    {
+        if (value < _heuristic_upper_bound){
+            _heuristic_upper_bound = value;
+        }
+        if (_heuristic_upper_bound > _upper_bound){
+            _heuristic_upper_bound = _upper_bound;
+        }
+        else if (_heuristic_upper_bound < _lower_bound){
+            _heuristic_upper_bound = _lower_bound;
+        }
+        return value;
+    }
+
+    void reset_heuristic_values()
+    {
+        _heuristic_lower_bound = -float.infinity;
+        _heuristic_upper_bound = float.infinity;
+        heuristic_lower_bound = _heuristic_lower_bound;
+        heuristic_upper_bound = _heuristic_upper_bound;
     }
 
     invariant
@@ -211,9 +263,19 @@ class DefenseSearchState(T, C)
             is_leaf = true;
             float value = score(player_retainable, opponent_retainable);
             set_bounds(value, value);
+            heuristic_lower_bound = heuristic_upper_bound = value;
         }
         else{
             update_bounds(player_retainable, opponent_retainable);
+
+            T player_secure;
+            T opponent_secure;
+            get_secure_areas(player_secure, opponent_secure);
+            last_heuristic_value = this.heuristic_value = heuristic_lower_bound = heuristic_upper_bound = heuristic.heuristic_value!T(
+                state.playing_area,
+                state.player | player_retainable | player_secure ,
+                state.opponent | opponent_retainable | opponent_secure
+            );
         }
     }
 
@@ -390,9 +452,6 @@ class DefenseSearchState(T, C)
         }
 
         children.randomShuffle;
-
-        sort!(is_better!(T, C))(children);
-
     }
 
     void update_parents()
@@ -422,6 +481,37 @@ class DefenseSearchState(T, C)
         }
     }
 
+    /*
+    void reset_heuristics()
+    {
+        DefenseSearchState!(T, C)[] queue;
+        queue ~= this;
+
+        bool[C] seen;
+        seen[state] = true;
+
+        while(queue.length){
+            auto search_state = queue.front;
+            queue.popFront;
+            search_state.heuristic_lower_bound = -float.infinity;
+            search_state.heuristic_upper_bound = float.infinity;
+            foreach (child; search_state.children){
+                if (child.state !in seen){
+                    queue ~= child;
+                    seen[child.state] = true;
+                }
+            }
+        }
+    }
+    */
+
+    void reset_heuristics(ref DefenseSearchState!(T, C)[C] state_pool)
+    {
+        foreach (ref search_state; state_pool.byValue){
+            search_state.reset_heuristic_values;
+        }
+    }
+
     void calculate_minimax_value(
         ref DefenseSearchState!(T, C)[C] state_pool,
         ref HistoryNode!(C) history,
@@ -431,15 +521,7 @@ class DefenseSearchState(T, C)
     )
     {
         bool full_search = depth == float.infinity && alpha == -float.infinity && beta == float.infinity;
-        if (is_leaf){
-            return;
-        }
-
-        if (is_final){
-            return;
-        }
-
-        if (depth <= 0){
+        if (is_leaf || is_final || depth <= 0){
             return;
         }
 
@@ -454,27 +536,56 @@ class DefenseSearchState(T, C)
             make_children(state_pool);
         }
 
+        static bool by_heuristic_value(DefenseSearchState!(T, C) a, DefenseSearchState!(T, C) b){
+            /*
+            if (a.is_leaf && !b.is_leaf){
+                return false;
+            }
+            if (b.is_leaf && !a.is_leaf){
+                return true;
+            }
+
+            if (a.state.passes < b.state.passes){
+                return true;
+            }
+            if (b.state.passes < a.state.passes){
+                return false;
+            }
+
+            if (a.parents.length < b.parents.length){
+                return true;
+            }
+            if (b.parents.length < a.parents.length){
+                return false;
+            }
+            */
+            return a.last_heuristic_value < b.last_heuristic_value;
+        }
+
+        sort!by_heuristic_value(children);
+
         // Check for leaves and transpositions.
-        bool changed = update_value;
+        bool changed = update_value(depth > 1);
         if (changed){
-            update_parents;
+            //update_parents;
         }
 
         foreach (child; children){
-            if (lower_bound > alpha){
-                alpha = lower_bound;
+            if (heuristic_lower_bound > alpha){
+                alpha = heuristic_lower_bound;
             }
-            if (upper_bound < beta){
-                beta = upper_bound;
+            if (heuristic_upper_bound < beta){
+                beta = heuristic_upper_bound;
             }
 
             if (beta <= alpha){
+                last_heuristic_value = heuristic_lower_bound;
                 return;
             }
 
             child.calculate_minimax_value(state_pool, my_history, depth - 1, -beta, -alpha);
 
-            changed = update_value; // TODO: Do single updates.
+            changed = update_value(depth > 1); // TODO: Do single updates.
             if (changed){
                 //update_parents;
             }
@@ -488,27 +599,39 @@ class DefenseSearchState(T, C)
                 }
             }
         }
+
+        last_heuristic_value = heuristic_lower_bound;
     }
 
     void calculate_minimax_value(float depth=float.infinity)
     {
 
         DefenseSearchState!(T, C)[C] state_pool;
+        state_pool[state] = this;
         HistoryNode!(C) history = null;
+        reset_heuristics(state_pool);
         calculate_minimax_value(state_pool, history, depth, -float.infinity, float.infinity);
     }
 
-    void iterative_deepening_search(int min_depth, int max_depth)
+    void iterative_deepening(int min_depth, int max_depth)
     {
         DefenseSearchState!(T, C)[C] state_pool;
+        state_pool[state] = this;
         HistoryNode!(C) history = null;
         for (int i = min_depth; i <= max_depth; i++){
+            reset_heuristics(state_pool);
             calculate_minimax_value(state_pool, history, i, lower_bound, upper_bound);
+            debug (iterative_deepening){
+                writeln("Depth=", i);
+                writeln(this);
+                //writeln("Children:");
+                //this.pc;
+            }
         }
     }
 
 
-    bool update_value()
+    bool update_value(bool use_heuristic_bounds=true)
     {
         if (is_leaf){
             // The value should've been set in the constructor.
@@ -522,19 +645,43 @@ class DefenseSearchState(T, C)
         float old_lower_bound = lower_bound;
         float old_upper_bound = upper_bound;
 
-        float new_lower_bound = -float.infinity;
-        float new_upper_bound = -float.infinity;
+        if (children.length){
+            float new_lower_bound = -float.infinity;
+            float new_upper_bound = -float.infinity;
 
-        foreach (child; children){
-            if (-child.upper_bound > new_lower_bound){
-                new_lower_bound = -child.upper_bound;
+            float new_heuristic_lower_bound = -float.infinity;
+            float new_heuristic_upper_bound = -float.infinity;
+
+            foreach (child; children){
+                if (-child.upper_bound > new_lower_bound){
+                    new_lower_bound = -child.upper_bound;
+                }
+                if (-child.lower_bound > new_upper_bound){
+                    new_upper_bound = -child.lower_bound;
+                }
+                if (use_heuristic_bounds){
+                    if (-child.heuristic_upper_bound > new_heuristic_lower_bound){
+                        new_heuristic_lower_bound = -child.heuristic_upper_bound;
+                    }
+                    if (-child.heuristic_lower_bound > new_heuristic_upper_bound){
+                        new_heuristic_upper_bound = -child.heuristic_lower_bound;
+                    }
+                }
+                else{
+                    if (-child.heuristic_value > new_heuristic_lower_bound){
+                        new_heuristic_lower_bound = -child.heuristic_value;
+                    }
+                    if (-child.heuristic_value > new_heuristic_upper_bound){
+                        new_heuristic_upper_bound = -child.heuristic_value;
+                    }
+                }
             }
-            if (-child.lower_bound > new_upper_bound){
-                new_upper_bound = -child.lower_bound;
-            }
+
+            set_bounds(new_lower_bound, new_upper_bound);
+
+            heuristic_lower_bound = new_heuristic_lower_bound;
+            heuristic_upper_bound = new_heuristic_upper_bound;
         }
-
-        set_bounds(new_lower_bound, new_upper_bound);
 
         bool changed = old_lower_bound != lower_bound || old_upper_bound != upper_bound;
 
@@ -591,13 +738,16 @@ class DefenseSearchState(T, C)
     override string toString()
     {
         return format(
-            "%s\nlower bound=%s upper bound=%s leaf=%s final=%s, number of children=%s",
+            "%s\nlower bound=%s upper bound=%s leaf=%s final=%s, number of children=%s\nheuristics: lower bound=%s upper bound=%s initial=%s",
             state,
             lower_bound,
             upper_bound,
             is_leaf,
             is_final,
-            children.length
+            children.length,
+            heuristic_lower_bound,
+            heuristic_upper_bound,
+            this.heuristic_value
         );
     }
 }
@@ -613,7 +763,7 @@ void ppp(DefenseSearchState8 dss, int max_depth=20)
     }
 }
 
-void pc(DefenseSearchState8 dss)
+void pc(T)(T dss)
 {
     foreach (c; dss.children){
         writeln(c);

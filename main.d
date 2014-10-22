@@ -7,12 +7,12 @@ import board11;
 import bit_matrix;
 import state;
 import polyomino;
-//import defense_state;
+import defense_state;
 //import game_state;
 //import search_state;
-//import defense_search_state;
-//import defense;
-//import eyeshape;
+import defense_search_state;
+import defense;
+import eyeshape;
 import monte_carlo;
 import heuristic;
 
@@ -79,6 +79,17 @@ void main()
 {
     writeln("main");
 
+    Transposition[DefenseState8] empty;
+    auto defense_transposition_table = &empty;
+
+    auto ss = new SearchState8(rectangle8(4, 4));
+    ss.iterative_deepening(1, 6);
+    writeln(ss);
+    //ss.pc;
+    //writeln(ss.children[0].children[0]);
+    //ss.children[0].children[0].pc;
+
+    /*
     print_constants;
 
     auto b = Board11(0, 4) | Board11(0, 5) | Board11(0, 6) | Board11(1, 5) | Board11(2, 5) | Board11(2, 6) | Board11(2, 7) | Board11(2, 8) | Board11(1, 8) | Board11(0, 8);
@@ -91,6 +102,7 @@ void main()
     writeln(b);
     writeln(c);
     writeln(d);
+    */
 
     /*
     Board8 playing_area = rectangle8(8, 7) & ~ Board8(0, 0);
