@@ -85,16 +85,15 @@ void main()
     Transposition[CanonicalState8] empty2;
     auto transposition_table = &empty2;
 
-    auto ss = new DefenseSearchState8(rectangle8(3, 1), defense_transposition_table);
-    ss.calculate_minimax_value;
+    auto s = State8(rectangle8(4, 4));
+    s.make_move(Board8(1, 1));
+    s.make_move(Board8(2, 2));
+    s.make_move(Board8(1, 2));
+    s.make_move(Board8(2, 1));
+
+    auto ss = new SearchState8(s, transposition_table, defense_transposition_table);
+    ss.iterative_deepening(1, 36);
     writeln(ss);
-    assert(ss.lower_bound == 3);
-    assert(ss.upper_bound == 3);
-
-
-    //auto ss = new SearchState8(rectangle8(4, 3), transposition_table, defense_transposition_table);
-    //ss.iterative_deepening(1, 17);
-    //writeln(ss);
     //ss.pc;
     //writeln(ss.children[0].children[0]);
     //ss.children[0].children[0].pc;

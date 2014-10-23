@@ -123,7 +123,7 @@ struct Board8
         );
     }
 
-    Board8 cross_unsafe()
+    Board8 cross_unsafe() const pure nothrow @nogc @safe
     {
         return Board8(bits | (bits << H_SHIFT) | (bits >> H_SHIFT) | (bits << V_SHIFT) | (bits >> V_SHIFT));
     }
@@ -140,6 +140,19 @@ struct Board8
         );
     }
 
+    Board8 inner_border() const pure nothrow @nogc @safe
+    {
+        auto temp = ~bits;
+        return Board8(
+            (
+                (temp << H_SHIFT) |
+                (temp >> H_SHIFT) |
+                (temp << V_SHIFT) |
+                (temp >> V_SHIFT) |
+                NORTH_WALL | WEST_WALL | SOUTH_WALL | EAST_WALL
+            ) & bits
+        );
+    }
 
     Board8 east() const
     {

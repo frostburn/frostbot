@@ -273,6 +273,8 @@ void divide_by_influence(T)(T playing_area, ref T player, ref T opponent)
 float heuristic_value(T)(T playing_area, T player, T opponent)
 {
     float initial_score = (player | player.liberties(playing_area & ~opponent)).popcount - (opponent | opponent.liberties(playing_area & ~player)).popcount;
+    T first_line = playing_area.inner_border;
+    float first_line_penalty =  (player & first_line).popcount - (opponent & first_line).popcount;
     if (!player && !opponent){
         return 5.0;
     }
@@ -284,7 +286,7 @@ float heuristic_value(T)(T playing_area, T player, T opponent)
     grid.bouzy;
     grid.to_boards(player, opponent);
     divide_by_influence(playing_area, player, opponent);
-    return player.popcount - opponent.popcount + 0.4 * (opponent.euler - player.euler) + 0.25 * initial_score;
+    return player.popcount - opponent.popcount + 0.4 * (opponent.euler - player.euler) + 0.25 * initial_score - 0.017 * first_line_penalty;
 }
 
 
