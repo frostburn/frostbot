@@ -743,6 +743,11 @@ struct DefenseState(T)
         return reduction;
     }
 
+    void snap(){
+        int w, d;
+        snap(w, d);
+    }
+
     void snap(out int westwards, out int northwards)
     {
         playing_area.snap(westwards, northwards);

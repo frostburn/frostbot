@@ -293,6 +293,7 @@ class TreeNode(T, S, C)
             else{
                 auto my_history = new HistoryNode!C(state, history);
                 auto child = choose_child;
+                // TODO: When choosing a child that is guaranteed to be worse than say the best leaf child, don't bother returning that value.
                 value = -child.playout(my_history);
             }
             statistics.add_value(value);

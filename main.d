@@ -15,6 +15,7 @@ import defense;
 import eyeshape;
 import monte_carlo;
 import heuristic;
+import ann;
 
 /*
 void print_state(SearchState!Board8 ss, int depth){
@@ -79,6 +80,17 @@ void main()
 {
     writeln("main");
 
+    Board8 playing_area = rectangle8(4, 4);
+    /*
+    auto network = Network8(playing_area);
+    network.activate(Board8(1, 1), Board8(), 0.01);
+    writeln(network.input_layer.layer);
+    writeln(network);
+    writeln(network.get_sum);
+    */
+    tournament(playing_area, 2, 0.01, 1000);
+
+    /*
     Transposition[DefenseState8] empty;
     auto defense_transposition_table = &empty;
 
@@ -94,6 +106,7 @@ void main()
     auto ss = new SearchState8(s, transposition_table, defense_transposition_table);
     ss.iterative_deepening(1, 36);
     writeln(ss);
+    */
     //ss.pc;
     //writeln(ss.children[0].children[0]);
     //ss.children[0].children[0].pc;
