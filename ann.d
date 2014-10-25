@@ -2,11 +2,13 @@ module ann;
 
 import std.stdio;
 import std.string;
-import std.math;
+import std.format;
 import std.random;
 
+import fast_math;
 import board8;
 import defense_state;
+
 
 class Neuron
 {
@@ -33,7 +35,7 @@ class Neuron
             float weight = weights[index];
             sum += weight * input.activation;
         }
-        activation = tanh(sum);
+        activation = fast_erf(sum);
     }
 
     void add_input(ref Neuron input, float weight){
@@ -295,6 +297,7 @@ struct Network(T)
 
     string toString()
     {
+        // TODO: remove extra ","s.
         string r;
         r ~= format("width=%s;height=%s;layers=%s;", input_layer.width, input_layer.height, layers.length);
         foreach (neuron; input_layer.layer.neurons){
@@ -305,6 +308,7 @@ struct Network(T)
                 r ~= "N,";
             }
         }
+        r = r[0..$-1] ~ ";";
         foreach (layer; layers){
             foreach (neuron; layer.neurons){
                 foreach (weight; neuron.weights){
@@ -312,7 +316,57 @@ struct Network(T)
                 }
             }
         }
-        return r;
+        return r[0..$-1];
+    }
+
+    static Network!T from_string(string s)
+    {
+        auto tokens = split(s, ";");
+        size_t width, height, num_layers;
+        formattedRead(tokens[0],"width=%s", &width);
+        formattedRead(tokens[1],"height=%s", &height);
+        formattedRead(tokens[2],"layers=%s", &num_layers);
+
+        auto network = Network!T();
+
+        with (network){
+            input_layer.width = width;
+            input_layer.height = height;
+
+            foreach (sub_token; split(tokens[3], ",")){
+                if (sub_token == "N"){
+                    input_layer.layer.neurons ~= new Neuron();
+                }
+                else{
+                    input_layer.layer.neurons ~= null;
+                }
+            }
+            foreach (i; 0..num_layers){
+                layers ~= input_layer.layer.copy;
+            }
+            connect_layers;
+
+            size_t layer_index = 0;
+            size_t neuron_index = 0;
+            size_t weight_index = 0;
+            foreach (sub_token; split(tokens[4], ",")){
+                float weight;
+                formattedRead(sub_token,"%s", &weight);
+                layers[layer_index].neurons[neuron_index].weights[weight_index] = weight;
+
+                weight_index++;
+                if (weight_index == layers[layer_index].neurons[neuron_index].weights.length){
+                    weight_index = 0;
+                    neuron_index++;
+                    if (neuron_index == layers[layer_index].neurons.length){
+                        neuron_index = 0;
+                        layer_index++;
+                    }
+                }
+            }
+        }
+
+        return network;
     }
 }
 
@@ -361,9 +415,8 @@ float fight(T)(DefenseState!T state, Network!T network0, Network!T network1, flo
     return fight!T(best_child, network1, network0, noise_level, depth - 1, print);
 }
 
-
 void tournament(T)(
-    T playing_area, size_t number_of_hidden_layers=0,
+    T playing_area, Network!T network,
     size_t pool_size=8, size_t iterations=1000, float noise_level=0, int depth=1000,
     float mutation_level=0.1, int mutation_count=3
 )
@@ -372,7 +425,7 @@ void tournament(T)(
     Network!T best_network;
 
     foreach (i; 0..pool_size){
-        networks ~= Network!T(playing_area, number_of_hidden_layers);
+        networks ~= network.copy;
     }
 
     auto state = DefenseState!T(playing_area);
@@ -412,5 +465,5 @@ void tournament(T)(
         networks[worst_index] = new_network;
     }
     writeln(best_network);
-    fight(state, best_network, best_network, noise_level, depth, true);
+    fight(state, best_network, best_network, noise_level, 20, true);
 }
