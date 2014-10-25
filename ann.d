@@ -296,10 +296,13 @@ struct Network(T)
     string toString()
     {
         string r;
-        r ~= format("%s;%s;", input_layer.width, input_layer.height);
+        r ~= format("width=%s;height=%s;layers=%s;", input_layer.width, input_layer.height, layers.length);
         foreach (neuron; input_layer.layer.neurons){
-            foreach (weight; neuron.weights){
-                r ~= format("%s,", weight);
+            if (neuron is null){
+                r ~= "n,";
+            }
+            else{
+                r ~= "N,";
             }
         }
         foreach (layer; layers){
@@ -316,7 +319,7 @@ struct Network(T)
 alias Network8 = Network!Board8;
 
 
-float fight(T)(DefenseState!T state, Network!T network0, Network!T network1, float noise_level=0, bool print=false, int depth=100)
+float fight(T)(DefenseState!T state, Network!T network0, Network!T network1, float noise_level=0, int depth=1000, bool print=false)
 {
     if (print){
         writeln(state);
@@ -355,16 +358,20 @@ float fight(T)(DefenseState!T state, Network!T network0, Network!T network1, flo
         best_child.mirror_h;
         best_child.snap;
     }
-    return fight!T(best_child, network1, network0, noise_level, print, depth - 1);
+    return fight!T(best_child, network1, network0, noise_level, depth - 1, print);
 }
 
 
-void tournament(T)(T playing_area, size_t number_of_hidden_layers=0, float noise_level=0, size_t iterations=1000)
+void tournament(T)(
+    T playing_area, size_t number_of_hidden_layers=0,
+    size_t pool_size=8, size_t iterations=1000, float noise_level=0, int depth=1000,
+    float mutation_level=0.1, int mutation_count=3
+)
 {
     Network!T[] networks;
     Network!T best_network;
 
-    foreach (i; 0..8){
+    foreach (i; 0..pool_size){
         networks ~= Network!T(playing_area, number_of_hidden_layers);
     }
 
@@ -376,8 +383,8 @@ void tournament(T)(T playing_area, size_t number_of_hidden_layers=0, float noise
             scores ~= 0;
             foreach (index1; index + 1..networks.length){
                 auto network1 = networks[index1];
-                float score0 = fight(state, network0, network1, noise_level);
-                float score1 = fight(state, network1, network0, noise_level);
+                float score0 = fight(state, network0, network1, noise_level, depth);
+                float score1 = fight(state, network1, network0, noise_level, depth);
                 scores[index] += score0 - score1;
             }
         }
@@ -399,9 +406,11 @@ void tournament(T)(T playing_area, size_t number_of_hidden_layers=0, float noise
             }
         }
 
-        new_network.mutate(0.1);
+        foreach(i; 0..mutation_count){
+            new_network.mutate(mutation_level);
+        }
         networks[worst_index] = new_network;
     }
     writeln(best_network);
-    fight(state, best_network, best_network, noise_level, true);
+    fight(state, best_network, best_network, noise_level, depth, true);
 }

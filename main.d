@@ -15,6 +15,7 @@ import defense;
 import eyeshape;
 import monte_carlo;
 import heuristic;
+import fast_math;
 import ann;
 
 /*
@@ -80,7 +81,7 @@ void main()
 {
     writeln("main");
 
-    Board8 playing_area = rectangle8(4, 4);
+    //Board8 playing_area = rectangle8(4, 4);
     /*
     auto network = Network8(playing_area);
     network.activate(Board8(1, 1), Board8(), 0.01);
@@ -88,7 +89,7 @@ void main()
     writeln(network);
     writeln(network.get_sum);
     */
-    tournament(playing_area, 2, 0.01, 1000);
+    //tournament(playing_area, 2, 12, 2000, 0.01, 40);
 
     /*
     Transposition[DefenseState8] empty;
