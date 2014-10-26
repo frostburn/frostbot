@@ -15,7 +15,7 @@ import defense_state;
 import defense_search_state;
 import defense;
 import eyeshape;
-import monte_carlo;
+//import monte_carlo;
 import heuristic;
 import fast_math;
 import ann;

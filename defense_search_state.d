@@ -290,6 +290,8 @@ class DefenseSearchState(T, C)
             last_heuristic_value = heuristic_lower_bound = heuristic_upper_bound = value;
         }
         else{
+            player_useless = result.player_useless;
+            set_secure_areas(result.player_secure, result.opponent_secure);
             update_bounds(result);
 
             last_heuristic_value = this.heuristic_value = heuristic_lower_bound = heuristic_upper_bound = heuristic.heuristic_value!T(
@@ -459,9 +461,12 @@ class DefenseSearchState(T, C)
 
     T[] effective_moves()
     {
+        int y_max = state.playing_area.vertical_extent;
+        int x_max = state.playing_area.horizontal_extent;
+
         T[] moves;
-        for (int y = 0; y < T.HEIGHT; y++){
-            for (int x = 0; x < T.WIDTH; x++){
+        for (int y = 0; y < y_max; y++){
+            for (int x = 0; x < x_max; x++){
                 T move = T(x, y);
                 if (move & state.playing_area & ~player_useless){
                     moves ~= move;

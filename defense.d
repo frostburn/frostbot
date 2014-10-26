@@ -423,7 +423,7 @@ struct DefenseAnalysisResult(T)
     T opponent_secure;
     T player_retainable;
     T opponent_retainable;
-    T player_useless;
+    T player_useless;  // Instead of this just return the available moves.
 
     float lower_bound;
     float upper_bound;
@@ -509,8 +509,9 @@ DefenseAnalysisResult!T analyze_state(T, C)(C state, T player_secure, T opponent
     mixin(analyze_death("player", "opponent"));
     mixin(analyze_death("opponent", "player"));
 
+    player_useless = player_defendable;
     if (!state.ko){
-        player_useless = opponent_retainable | opponent_defendable;
+        player_useless |= opponent_retainable | opponent_defendable;
     }
 
     float lower_bound;

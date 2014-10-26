@@ -9,12 +9,14 @@ import std.math;
 import utils;
 import board8;
 import state;
+import defense_state;
+import defense;
 
 struct DefaultNode(T, S)
 {
     S state;
-    T player_unconditional;
-    T opponent_unconditional;
+    T player_secure;
+    T opponent_secure;
     float value;
 
     private
@@ -22,11 +24,11 @@ struct DefaultNode(T, S)
         T[] moves;
     }
 
-    this(S state, T player_unconditional, T opponent_unconditional, T[] moves)
+    this(S state, T player_secure, T opponent_secure, T[] moves)
     {
         this.state = state;
-        this.player_unconditional = player_unconditional;
-        this.opponent_unconditional = opponent_unconditional;
+        this.player_secure = player_secure;
+        this.opponent_secure = opponent_secure;
         this.moves = moves;
     }
 
@@ -88,7 +90,7 @@ struct DefaultNode(T, S)
             ko2 = state.ko;
         }
 
-        value = controlled_liberty_score(state, player_unconditional, opponent_unconditional);
+        value = controlled_liberty_score(state, T(), T(), T(), T(), player_secure, opponent_secure);
     }
 
     string toString()
@@ -103,27 +105,55 @@ alias DefaultNode8 = DefaultNode!(Board8, State8);
 struct Statistics
 {
     ulong[] bins;
-    ulong negative_infinity_bin;
-    ulong positive_infinity_bin;
 
     private
     {
-        float shift;
+        int shift;
     }
 
-    this(int playing_area_size)
+    float lower_bound() @property
     {
-        bins.length = 2 * playing_area_size + 1;
-        shift = playing_area_size;
+        return -shift;
+    }
+
+    float upper_bound() @property
+    {
+        return (cast(float)bins.length) - shift - 1;
+    }
+
+    this(int lower_bound, int upper_bound)
+    in
+    {
+        assert(lower_bound <= upper_bound);
+    }
+    body
+    {
+        bins.length = upper_bound - lower_bound + 1;
+        shift = -lower_bound;
+    }
+
+    void set_bounds(int lower_bound, int upper_bound)
+    in
+    {
+        assert(lower_bound >= this.lower_bound);
+        assert(upper_bound <= this.upper_bound);
+    }
+    body
+    {
+        size_t lower_index = lower_bound + shift;
+        size_t upper_index = upper_bound + shift + 1;
+        bins = bins[lower_index..upper_index];
+        shift = lower_bound;
     }
 
     void add_value(float value)
     in
     {
-        assert(value == -float.infinity || value == float.infinity || (value + shift >= 0 && value + shift < bins.length));
+        //assert(value == -float.infinity || value == float.infinity || (value + shift >= 0 && value + shift < bins.length));
     }
     body
     {
+        /*
         if (value == -float.infinity){
             negative_infinity_bin++;
         }
@@ -131,8 +161,15 @@ struct Statistics
             positive_infinity_bin++;
         }
         else{
-            bins[to!size_t(value + shift)]++;
+            */
+        size_t index = to!size_t(value + shift);
+        if (index < 0){
+            index = 0;
         }
+        else if (index >= bins.length){
+            index = bins.length - 1;
+        }
+        bins[index]++;
     }
 
     float average()
@@ -144,13 +181,14 @@ struct Statistics
             total += bin;
         }
         if (total == 0){
-            return 0;
+            return -shift;
         }
         else{
             return e / total;
         }
     }
 
+    /*
     float p_positive_infinity()
     {
         float total = positive_infinity_bin + negative_infinity_bin;
@@ -168,6 +206,7 @@ struct Statistics
         }
         return positive_infinity_bin / total;
     }
+    */
 
     string toString()
     {
@@ -222,49 +261,68 @@ struct Statistics
 class TreeNode(T, S, C)
 {
     C state;
-    T player_unconditional;
-    T opponent_unconditional;
+    T player_secure;
+    T opponent_secure;
     Statistics statistics;
     ulong visits = 1;
-    bool is_leaf;
+    bool is_final;
 
     TreeNode!(T, S, C)[] children;
     TreeNode!(T, S, C)[C] *node_pool;
+
+    alias DefenseTranspositionTable = Transposition[DefenseState!T];
+    DefenseTranspositionTable *defense_transposition_table=null;
 
     private
     {
         T[] moves;
     }
 
-    this (T playing_area, TreeNode!(T, S, C)[C] *node_pool=null)
+    float lower_bound() @property
     {
-        this(S(playing_area), node_pool);
+        return this.statistics.lower_bound;
     }
 
-    this (S state, TreeNode!(T, S, C)[C] *node_pool=null)
+    float upper_bound() @property
     {
-        this(C(state), node_pool);
+        return this.statistics.upper_bound;
     }
 
-    this (C state, TreeNode!(T, S, C)[C] *node_pool=null)
+    this (T playing_area, TreeNode!(T, S, C)[C] *node_pool=null, DefenseTranspositionTable *defense_transposition_table=null)
     {
+        this(S(playing_area), node_pool, defense_transposition_table);
+    }
+
+    this (S state, TreeNode!(T, S, C)[C] *node_pool=null, DefenseTranspositionTable *defense_transposition_table=null)
+    {
+        this(C(state), node_pool, defense_transposition_table);
+    }
+
+    this (C state, TreeNode!(T, S, C)[C] *node_pool=null, DefenseTranspositionTable *defense_transposition_table=null)
+    {
+        state.analyze_unconditional(player_secure, opponent_secure);
+        auto result = analyze_state!(T, C)(state, player_secure, opponent_secure, defense_transposition_table);
+        player_secure = result.player_secure;
+        opponent_secure = result.opponent_secure;
         this.state = state;
+        this.defense_transposition_table = defense_transposition_table;
         if (state.is_leaf){
             visits = ulong.max;
-            is_leaf = true;
+            is_final = true;
+            this.statistics = Statistics(to!int(result.score), to!int(result.score));
         }
         else{
-            state.analyze_unconditional(player_unconditional, opponent_unconditional);
-            calculate_available_moves;
-            this.statistics = Statistics(state.playing_area.popcount);  // TODO: Needs shifts for CanonicalDefenseState.
+            calculate_available_moves(result);
+            this.statistics = Statistics(to!int(result.lower_bound), to!int(result.upper_bound));
             this.node_pool = node_pool;
         }
     }
 
     Statistics default_playout_statistics(size_t count)
     {
-        auto r = Statistics(state.playing_area.popcount);
-        auto default_node = DefaultNode!(T, S)(state.state, player_unconditional, opponent_unconditional, moves);
+        auto result = analyze_state!(T, C)(state, player_secure, opponent_secure, defense_transposition_table);
+        auto r = Statistics(to!int(result.lower_bound), to!int(result.upper_bound));
+        auto default_node = DefaultNode!(T, S)(state.state, player_secure, opponent_secure, moves);
         foreach (i; 0..count){
             auto temp_node = default_node;
             temp_node.playout;
@@ -280,21 +338,21 @@ class TreeNode(T, S, C)
 
     float playout(ref HistoryNode!C history)
     {
-        if (is_leaf){
+        if (is_final){
             return this.value;
         }
         else{
             float value;
-            if (visits < 12 || history !is null && state in history){
-                auto default_node = DefaultNode!(T, S)(state.state, player_unconditional, opponent_unconditional, moves);
+            if (visits < 12 || (history !is null && state in history)){
+                auto default_node = DefaultNode!(T, S)(state.state, player_secure, opponent_secure, moves);
                 default_node.playout;
                 value = default_node.value;
             }
             else{
                 auto my_history = new HistoryNode!C(state, history);
                 auto child = choose_child;
-                // TODO: When choosing a child that is guaranteed to be worse than say the best leaf child, don't bother returning that value.
                 value = -child.playout(my_history);
+                update_bounds;
             }
             statistics.add_value(value);
             visits++;
@@ -302,14 +360,38 @@ class TreeNode(T, S, C)
         }
     }
 
+    bool update_bounds()
+    {
+        if (is_final){
+            // There should be nothing left to do here.
+            return false;
+        }
+
+        float old_lower_bound = lower_bound;
+        float old_upper_bound = upper_bound;
+
+        if (children.length){
+            float new_lower_bound = -float.infinity;
+            float new_upper_bound = -float.infinity;
+
+            foreach (child; children){
+                if (-child.upper_bound > new_lower_bound){
+                    new_lower_bound = -child.upper_bound;
+                }
+                if (-child.lower_bound > new_upper_bound){
+                    new_upper_bound = -child.lower_bound;
+                }
+            }
+
+            statistics.set_bounds(new_lower_bound, new_upper_bound);
+        }
+
+        bool changed = old_lower_bound != lower_bound || old_upper_bound != upper_bound;
+    }
+
     float value()
     {
-        if (is_leaf){
-            return controlled_liberty_score(state, player_unconditional, opponent_unconditional);
-        }
-        else{
-            return statistics.average;
-        }
+        return statistics.average;
     }
 
     TreeNode!(T, S, C) choose_child()
@@ -318,8 +400,16 @@ class TreeNode(T, S, C)
             make_children;
         }
 
-        TreeNode!(T, S, C)[] young_children;
+        TreeNode!(T, S, C)[] valid_children;
         foreach (child; children){
+            if (-child.lower_bound >= lower_bound){
+                valid_children ~= child;
+            }
+        }
+
+
+        TreeNode!(T, S, C)[] young_children;
+        foreach (child; valid_children){
             if (child.visits < 42){
                 young_children ~= child;
             }
@@ -332,7 +422,7 @@ class TreeNode(T, S, C)
         float best_value = -float.infinity;
         enum exploration_constant = 7.0;
 
-        foreach (child; children){
+        foreach (child; valid_children){
             float child_value = -child.value + exploration_constant * sqrt(log(visits) / child.visits);
             //writeln(child_value);
             if (child_value >= best_value){
@@ -346,7 +436,7 @@ class TreeNode(T, S, C)
         return best_child;
     }
 
-    void calculate_available_moves()
+    void calculate_available_moves(DefenseAnalysisResult!T result)
     {
         int y_max = state.playing_area.vertical_extent;
         int x_max = state.playing_area.horizontal_extent;
@@ -354,7 +444,7 @@ class TreeNode(T, S, C)
         for (int y = 0; y < y_max; y++){
             for (int x = 0; x < x_max; x++){
                 T move = T(x, y);
-                if (move & state.playing_area & ~player_unconditional & ~opponent_unconditional){
+                if (move & state.playing_area & ~player_secure & ~opponent_secure & ~result.player_useless){
                     moves ~= move;
                 }
             }
@@ -400,37 +490,10 @@ class TreeNode(T, S, C)
     {
         return format(
             "%s\nvalue=%s, visits=%s, leaf=%s, number of children=%s",
-            state._toString(T(), T(), player_unconditional, opponent_unconditional),
+            state._toString(T(), T(), player_secure, opponent_secure),
             value, visits, is_leaf, children.length
         );
     }
 }
 
 alias TreeNode8 = TreeNode!(Board8, State8, CanonicalState8);
-
-
-float controlled_liberty_score(T, S)(S state, T player_unconditional, T opponent_unconditional)
-{
-    float score = state.target_score;
-
-    if (score == 0){
-        auto player_controlled_terrirory = (state.player | player_unconditional) & ~opponent_unconditional;
-        auto opponent_controlled_terrirory = (state.opponent | opponent_unconditional) & ~(opponent_unconditional);
-
-        score += player_controlled_terrirory.popcount;
-        score -= opponent_controlled_terrirory.popcount;
-
-        score += player_controlled_terrirory.liberties(state.playing_area & ~opponent_controlled_terrirory).popcount;
-        score -= opponent_controlled_terrirory.liberties(state.playing_area & ~player_controlled_terrirory).popcount;
-
-        if (state.black_to_play){
-            return score + state.value_shift;
-        }
-        else{
-            return -score + state.value_shift;
-        }
-    }
-    else{
-        return score;
-    }
-}
