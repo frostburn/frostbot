@@ -299,6 +299,12 @@ struct State(T)
         return 0;
     }
 
+    void snap()
+    {
+        int w, n;
+        snap(w, n);
+    }
+
     void snap(out int westwards, out int northwards)
     {
         playing_area.snap(westwards, northwards);

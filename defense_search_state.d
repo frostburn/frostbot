@@ -294,7 +294,7 @@ class DefenseSearchState(T, C)
 
             last_heuristic_value = this.heuristic_value = heuristic_lower_bound = heuristic_upper_bound = heuristic.heuristic_value!T(
                 state.playing_area,
-                state.player | result.player_retainable | result.player_secure ,
+                state.player | result.player_retainable | result.player_secure,
                 state.opponent | result.opponent_retainable | result.opponent_secure
             );
         }

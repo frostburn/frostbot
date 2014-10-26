@@ -5,6 +5,8 @@ import std.string;
 import std.math;
 
 import board8;
+import state;
+import ann;
 
 struct Grid
 {
@@ -270,8 +272,22 @@ void divide_by_influence(T)(T playing_area, ref T player, ref T opponent)
     } while (player != temp_player || opponent != temp_opponent);
 }
 
+
+static Network8 network_4x4;
+static playing_area_4x4 = rectangle8(4, 4);
+
+
 float heuristic_value(T)(T playing_area, T player, T opponent)
 {
+    if (playing_area == playing_area_4x4){
+        if (network_4x4.input_layer.width == 0){
+            network_4x4 = Network8.from_file("networks/4x4_network_6.txt");
+        }
+        auto state = State!T(playing_area);
+        state.player = player;
+        state.opponent = opponent;
+        return network_4x4.get_score!(State!T)(state);
+    }
     float initial_score = (player | player.liberties(playing_area & ~opponent)).popcount - (opponent | opponent.liberties(playing_area & ~player)).popcount;
     T first_line = playing_area.inner_border;
     float first_line_penalty =  (player & first_line).popcount - (opponent & first_line).popcount;

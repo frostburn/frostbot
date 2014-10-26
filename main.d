@@ -83,10 +83,23 @@ void main()
 {
     writeln("main");
 
+    Transposition[DefenseState8] empty;
+    auto defense_transposition_table = &empty;
 
-    File file = File("6x5_network_2.txt", "r");
+    Transposition[CanonicalState8] empty2;
+    auto transposition_table = &empty2;
+
+    auto s = State8(rectangle8(4, 4));
+
+    auto ss = new SearchState8(s, transposition_table, defense_transposition_table);
+    ss.iterative_deepening(1, 36);
+    writeln(ss);
+
+    /*
+    File file = File("networks/4x4_network_5.txt", "r");
     auto line = file.readln;
     auto network = Network8.from_string(line);
+    */
     //writeln(network);
     /*
     //auto state = DefenseState8(rectangle8(4, 4));
@@ -97,10 +110,10 @@ void main()
     tournament(playing_area, network, 12, 1000, 0.01, 40, 0.01, 4);
     */
 
-    auto playing_area = rectangle8(6, 5);
+    //auto playing_area = rectangle8(4, 4);
     //auto network = Network8(playing_area, 3);
 
-    tournament(playing_area, network, 9, 10 * 6 * 30, 0.01, 100, 0.03, 1);
+    //tournament(playing_area, network, 12, 2 * 10 * 6 * 15, 0.01, 100, 0.02, 6);
 
     //Board8 playing_area = rectangle8(4, 4);
     /*

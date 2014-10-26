@@ -4,6 +4,7 @@ import std.stdio;
 import std.string;
 import std.format;
 import std.random;
+import std.math;
 
 import fast_math;
 import board8;
@@ -18,11 +19,13 @@ class Neuron
 
     invariant
     {
-        assert(inputs.length == weights.length);
+        assert(inputs.length + 1 == weights.length);
     }
 
     this()
-    {}
+    {
+        weights ~= 0;
+    }
 
     this(Neuron[] inputs, float[] weights){
         this.inputs = inputs.dup;
@@ -30,12 +33,22 @@ class Neuron
     }
 
     void activate(){
-        float sum = 0.0;
+        float sum = weights[0];
         foreach (index, input; inputs){
-            float weight = weights[index];
+            float weight = weights[index + 1];
             sum += weight * input.activation;
         }
-        activation = fast_erf(sum);
+        //if (symmetric){
+        //    activation = fast_erf(sum);
+        //}
+        //else{
+            activation = 0.5 * (1.0 + fast_erf(sum));
+        //}
+    }
+
+    void set_bias(float value)
+    {
+        weights[0] = value;
     }
 
     void add_input(ref Neuron input, float weight){
@@ -76,6 +89,7 @@ struct Layer
 
 struct InputLayer(T)
 {
+    bool symmetric;
     size_t width;
     size_t height;
     Layer layer;
@@ -89,8 +103,10 @@ struct InputLayer(T)
                 T p = T(x, y);
                 if (p & playing_area){
                     layer.neurons ~= new Neuron();
+                    layer.neurons ~= new Neuron();
                 }
                 else{
+                    layer.neurons ~= null;
                     layer.neurons ~= null;
                 }
             }
@@ -101,16 +117,19 @@ struct InputLayer(T)
     {
         foreach (y; 0..height){
             foreach(x; 0..width){
-                size_t index = x + y * width;
+                size_t index = 2 * (x + y * width);
                 T p = T(x, y);
                 if (p & player){
                     layer.neurons[index].activation = 1;
+                    layer.neurons[index + 1].activation = 0;
                 }
                 else if (p & opponent){
-                    layer.neurons[index].activation = -1;
+                    layer.neurons[index].activation = 0;
+                    layer.neurons[index + 1].activation = 1;
                 }
                 else if (layer.neurons[index] !is null){
                     layer.neurons[index].activation = 0;
+                    layer.neurons[index + 1].activation = 0;
                 }
             }
         }
@@ -140,13 +159,34 @@ struct Network(T)
         connect_layers;
     }
 
-    void get_neighbours(size_t layer_index, size_t neuron_index, out Neuron north, out Neuron east, out Neuron west, out Neuron south, out Neuron middle, out bool is_central)
+    void get_neighbours(
+        size_t layer_index, size_t neuron_index,
+        out Neuron player_north, out Neuron player_east, out Neuron player_west, out Neuron player_south, out Neuron player_middle,
+        out Neuron opponent_north, out Neuron opponent_east, out Neuron opponent_west, out Neuron opponent_south, out Neuron opponent_middle,
+        out bool is_central
+    )
     {
         size_t width = input_layer.width;
         size_t height = input_layer.height;
-        size_t y = neuron_index / width;
-        size_t x = neuron_index % width;
+        size_t y = (neuron_index / 2) / width;
+        size_t x = (neuron_index /2 ) % width;
+        bool is_x_central = x == width / 2;
+        if (width % 2 == 0){
+            is_x_central |= x == width / 2 - 1;
+        }
+        bool is_y_central = y == height / 2;
+        if (height % 2 == 0){
+            is_y_central |= y == height / 2 - 1;
+        }
+        is_central = is_y_central && is_x_central;
         Layer layer;
+        int s;
+        if (neuron_index % 2 == 0){
+            s = 1;
+        }
+        else {
+            s = -1;
+        }
 
         if (layer_index == 0){
             layer = input_layer.layer;
@@ -156,40 +196,39 @@ struct Network(T)
         }
 
         if (y == 0){
-            north = null;
+            player_north = null;
+            opponent_north = null;
         }
         else{
-            north = layer.neurons[neuron_index - width];
+            player_north = layer.neurons[neuron_index - 2 * width];
+            opponent_north = layer.neurons[neuron_index - 2 * width + s];
         }
         if (x == width - 1){
-            east = null;
+            player_east = null;
+            opponent_east = null;
         }
         else{
-            east = layer.neurons[neuron_index + 1];
+            player_east = layer.neurons[neuron_index + 2];
+            opponent_east = layer.neurons[neuron_index + 2 + s];
         }
         if (x == 0){
-            west = null;
+            player_west = null;
+            opponent_west = null;
         }
         else{
-            west = layer.neurons[neuron_index - 1];
+            player_west = layer.neurons[neuron_index - 2];
+            opponent_west = layer.neurons[neuron_index - 2 + s];
         }
         if (y == height - 1){
-            south = null;
+            player_south = null;
+            opponent_south = null;
         }
         else{
-            south = layer.neurons[neuron_index + width];
+            player_south = layer.neurons[neuron_index + 2 * width];
+            opponent_south = layer.neurons[neuron_index + 2 * width + s];
         }
-        middle = layer.neurons[neuron_index];
-
-        bool is_x_central = x == width / 2;
-        if (width % 2 == 0){
-            is_x_central = is_x_central || x == width / 2 - 1;
-        }
-        bool is_y_central = y == height / 2;
-        if (height % 2 == 0){
-            is_y_central = is_y_central || y == height / 2 - 1;
-        }
-        is_central = is_y_central && is_x_central;
+        player_middle = layer.neurons[neuron_index];
+        opponent_middle = layer.neurons[neuron_index + s];
     }
 
     void connect_layers()
@@ -197,18 +236,24 @@ struct Network(T)
         foreach (layer_index; 0..layers.length){
             auto layer = layers[layer_index];
             foreach (neuron_index, neuron; layer.neurons){
-                Neuron north, east, west, south, middle;
+                Neuron player_north, player_east, player_west, player_south, player_middle;
+                Neuron opponent_north, opponent_east, opponent_west, opponent_south, opponent_middle;
                 bool is_central;
-                get_neighbours(layer_index, neuron_index, north, east, west, south, middle, is_central);
-                if (middle !is null){
+                get_neighbours(
+                    layer_index, neuron_index,
+                    player_north, player_east, player_west, player_south, player_middle,
+                    opponent_north, opponent_east, opponent_west, opponent_south, opponent_middle,
+                    is_central
+                );
+                if (player_middle !is null){
                     if (is_central){
-                        neuron.add_input(middle, 1);
+                        neuron.add_input(player_middle, 1);
                     }
                     else{
-                        neuron.add_input(middle, 0.5);
+                        neuron.add_input(player_middle, 0.5);
                     }
                 }
-                foreach (ref neighbour; [north, east, west, south]){
+                foreach (ref neighbour; [player_north, player_east, player_west, player_south, opponent_north, opponent_east, opponent_west, opponent_south, opponent_middle]){
                     if (neighbour !is null){
                         neuron.add_input(neighbour, 0);
                     }
@@ -220,8 +265,10 @@ struct Network(T)
     void activate(T player, T opponent, float noise_level=0)
     {
         input_layer.get_input(player, opponent);
-        foreach (ref neuron; input_layer.layer.neurons){
-            neuron.activation += 2 * uniform01 * noise_level - noise_level;
+        if (noise_level != 0){
+            foreach (ref neuron; input_layer.layer.neurons){
+                neuron.activation += 2 * uniform01 * noise_level - noise_level;
+            }
         }
         foreach (layer; layers){
             layer.activate;
@@ -231,9 +278,14 @@ struct Network(T)
     float get_sum()
     {
         float sum = 0.0;
-        foreach (ref neuron; layers[$ - 1].neurons){
+        foreach (index, ref neuron; layers[$ - 1].neurons){
             if (neuron !is null){
-                sum += neuron.activation;
+                if (index & 1){
+                    sum -= neuron.activation;
+                }
+                else{
+                    sum += neuron.activation;
+                }
             }
         }
         return sum;
@@ -368,10 +420,38 @@ struct Network(T)
 
         return network;
     }
+
+    static from_file(string file_name){
+        File file = File(file_name, "r");
+        auto line = file.readln;
+        return Network!T.from_string(line);
+    }
+
+    float get_score(S)(S state, float noise_level=0)
+    {
+        float score = 0;
+
+        activate(state.opponent, state.player, noise_level);
+        score += get_sum;
+        state.mirror_v;
+        state.snap;
+        activate(state.opponent, state.player, noise_level);
+        score += get_sum;
+        state.mirror_h;
+        state.snap;
+        activate(state.opponent, state.player, noise_level);
+        score += get_sum;
+        state.mirror_v;
+        state.snap;
+        activate(state.opponent, state.player, noise_level);
+        score += get_sum;
+
+        return score;
+    }
+
 }
 
 alias Network8 = Network!Board8;
-
 
 float fight(T)(DefenseState!T state, Network!T network0, Network!T network1, float noise_level=0, int depth=1000, bool print=false)
 {
@@ -388,30 +468,16 @@ float fight(T)(DefenseState!T state, Network!T network0, Network!T network1, flo
     float best_score = -float.infinity;
     foreach (child; state.children){
         child.analyze_unconditional;
-        float score = 0;
-        network0.activate(child.opponent, child.player, noise_level);
-        score += network0.get_sum;
-        child.mirror_v;
-        child.snap;
-        network0.activate(child.opponent, child.player, noise_level);
-        score += network0.get_sum;
-        child.mirror_h;
-        child.snap;
-        network0.activate(child.opponent, child.player, noise_level);
-        score += network0.get_sum;
-        child.mirror_v;
-        child.snap;
-        network0.activate(child.opponent, child.player, noise_level);
-        score += network0.get_sum;
+        float score = network0.get_score!(DefenseState!T)(state, noise_level);
         if (score > best_score){
             best_child = child;
             best_score = score;
         }
     }
-    if (print){
-        best_child.mirror_h;
-        best_child.snap;
-    }
+    //if (print){
+    //    best_child.mirror_h;
+    //    best_child.snap;
+    //}
     return fight!T(best_child, network1, network0, noise_level, depth - 1, print);
 }
 
@@ -432,16 +498,19 @@ void tournament(T)(
 
     foreach(iteration; 0..iterations){
         float[] scores;
-        foreach (index, ref network0; networks){
+        foreach (ref network0; networks){
             scores ~= 0;
-            foreach (index1; index + 1..networks.length){
+        }
+        foreach (index0, ref network0; networks){
+            foreach (index1; index0 + 1..networks.length){
                 auto network1 = networks[index1];
                 float score0 = fight(state, network0, network1, noise_level, depth);
                 float score1 = fight(state, network1, network0, noise_level, depth);
-                scores[index] += score0 - score1;
+                scores[index0] += score0 - score1;
+                scores[index1] += score1 - score0;
             }
+            scores[index0] += uniform01 * 0.01;
         }
-        writeln(scores);
 
         float best_score = -float.infinity;
         float worst_score = float.infinity;
@@ -458,6 +527,11 @@ void tournament(T)(
                 new_network = networks[index].copy;
             }
         }
+
+        foreach (ref score; scores){
+            score = floor(score);
+        }
+        writeln(scores);
 
         foreach(i; 0..mutation_count){
             new_network.mutate(mutation_level);

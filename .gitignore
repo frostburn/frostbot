@@ -1,4 +1,5 @@
 main
+train_6x5
 *.o
 trace.def
 trace.log
