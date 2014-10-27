@@ -15,7 +15,7 @@ import defense_state;
 import defense_search_state;
 import defense;
 import eyeshape;
-//import monte_carlo;
+import monte_carlo;
 import heuristic;
 import fast_math;
 import ann;
@@ -89,11 +89,50 @@ void main()
     Transposition[CanonicalState8] empty2;
     auto transposition_table = &empty2;
 
+    TreeNode8[CanonicalState8] empty3;
+    auto node_pool = &empty3;
+
+    /*
     auto s = State8(rectangle8(4, 4));
 
     auto ss = new SearchState8(s, transposition_table, defense_transposition_table);
     ss.iterative_deepening(1, 36);
     writeln(ss);
+    */
+
+    /*
+    auto ss = State8(rectangle8(4, 3));
+    ss.player = Board8(0, 0) | Board8(2, 0);
+    ss.opponent = Board8(1, 0) | Board8(1, 1) | Board8(2, 1) | Board8(2, 2);
+    auto cs = CanonicalState8(ss);
+    writeln(cs);
+    auto result = analyze_state!(Board8, CanonicalState8)(cs, Board8(), Board8(), defense_transposition_table);
+    writeln(result);
+    assert(1 ==2);
+    */
+
+    auto s = State8(rectangle8(4, 3));
+    s.make_move(Board8(1, 1));
+    s.make_move(Board8(2, 1));
+    s.make_move(Board8(2, 0));
+    s.make_move(Board8(2, 2));
+    auto n = new TreeNode8(s, node_pool, defense_transposition_table);
+
+    //auto s = n.default_playout_statistics(10000);
+    //writeln(s);
+
+    foreach (j; 0..4000){
+        foreach (i; 0..100){
+            n.playout;
+            //writeln("p");
+        }
+        foreach (c; n.children){
+            writeln("c:", c.value);
+        }
+        writeln(n.statistics);
+        writeln(n.best_child);
+    }
+    writeln(n);
 
     /*
     File file = File("networks/4x4_network_5.txt", "r");

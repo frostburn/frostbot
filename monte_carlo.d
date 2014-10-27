@@ -5,11 +5,13 @@ import std.string;
 import std.random;
 import std.conv;
 import std.math;
+import std.array;
 
 import utils;
 import board8;
 import state;
 import defense_state;
+import defense_search_state;
 import defense;
 
 struct DefaultNode(T, S)
@@ -25,6 +27,11 @@ struct DefaultNode(T, S)
     }
 
     this(S state, T player_secure, T opponent_secure, T[] moves)
+    in
+    {
+        assert(state.black_to_play);
+    }
+    body
     {
         this.state = state;
         this.player_secure = player_secure;
@@ -86,6 +93,10 @@ struct DefaultNode(T, S)
             if (state.is_leaf){
                 break;
             }
+            // Accentuate first move advantage.
+            if (!state.black_to_play && i < 4){
+                state.swap_turns;
+            }
             ko1 = ko2;
             ko2 = state.ko;
         }
@@ -105,20 +116,21 @@ alias DefaultNode8 = DefaultNode!(Board8, State8);
 struct Statistics
 {
     ulong[] bins;
+    ulong confidence = 0;
 
     private
     {
         int shift;
     }
 
-    float lower_bound() @property
+    int lower_bound() @property
     {
         return -shift;
     }
 
-    float upper_bound() @property
+    int upper_bound() @property
     {
-        return (cast(float)bins.length) - shift - 1;
+        return (cast(int)bins.length) - shift - 1;
     }
 
     this(int lower_bound, int upper_bound)
@@ -130,26 +142,46 @@ struct Statistics
     {
         bins.length = upper_bound - lower_bound + 1;
         shift = -lower_bound;
+        if (lower_bound == upper_bound){
+            bins[0] = ulong.max;
+            confidence = ulong.max;
+        }
     }
 
     void set_bounds(int lower_bound, int upper_bound)
     in
     {
-        assert(lower_bound >= this.lower_bound);
-        assert(upper_bound <= this.upper_bound);
+        assert(lower_bound <= upper_bound);
     }
     body
     {
-        size_t lower_index = lower_bound + shift;
-        size_t upper_index = upper_bound + shift + 1;
-        bins = bins[lower_index..upper_index];
-        shift = lower_bound;
+        if (lower_bound > this.lower_bound || upper_bound < this.upper_bound){
+            if (lower_bound < this.lower_bound){
+                lower_bound = this.lower_bound;
+            }
+            if (upper_bound > this.upper_bound){
+                upper_bound = this.upper_bound;
+            }
+            size_t lower_index = lower_bound + shift;
+            size_t upper_index = upper_bound + shift + 1;
+            bins = bins[lower_index..upper_index];
+            shift = -lower_bound;
+            if (lower_bound == upper_bound){
+                bins[0] = ulong.max;
+            }
+
+            confidence = 0;
+            foreach (bin; bins){
+                confidence += bin;
+            }
+        }
     }
 
-    void add_value(float value)
+    float add_value(float value)
     in
     {
         //assert(value == -float.infinity || value == float.infinity || (value + shift >= 0 && value + shift < bins.length));
+        assert(confidence < ulong.max);
     }
     body
     {
@@ -162,29 +194,30 @@ struct Statistics
         }
         else{
             */
-        size_t index = to!size_t(value + shift);
+        float index = value + shift;
         if (index < 0){
             index = 0;
         }
         else if (index >= bins.length){
             index = bins.length - 1;
         }
-        bins[index]++;
+        bins[to!size_t(index)]++;
+        confidence++;
+
+        return index - shift;
     }
 
     float average()
     {
         float e = 0;
-        float total = 0;
         foreach (index, bin; bins){
-            e += (index - shift) * bin;
-            total += bin;
+            e += (to!float(index) - shift) * bin;
         }
-        if (total == 0){
+        if (confidence == 0){
             return -shift;
         }
         else{
-            return e / total;
+            return e / confidence;
         }
     }
 
@@ -218,10 +251,17 @@ struct Statistics
         }
         enum height = 20;
 
+
         string r;
         foreach (y; 0..height){
             foreach (x; 0..bins.length){
-                auto bin_height = (8 * height * bins[x]) / max;
+                size_t bin_height;
+                if (max < ulong.max / 8 / height){
+                    bin_height = (8 * height * bins[x]) / max;
+                }
+                else{
+                    bin_height = (8 * height) * (bins[x] / max);
+                }
                 auto target_height = 8 * (height - y);
                 if (bin_height >= target_height){
                     r ~= "█";
@@ -265,9 +305,9 @@ class TreeNode(T, S, C)
     T opponent_secure;
     Statistics statistics;
     ulong visits = 1;
-    bool is_final;
 
     TreeNode!(T, S, C)[] children;
+    TreeNode!(T, S, C)[C] parents;
     TreeNode!(T, S, C)[C] *node_pool;
 
     alias DefenseTranspositionTable = Transposition[DefenseState!T];
@@ -278,14 +318,24 @@ class TreeNode(T, S, C)
         T[] moves;
     }
 
-    float lower_bound() @property
+    int lower_bound() @property
     {
-        return this.statistics.lower_bound;
+        return statistics.lower_bound;
     }
 
-    float upper_bound() @property
+    int upper_bound() @property
     {
-        return this.statistics.upper_bound;
+        return statistics.upper_bound;
+    }
+
+    ulong confidence() @property
+    {
+        return statistics.confidence;
+    }
+
+    bool is_final() @property
+    {
+        return lower_bound == upper_bound;
     }
 
     this (T playing_area, TreeNode!(T, S, C)[C] *node_pool=null, DefenseTranspositionTable *defense_transposition_table=null)
@@ -307,8 +357,6 @@ class TreeNode(T, S, C)
         this.state = state;
         this.defense_transposition_table = defense_transposition_table;
         if (state.is_leaf){
-            visits = ulong.max;
-            is_final = true;
             this.statistics = Statistics(to!int(result.score), to!int(result.score));
         }
         else{
@@ -342,8 +390,9 @@ class TreeNode(T, S, C)
             return this.value;
         }
         else{
+            assert(visits < ulong.max);
             float value;
-            if (visits < 12 || (history !is null && state in history)){
+            if (visits < 20 || (history !is null && state in history)){
                 auto default_node = DefaultNode!(T, S)(state.state, player_secure, opponent_secure, moves);
                 default_node.playout;
                 value = default_node.value;
@@ -351,12 +400,19 @@ class TreeNode(T, S, C)
             else{
                 auto my_history = new HistoryNode!C(state, history);
                 auto child = choose_child;
+                if (child is null){
+                    return this.value;
+                }
                 value = -child.playout(my_history);
-                update_bounds;
             }
-            statistics.add_value(value);
-            visits++;
-            return value;
+            if (!is_final){
+                value = statistics.add_value(value);
+                visits++;
+                return value;
+            }
+            else{
+                return this.value;
+            }
         }
     }
 
@@ -383,10 +439,17 @@ class TreeNode(T, S, C)
                 }
             }
 
-            statistics.set_bounds(new_lower_bound, new_upper_bound);
+            debug (update_bounds){
+                foreach (child; children){
+                    writeln("c: ", child.lower_bound, ", ", child.upper_bound);
+                }
+                writeln(to!int(new_lower_bound));
+                writeln(to!int(new_upper_bound));
+            }
+            statistics.set_bounds(to!int(new_lower_bound), to!int(new_upper_bound));
         }
 
-        bool changed = old_lower_bound != lower_bound || old_upper_bound != upper_bound;
+        return old_lower_bound != lower_bound || old_upper_bound != upper_bound;
     }
 
     float value()
@@ -394,23 +457,59 @@ class TreeNode(T, S, C)
         return statistics.average;
     }
 
+    void update_parents()
+    {
+        debug(update_parents) {
+            writeln("Updating parents for:");
+            writeln(this);
+        }
+        TreeNode!(T, S, C)[] queue;
+        foreach (parent; parents.byValue){
+            queue ~= parent;
+        }
+
+        while (queue.length){
+            auto tree_node = queue.front;
+            queue.popFront;
+            debug(update_parents) {
+                writeln("Updating parents for:");
+                writeln(tree_node);
+            }
+            bool changed = tree_node.update_bounds;
+            if (changed){
+                foreach (parent; tree_node.parents){
+                    queue ~= parent;
+                }
+            }
+        }
+    }
+
     TreeNode!(T, S, C) choose_child()
     {
         if (!children.length){
             make_children;
+            bool changed = update_bounds;
+            if (changed){
+                update_parents;
+            }
+            if (is_final){
+                return null;
+            }
         }
 
         TreeNode!(T, S, C)[] valid_children;
         foreach (child; children){
-            if (-child.lower_bound >= lower_bound){
+            if (!child.is_final && -child.lower_bound >= lower_bound){
                 valid_children ~= child;
             }
         }
 
+        assert(valid_children.length);
+
 
         TreeNode!(T, S, C)[] young_children;
         foreach (child; valid_children){
-            if (child.visits < 42){
+            if (child.visits < 20){
                 young_children ~= child;
             }
         }
@@ -423,7 +522,7 @@ class TreeNode(T, S, C)
         enum exploration_constant = 7.0;
 
         foreach (child; valid_children){
-            float child_value = -child.value + exploration_constant * sqrt(log(visits) / child.visits);
+            float child_value = -child.value + exploration_constant * sqrt(log(visits) / (child.confidence + 1));
             //writeln(child_value);
             if (child_value >= best_value){
                 best_value = child_value;
@@ -456,10 +555,13 @@ class TreeNode(T, S, C)
     {
         foreach (child_state; state.children(moves)){
             if (node_pool !is null && child_state in *node_pool){
-                children ~= (*node_pool)[child_state];
+                auto child = (*node_pool)[child_state];
+                child.parents[state] = this;
+                children ~= child;
             }
             else{
                 auto child = new TreeNode!(T, S, C)(child_state, node_pool);
+                child.parents[state] = this;
                 children ~= child;
                 if (node_pool !is null){
                     (*node_pool)[child_state] = child;
@@ -477,6 +579,7 @@ class TreeNode(T, S, C)
         TreeNode!(T, S, C) best_child;
         float best_value = -float.infinity;
 
+        // TODO: Factor in confidence.
         foreach (child; children){
             if (-child.value >= best_value){
                 best_value = -child.value;
@@ -489,9 +592,9 @@ class TreeNode(T, S, C)
     override string toString()
     {
         return format(
-            "%s\nvalue=%s, visits=%s, leaf=%s, number of children=%s",
+            "%s\nlower bound=%s, upper_bound=%s, value=%s, visits=%s, final=%s, number of children=%s",
             state._toString(T(), T(), player_secure, opponent_secure),
-            value, visits, is_leaf, children.length
+            lower_bound, upper_bound, value, visits, is_final, children.length
         );
     }
 }
