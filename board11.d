@@ -2,6 +2,7 @@ module board11;
 
 import std.stdio;
 import std.string;
+import core.simd;
 
 import utils;
 import polyomino;
@@ -26,7 +27,6 @@ struct Board11
     {
         return !(north_bits & OUTSIDE) && !(south_bits & OUTSIDE);
     }
-
 
     this(ulong north_bits, ulong south_bits, bool dummy) pure nothrow @nogc @safe
     {
@@ -183,48 +183,89 @@ struct Board11
     }
     body
     {
-        ulong north_temp;
-        ulong south_temp;
-        ulong target_north_bits = target.north_bits;
-        ulong target_south_bits = target.south_bits;
+        static if (is(ulong2) && false){  // Disabled because this is actually slower thatn the non-vectorized version
+            ulong2 bits, target_bits;
+            bits.array[0] = north_bits;
+            bits.array[1] = south_bits;
+            target_bits.array[0] = target.north_bits;
+            target_bits.array[1] = target.south_bits;
 
-        north_bits &= target_north_bits;
-        south_bits &= target_south_bits;
-        if (!north_bits && !south_bits){
-            return this;
-        }
+            bits &= target_bits;
+            if (!bits.array[0] && !bits.array[1]){
+                north_bits = EMPTY;
+                south_bits = EMPTY;
+                return this;
+            }
 
-        string east_flood(string direction)
-        {
             // The "+" operation can be thought as an infinite inverting horizontal flood with a garbage bit at each end.
             // Here we invert it back and clear the garbage bits by "&":ing with the target.
-            return direction ~ "_bits |= (~(" ~ direction ~ "_bits + target_" ~ direction ~ "_bits)) & target_" ~ direction ~ "_bits;";
-        }
+            bits |= (~(bits + target_bits)) & target_bits;
 
-        string rest_of_the_flood(string direction, string other)
-        {
-            return "
-                " ~ direction ~ "_bits |= (
-                    (" ~ direction ~ "_bits >> H_SHIFT) |
-                    (" ~ direction ~ "_bits << V_SHIFT) |
-                    (" ~ direction ~ "_bits >> V_SHIFT) |
-                    (" ~ other ~ "_temp & FLOOD_LINE)
-                ) & target_" ~ direction ~ "_bits;
-            ";
-        }
+            do{
+                north_bits = bits.array[0];
+                south_bits = bits.array[1];
+                bits.array[0] |= (
+                    (bits.array[0] >> H_SHIFT) |
+                    (bits.array[0] << V_SHIFT) |
+                    (bits.array[0] >> V_SHIFT) |
+                    (bits.array[1] & FLOOD_LINE)
+                );
+                bits.array[1] |= (
+                    (bits.array[1] >> H_SHIFT) |
+                    (bits.array[1] << V_SHIFT) |
+                    (bits.array[1] >> V_SHIFT) |
+                    (bits.array[0] & FLOOD_LINE)
+                );
+                bits &= target_bits;
+                bits |= (~(bits + target_bits)) & target_bits;
+            } while(bits.array[0] != north_bits || bits.array[1] != south_bits);
 
-        mixin(east_flood("north"));
-        mixin(east_flood("south"));
-        do{
-            north_temp = north_bits;
-            south_temp = south_bits;
-            mixin(rest_of_the_flood("north", "south"));
-            mixin(rest_of_the_flood("south", "north"));
+            return this;
+        }
+        else {
+            ulong north_temp;
+            ulong south_temp;
+            ulong target_north_bits = target.north_bits;
+            ulong target_south_bits = target.south_bits;
+
+            north_bits &= target_north_bits;
+            south_bits &= target_south_bits;
+            if (!north_bits && !south_bits){
+                return this;
+            }
+
+            string east_flood(string direction)
+            {
+                // The "+" operation can be thought as an infinite inverting horizontal flood with a garbage bit at each end.
+                // Here we invert it back and clear the garbage bits by "&":ing with the target.
+                return direction ~ "_bits |= (~(" ~ direction ~ "_bits + target_" ~ direction ~ "_bits)) & target_" ~ direction ~ "_bits;";
+            }
+
+            string rest_of_the_flood(string direction, string other)
+            {
+                return "
+                    " ~ direction ~ "_bits |= (
+                        (" ~ direction ~ "_bits >> H_SHIFT) |
+                        (" ~ direction ~ "_bits << V_SHIFT) |
+                        (" ~ direction ~ "_bits >> V_SHIFT) |
+                        (" ~ other ~ "_temp & FLOOD_LINE)
+                    ) & target_" ~ direction ~ "_bits;
+                ";
+            }
+
             mixin(east_flood("north"));
             mixin(east_flood("south"));
-        } while(north_bits != north_temp || south_bits != south_temp);
+            do{
+                north_temp = north_bits;
+                south_temp = south_bits;
+                mixin(rest_of_the_flood("north", "south"));
+                mixin(rest_of_the_flood("south", "north"));
+                mixin(east_flood("north"));
+                mixin(east_flood("south"));
+            } while(north_bits != north_temp || south_bits != south_temp);
 
-        return this;
+            return this;
+        }
     }
 
     string toString()
@@ -289,6 +330,9 @@ struct Board11
     alias toBool this;
 }
 
+
+immutable Board11 full11 = Board11(Board11.FULL, Board11.FULL, true);
+immutable Board11 empty11 = Board11(Board11.EMPTY, Board11.EMPTY, true);
 
 void print_constants()
 {

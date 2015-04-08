@@ -587,6 +587,9 @@ DefenseAnalysisResult!T analyze_state_light(T, C)(C state, T player_secure, T op
     }
 
     float score = controlled_liberty_score!(T, C)(state, T(), T(), T(), T(), player_secure, opponent_secure);
+    if (state.passes == 1){
+        lower_bound = score;
+    }
 
     return DefenseAnalysisResult!T(player_secure, opponent_secure, T(), T(), T(), lower_bound, upper_bound, score);
 }

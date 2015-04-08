@@ -1,6 +1,7 @@
 import std.stdio;
 import std.string;
 import std.format;
+import std.math;
 import core.thread;
 
 import utils;
@@ -19,6 +20,7 @@ import monte_carlo;
 import heuristic;
 import fast_math;
 import ann;
+import likelyhood;
 
 /*
 void print_state(SearchState!Board8 ss, int depth){
@@ -89,7 +91,7 @@ void main()
     Transposition[CanonicalState8] empty2;
     auto transposition_table = &empty2;
 
-    TreeNode8[CanonicalState8] empty3;
+    LikelyhoodNode8[CanonicalState8] empty3;
     auto node_pool = &empty3;
 
     /*
@@ -111,28 +113,104 @@ void main()
     assert(1 ==2);
     */
 
-    auto s = State8(rectangle8(4, 3));
+    int width = 4;
+    int height = 4;
+    auto s = State8(rectangle8(width, height));
+    s.player = rectangle8(1, 4).east(2);
+    s.opponent = rectangle8(2, 4) & ~rectangle8(1, 3) | Board8(3, 1);
+    //s.make_move(Board8(1, 1));
+    //s.make_move(Board8(2, 1));
+    /*
     s.make_move(Board8(1, 1));
-    s.make_move(Board8(2, 1));
-    s.make_move(Board8(2, 0));
     s.make_move(Board8(2, 2));
-    auto n = new TreeNode8(s, node_pool, defense_transposition_table);
+    s.make_move(Board8(2, 1));
+    s.make_move(Board8(1, 2));
+    s.make_move(Board8(0, 2));
+    s.make_move(Board8(3, 1));
+    s.make_move(Board8(1, 3));
+    */
+    auto prior = Likelyhood(-width * height, width * height);
+    prior.bins[] = 1.0;
+    auto n = new LikelyhoodNode8(s, prior, node_pool);
+
+    foreach (k; 0..30){
+        foreach (i; 0..1){
+            foreach (j; 0..400){
+                n.refine;
+            }
+            writeln(n);
+            foreach (child; n.children){
+                writeln(child.value);
+            }
+
+            //writeln(n.choose_child);
+            writeln(n.prior);
+            //writeln(n.prior.bins);
+            //writeln(n.children[$-2].prior);
+            //writeln(n.children[$-1].prior);
+            //foreach (child; n.children[$-1].children){
+            //    writeln(child.value);
+            //}
+        }
+        n = n.best_child;
+        if (n is null){
+            break;
+        }
+    }
+
+    /*
+    int i = 0;
+    while (n.visits && n.children.length && i < 20){
+        n = n.best_child;
+        writeln(n);
+        writeln(n.prior.bins);
+        i++;
+    }
+    */
+
+    /*
+    auto a = Board11(0, 2);
+    auto b = Board11(3234723127743788234UL, 21231223479387123UL, true) & Board11.FULL;
+    foreach (i; 0..100000000){
+        a = Board11(0, 2);
+        a.flood_into(b);
+    }
+    writeln(a);
+    */
 
     //auto s = n.default_playout_statistics(10000);
     //writeln(s);
 
-    foreach (j; 0..4000){
-        foreach (i; 0..100){
+    /*
+    foreach (j; 0..100){
+        foreach (i; 0..1000){
             n.playout;
             //writeln("p");
         }
-        foreach (c; n.children){
-            writeln("c:", c.value);
-        }
+        //foreach (c; n.children){
+        //    writeln("c:", c.value);
+        //}
         writeln(n.statistics);
-        writeln(n.best_child);
+        writeln(n);
+        //writeln(n.statistics.decay_average);
+        //writeln(n.best_child);
+        n = n.best_child;
     }
+    */
+
+    /*
+    auto l = Likelyhood(-3, 4);
+    l.add_value(2);
+    l.add_value(2);
+    l.add_value(3);
+    auto n = negamax([l, l]);
+    writeln(l);
+    writeln(l.bins);
     writeln(n);
+    writeln(n.bins);
+    auto r = negamax_root(l, 3, 20);
+    writeln(negamax([r, r, r]));
+    */
 
     /*
     File file = File("networks/4x4_network_5.txt", "r");

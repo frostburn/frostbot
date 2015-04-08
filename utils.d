@@ -23,7 +23,8 @@ version(no_popcnt){
 else{
     int popcnt (ulong bits) pure nothrow @nogc @trusted
     {
-        asm {
+        asm pure nothrow @nogc @trusted
+        {
            mov RAX, bits ;
            popcnt RAX, RAX ;
         }

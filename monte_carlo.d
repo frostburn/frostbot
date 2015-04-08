@@ -118,6 +118,8 @@ struct Statistics
     ulong[] bins;
     ulong confidence = 0;
 
+    float[] decay_bins;
+
     private
     {
         int shift;
@@ -141,10 +143,13 @@ struct Statistics
     body
     {
         bins.length = upper_bound - lower_bound + 1;
+        decay_bins.length = bins.length;
+        decay_bins[] = 0;
         shift = -lower_bound;
         if (lower_bound == upper_bound){
             bins[0] = ulong.max;
             confidence = ulong.max;
+            decay_bins[0] = float.infinity;
         }
     }
 
@@ -165,9 +170,11 @@ struct Statistics
             size_t lower_index = lower_bound + shift;
             size_t upper_index = upper_bound + shift + 1;
             bins = bins[lower_index..upper_index];
+            decay_bins = decay_bins[lower_index..upper_index];
             shift = -lower_bound;
             if (lower_bound == upper_bound){
                 bins[0] = ulong.max;
+                decay_bins[0] = float.infinity;
             }
 
             confidence = 0;
@@ -203,6 +210,11 @@ struct Statistics
         }
         bins[to!size_t(index)]++;
         confidence++;
+        decay_bins[to!size_t(index)] += 1.0;
+        // TODO: Optimize: Instead of decaying each bin add the new value exponentially multiplied.
+        foreach (ref decay_bin; decay_bins){
+            decay_bin *= 0.9995;
+        }
 
         return index - shift;
     }
@@ -218,6 +230,22 @@ struct Statistics
         }
         else{
             return e / confidence;
+        }
+    }
+
+    float decay_average()
+    {
+        float e = 0;
+        float total = 0;
+        foreach (index, decay_bin; decay_bins){
+            e += (to!float(index) - shift) * decay_bin;
+            total += decay_bin;
+        }
+        if (total == 0 || total == float.infinity){
+            return -shift;
+        }
+        else{
+            return e / total;
         }
     }
 
@@ -351,7 +379,8 @@ class TreeNode(T, S, C)
     this (C state, TreeNode!(T, S, C)[C] *node_pool=null, DefenseTranspositionTable *defense_transposition_table=null)
     {
         state.analyze_unconditional(player_secure, opponent_secure);
-        auto result = analyze_state!(T, C)(state, player_secure, opponent_secure, defense_transposition_table);
+        //auto result = analyze_state!(T, C)(state, player_secure, opponent_secure, defense_transposition_table);
+        auto result = analyze_state_light!(T, C)(state, player_secure, opponent_secure);
         player_secure = result.player_secure;
         opponent_secure = result.opponent_secure;
         this.state = state;
@@ -454,7 +483,7 @@ class TreeNode(T, S, C)
 
     float value()
     {
-        return statistics.average;
+        return statistics.average * 0.6 + statistics.decay_average * 0.4;
     }
 
     void update_parents()
