@@ -16,11 +16,12 @@ import defense_state;
 import defense_search_state;
 import defense;
 import eyeshape;
-import monte_carlo;
+static import monte_carlo;
 import heuristic;
 import fast_math;
 import ann;
 import likelyhood;
+import wdl_node;
 
 /*
 void print_state(SearchState!Board8 ss, int depth){
@@ -81,6 +82,19 @@ void print_path(SearchState8 ss, int depth){
 }
 */
 
+
+void expand_to(WDLNode8 root, int depth)
+{
+    if (depth <= 0){
+        return;
+    }
+    root.make_children;
+    foreach (child; root.children){
+        expand_to(child, depth - 1);
+    }
+}
+
+
 void main()
 {
     writeln("main");
@@ -91,7 +105,7 @@ void main()
     Transposition[CanonicalState8] empty2;
     auto transposition_table = &empty2;
 
-    LikelyhoodNode8[CanonicalState8] empty3;
+    WDLNode8[CanonicalState8] empty3;
     auto node_pool = &empty3;
 
     /*
@@ -113,11 +127,18 @@ void main()
     assert(1 ==2);
     */
 
-    int width = 4;
-    int height = 4;
+    auto stats = Statistics(-3.5, 2.5);
+    stats.add_value(0.5);
+    stats.add_value(-3.5);
+    stats.add_value(2.5);
+    writeln(stats);
+
+    int width = 3;
+    int height = 3;
     auto s = State8(rectangle8(width, height));
-    s.player = rectangle8(1, 4).east(2);
-    s.opponent = rectangle8(2, 4) & ~rectangle8(1, 3) | Board8(3, 1);
+    s.value_shift = 0;
+    //s.player = rectangle8(1, 4).east(2);
+    //s.opponent = rectangle8(2, 4) & ~rectangle8(1, 3) | Board8(3, 1);
     //s.make_move(Board8(1, 1));
     //s.make_move(Board8(2, 1));
     /*
@@ -129,13 +150,42 @@ void main()
     s.make_move(Board8(3, 1));
     s.make_move(Board8(1, 3));
     */
+    auto n = new WDLNode8(s, node_pool);
+    int N = 5000;
+
+    foreach (k; 1..20){
+        expand_to(n, k);
+        //writeln("sampling...");
+        n.sample_to(N);
+        writeln("depth=", k);
+        writeln(n);
+        foreach (child; n.children){
+            child.sample_to(N);
+            writeln(" ", child.lower);
+        }
+    }
+
+    /*
+    foreach (k; 0..500){
+        foreach (i; 0..10000){
+            n.sample;
+        }
+        writeln(n);
+        foreach (child; n.children){
+            writeln(" ", child.lower);
+        }
+        n.expand;
+    }
+    */
+
+    /*
     auto prior = Likelyhood(-width * height, width * height);
     prior.bins[] = 1.0;
     auto n = new LikelyhoodNode8(s, prior, node_pool);
 
-    foreach (k; 0..30){
-        foreach (i; 0..1){
-            foreach (j; 0..400){
+    foreach (k; 0..40){
+        foreach (i; 0..15){
+            foreach (j; 0..600){
                 n.refine;
             }
             writeln(n);
@@ -157,6 +207,7 @@ void main()
             break;
         }
     }
+    */
 
     /*
     int i = 0;
@@ -171,9 +222,15 @@ void main()
     /*
     auto a = Board11(0, 2);
     auto b = Board11(3234723127743788234UL, 21231223479387123UL, true) & Board11.FULL;
-    foreach (i; 0..100000000){
+    auto c = Board11(1, 0);
+    c.flood_into(b);
+    writeln(c);
+    foreach (i; 0..10000000){
         a = Board11(0, 2);
         a.flood_into(b);
+        if (a != c){
+            writeln(a);
+        }
     }
     writeln(a);
     */

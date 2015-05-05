@@ -373,7 +373,7 @@ class LikelyhoodNode(T, S, C)
 
     void playout()
     {
-        enum rounds = 100;
+        enum rounds = 40;
         Likelyhood[] sub_priors;
         foreach (i; 0..totalCPUs){
             sub_priors ~= Likelyhood(prior.lower_bound, prior.upper_bound, prior.delta);
@@ -405,7 +405,7 @@ class LikelyhoodNode(T, S, C)
         }
         else{
             assert(visits < ulong.max);
-            if (visits < 4 || (history !is null && state in history)){
+            if (visits < 1 || (history !is null && state in history)){
                 playout;
             }
             else{
@@ -429,7 +429,8 @@ class LikelyhoodNode(T, S, C)
             child_priors ~= child.prior;
         }
 
-        this.prior = negamax(child_priors, 0.4 + 0.5 / (1.0 + log(0.1 * visits + 1)));
+        //this.prior = negamax(child_priors, 0.4 + 0.5 / (1.0 + log(0.1 * visits + 1)));
+        this.prior = negamax(child_priors, 0.9);
     }
 
     /*
@@ -570,7 +571,7 @@ class LikelyhoodNode(T, S, C)
                 children ~= child;
             }
             else{
-                Likelyhood child_prior = negamax_root(prior, child_states.length, 20, 0.8);
+                Likelyhood child_prior = negamax_root(prior, child_states.length, 10, 0.9);
                 if (child_state.passes == 1){
                     child_prior.adjust(2);
                 }

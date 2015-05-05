@@ -59,6 +59,11 @@ struct DefaultNode(T, S)
         T ko1;
         T ko2;
 
+        if (!moves.length){
+            value = controlled_liberty_score(state, T(), T(), T(), T(), player_secure, opponent_secure);
+            return;
+        }
+
         foreach (i; 0..trials){
             size_t r = uniform!size_t;
             T move;

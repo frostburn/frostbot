@@ -205,16 +205,16 @@ struct Board11
                 north_bits = bits.array[0];
                 south_bits = bits.array[1];
                 bits.array[0] |= (
-                    (bits.array[0] >> H_SHIFT) |
-                    (bits.array[0] << V_SHIFT) |
-                    (bits.array[0] >> V_SHIFT) |
-                    (bits.array[1] & FLOOD_LINE)
+                    (north_bits >> H_SHIFT) |
+                    (north_bits << V_SHIFT) |
+                    (north_bits >> V_SHIFT) |
+                    (south_bits & FLOOD_LINE)
                 );
                 bits.array[1] |= (
-                    (bits.array[1] >> H_SHIFT) |
-                    (bits.array[1] << V_SHIFT) |
-                    (bits.array[1] >> V_SHIFT) |
-                    (bits.array[0] & FLOOD_LINE)
+                    (south_bits >> H_SHIFT) |
+                    (south_bits << V_SHIFT) |
+                    (south_bits >> V_SHIFT) |
+                    (north_bits & FLOOD_LINE)
                 );
                 bits &= target_bits;
                 bits |= (~(bits + target_bits)) & target_bits;

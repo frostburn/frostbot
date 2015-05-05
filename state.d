@@ -15,6 +15,7 @@ struct State(T)
     T ko;
     bool black_to_play = true;
     int passes;
+    float value_shift = 0;
 
     this(T playing_area)
     {
@@ -74,7 +75,8 @@ struct State(T)
             (playing_area == rhs.playing_area) &&
             (ko == rhs.ko) &&
             (black_to_play == rhs.black_to_play) &&
-            (passes == rhs.passes)
+            (passes == rhs.passes) &&
+            (value_shift == rhs.value_shift)
         );
     }
 
@@ -99,6 +101,12 @@ struct State(T)
         if (passes != rhs.passes){
             return passes - rhs.passes;
         }
+        if (value_shift < rhs.value_shift){
+            return -1;
+        }
+        if (value_shift > rhs.value_shift){
+            return 1;
+        }
         mixin(compare_member("ko"));
         mixin(compare_member("playing_area"));
 
@@ -115,7 +123,8 @@ struct State(T)
             playing_area.toHash ^
             ko.toHash ^
             typeid(black_to_play).getHash(&black_to_play) ^
-            typeid(passes).getHash(&passes)
+            typeid(passes).getHash(&passes) ^
+            typeid(value_shift).getHash(&value_shift)
         );
     }
 
@@ -189,6 +198,7 @@ struct State(T)
     void flip_colors()
     {
         black_to_play = !black_to_play;
+        value_shift = -value_shift;
     }
 
     void swap_turns()
@@ -273,7 +283,7 @@ struct State(T)
 
     float liberty_score()
     {
-        float score = 0;
+        float score = value_shift;
 
         score += player.popcount;
         score -= opponent.popcount;
@@ -479,11 +489,6 @@ struct State(T)
     }
 
     float target_score()
-    {
-        return 0;
-    }
-
-    int value_shift()
     {
         return 0;
     }
@@ -709,6 +714,11 @@ struct CanonicalState(T)
         return state.black_to_play;
     }
 
+    float value_shift() const @property
+    {
+        return state.value_shift;
+    }
+
     float liberty_score()
     {
         return state.liberty_score;
@@ -740,11 +750,6 @@ struct CanonicalState(T)
     float target_score()
     {
         return state.target_score;
-    }
-
-    int value_shift()
-    {
-        return state.value_shift;
     }
 
     float player_chain_liberties(T chain)
@@ -864,4 +869,20 @@ unittest
 
     assert(player_unconditional == s.playing_area);
     assert(!opponent_unconditional);
+}
+
+unittest
+{
+    State!Board8 s;
+    s.value_shift = -6.5;
+    s.make_move(Board8(0, 0));
+    assert(s.value_shift == -6.5);
+    assert(!s.black_to_play);
+    auto a = s;
+    a.value_shift = 0;
+    assert(a != s);
+    auto c = CanonicalState!Board8(s);
+    assert(c.value_shift == 6.5);
+    assert(c.black_to_play);
+    assert(s.player == c.player);
 }
