@@ -2,6 +2,7 @@ import std.stdio;
 import std.string;
 import std.format;
 import std.math;
+import std.algorithm;
 import core.thread;
 
 import utils;
@@ -22,6 +23,7 @@ import fast_math;
 import ann;
 import likelyhood;
 import wdl_node;
+import direct_mc;
 
 /*
 void print_state(SearchState!Board8 ss, int depth){
@@ -105,7 +107,10 @@ void main()
     Transposition[CanonicalState8] empty2;
     auto transposition_table = &empty2;
 
-    WDLNode8[CanonicalState8] empty3;
+    //WDLNode8[CanonicalState8] empty3;
+    //auto node_pool = &empty3;
+
+    DirectMCNode8[CanonicalState8] empty3;
     auto node_pool = &empty3;
 
     /*
@@ -127,14 +132,8 @@ void main()
     assert(1 ==2);
     */
 
-    auto stats = Statistics(-3.5, 2.5);
-    stats.add_value(0.5);
-    stats.add_value(-3.5);
-    stats.add_value(2.5);
-    writeln(stats);
-
-    int width = 3;
-    int height = 3;
+    int width = 6;
+    int height = 5;
     auto s = State8(rectangle8(width, height));
     s.value_shift = 0;
     //s.player = rectangle8(1, 4).east(2);
@@ -150,18 +149,34 @@ void main()
     s.make_move(Board8(3, 1));
     s.make_move(Board8(1, 3));
     */
-    auto n = new WDLNode8(s, node_pool);
-    int N = 5000;
+    auto n = new DirectMCNode8(s, node_pool);
 
-    foreach (k; 1..20){
-        expand_to(n, k);
-        //writeln("sampling...");
-        n.sample_to(N);
-        writeln("depth=", k);
+    foreach (i; 0..40){
+        /*
+        foreach (k; 0..200){
+            n.get_value;
+            writeln(n.bottom.statistics);
+            writeln(n);
+            foreach (child; n.children){
+                child.get_value;
+                writeln(" ", child.value);
+            }
+            n.expand;
+        }
+        */
         writeln(n);
-        foreach (child; n.children){
-            child.sample_to(N);
-            writeln(" ", child.lower);
+        foreach (k; 0..100){
+            n.expand;
+        }
+        if (!n.children.length){
+            break;
+        }
+        else {
+            foreach (child; n.children){
+                child.get_value;
+            }
+            sort(n.children);
+            n = n.children[0];
         }
     }
 

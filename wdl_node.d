@@ -29,14 +29,23 @@ struct Statistics
         float shift;
     }
 
-    float lower_bound() @property
+    float lower_bound() const @property
     {
         return -shift;
     }
 
-    float upper_bound() @property
+    float upper_bound() const @property
     {
         return (cast(float)bins.length) - shift - 1;
+    }
+
+    ulong confidence() const @property
+    {
+        ulong total = 0;
+        foreach (bin; bins){
+            total += bin;
+        }
+        return total;
     }
 
     this(float lower_bound, float upper_bound)
@@ -52,6 +61,11 @@ struct Statistics
         if (lower_bound == upper_bound){
             bins[0] = uint.max;
         }
+    }
+
+    void clear()
+    {
+        bins[] = 0;
     }
 
     void set_bounds(float lower_bound, float upper_bound)
@@ -98,7 +112,7 @@ struct Statistics
         return bins[to!size_t(index)];
     }
 
-    double mean()
+    double mean() const
     {
         double e = 0.0;
         double total = 0.0;
@@ -177,12 +191,8 @@ class WDLNode(T, S, C)
     C state;
     T player_secure;
     T opponent_secure;
-    long lower_wins = 0;
-    long lower_draws = 0;
-    long lower_losses = 0;
-    long upper_wins = 0;
-    long upper_draws = 0;
-    long upper_losses = 0;
+    Statistics lower_statistics;
+    Statistics upper_statistics;
     bool is_final = false;
     ulong tag = 0;
 
@@ -195,24 +205,20 @@ class WDLNode(T, S, C)
         T[] moves;
         float lower_value;
         float upper_value;
+        bool broken = false;
     }
 
     invariant
     {
         if (is_final){
-            assert(lower_wins == long.max || lower_draws == long.max || lower_losses == long.max);
-            assert(upper_wins == long.max || upper_draws == long.max || upper_losses == long.max);
+            assert(lower_statistics.lower_bound == lower_statistics.upper_bound);
+            assert(upper_statistics.lower_bound == upper_statistics.upper_bound);
         }
     }
 
-    double value() @property
-    in
+    double value() const @property
     {
-        assert(lower_wins + lower_draws + lower_losses > 0);
-    }
-    body
-    {
-        return (lower_wins - lower_losses) / cast(double)(lower_wins + lower_draws + lower_losses);
+        return 0.5 * (lower_statistics.mean + upper_statistics.mean);
     }
 
     this (T playing_area, WDLNode!(T, S, C)[C] *node_pool=null)
@@ -234,22 +240,34 @@ class WDLNode(T, S, C)
         this.state = state;
         if (state.is_leaf){
             this.is_final = true;
-            if (result.score > 0){
-                this.lower_wins = long.max;
-                this.upper_wins = long.max;
-            }
-            else if (result.score == 0){
-                this.lower_draws = long.max;
-                this.upper_draws = long.max;
-            }
-            else {
-                this.lower_losses = long.max;
-                this.upper_losses = long.max;
-            }
+            this.lower_statistics = this.upper_statistics = Statistics(result.score, result.score);
         }
         else{
             calculate_available_moves(result);
             this.node_pool = node_pool;
+            if (state.value_shift - floor(state.value_shift) > 0.25){
+                this.lower_statistics = Statistics(-3.5, 3.5);
+                this.upper_statistics = Statistics(-3.5, 3.5);
+            }
+            else {
+                this.lower_statistics = Statistics(-3, 3);
+                this.upper_statistics = Statistics(-3, 3);
+            }
+        }
+    }
+
+    int opCmp(in WDLNode!(T, S, C) rhs) const
+    {
+        float v = value;
+        float rv = rhs.value;
+        if (v < rv){
+            return -1;
+        }
+        else if (v == rv){
+            return 0;
+        }
+        else {
+            return 1;
         }
     }
 
@@ -261,44 +279,37 @@ class WDLNode(T, S, C)
 
     void sample(out float lower_value, out float upper_value)
     {
-        sample(next_tag++, lower_value, upper_value);
+        sample(next_tag++, lower_value, upper_value, lower_statistics.lower_bound, lower_statistics.upper_bound);
     }
 
-    void sample(ulong tag, out float lower_value, out float upper_value)
+    void sample(ulong tag, out float lower_value, out float upper_value, float alpha, float beta)
     {
-        if (this.is_final){
-            if (lower_wins){
-                lower_value = 1;
-            }
-            else if (lower_draws){
-                lower_value = 0;
-            }
-            else{
-                lower_value = -1;
-            }
-            if (upper_wins){
-                upper_value = 1;
-            }
-            else if (upper_draws){
-                upper_value = 0;
-            }
-            else{
-                upper_value = -1;
-            }
-            return;
-        }
-        if (this.tag == tag){
+        if (this.tag == tag && !broken){
             lower_value = this.lower_value;
             upper_value = this.upper_value;
             return;
         }
         this.tag = tag;
+        if (tag % 100 == 99){
+            sort(children);
+        }
+        if (this.is_final){
+            this.lower_value = lower_value = lower_statistics.lower_bound;
+            this.upper_value = upper_value = upper_statistics.lower_bound;
+            return;
+        }
         if (!children.length){
             auto default_node = DefaultNode!(T, S)(state.state, player_secure, opponent_secure, moves);
             default_node.playout;
             this.lower_value = this.upper_value = lower_value = upper_value = default_node.value;
         }
         else {
+            // Turning this stuff off for now.
+            alpha = lower_statistics.lower_bound;
+            beta = lower_statistics.upper_bound;
+            // Don't store samples that are not fully explored.
+            broken = alpha > lower_statistics.lower_bound || beta < lower_statistics.upper_bound;
+            assert(!broken);
             // Set up absolute loss and win for loops.
             this.lower_value = -float.infinity;
             this.upper_value = float.infinity;
@@ -307,18 +318,18 @@ class WDLNode(T, S, C)
             upper_value = -float.infinity;
             foreach (child; children){
                 float child_lower_value, child_upper_value;
-                child.sample(tag, child_lower_value, child_upper_value);
+                child.sample(tag, child_lower_value, child_upper_value, -beta, -alpha);
                 child_lower_value = -child_lower_value;
                 child_upper_value = -child_upper_value;
                 if (child_upper_value > lower_value){
                     lower_value = child_upper_value;
+                    alpha = max(alpha, lower_value);
                 }
                 if (child_lower_value > upper_value){
                     upper_value = child_lower_value;
                 }
-                // Winning is the best we can do so stop here.
-                if (lower_value > 0){
-                    assert(upper_value > 0);
+                if (lower_value >= beta){
+                    assert(upper_value >= beta);
                     break;
                 }
             }
@@ -326,49 +337,16 @@ class WDLNode(T, S, C)
             this.lower_value = lower_value;
             this.upper_value = upper_value;
         }
-        if (lower_value > 0){
-            lower_wins++;
-        }
-        else if (lower_value == 0){
-            lower_draws++;
-        }
-        else {
-            lower_losses++;
-        }
-        if (upper_value > 0){
-            upper_wins++;
-        }
-        else if (upper_value == 0){
-            upper_draws++;
-        }
-        else {
-            upper_losses++;
+        if (!broken){
+            lower_statistics.add_value(lower_value);
+            upper_statistics.add_value(upper_value);
         }
     }
 
     void sample_to(long count)
     {
-        while (lower_wins + lower_draws + lower_losses < count){
+        while (lower_statistics.confidence < count){
             sample;
-        }
-    }
-
-    void sample_all(long count)
-    {
-        sample_all(next_tag++, count);
-    }
-
-    void sample_all(ulong tag, long count)
-    {
-        if (this.tag == tag){
-            return;
-        }
-        this.tag = tag;
-        while (lower_wins + lower_draws + lower_losses < count){
-            sample;
-        }
-        foreach (child; children){
-            child.sample_all(tag, count);
         }
     }
 
@@ -382,12 +360,8 @@ class WDLNode(T, S, C)
         }
         this.tag = tag;
 
-        this.lower_wins = 0;
-        this.lower_draws = 0;
-        this.lower_losses = 0;
-        this.upper_wins = 0;
-        this.upper_draws = 0;
-        this.upper_losses = 0;
+        this.lower_statistics.clear;
+        this.upper_statistics.clear;
 
         foreach (parent; parents.byValue){
             parent.invalidate(tag);
@@ -590,7 +564,7 @@ class WDLNode(T, S, C)
             }
         }
         invalidate(next_tag++);
-        check_finality(next_tag++);
+        //check_finality(next_tag++);
     }
 
     void check_finality(ulong tag)
@@ -599,24 +573,7 @@ class WDLNode(T, S, C)
             return;
         }
         this.tag = tag;
-        bool all_final = true;
-        foreach (child; children){
-            all_final = all_final && child.is_final;
-            if (child.is_final && child.upper_losses){
-                is_final = true;
-                lower_wins = long.max;
-                upper_wins = long.max;
-                lower_draws = 0;
-                upper_draws = 0;
-                lower_losses = 0;
-                upper_losses = 0;
-                foreach (parent; parents){
-                    parent.check_finality(tag);
-                }
-                return;
-            }
-        }
-        // TODO all_final
+        //TODO
     }
 
     /*
@@ -639,31 +596,14 @@ class WDLNode(T, S, C)
         return best_child;
     }
     */
-    string lower()
-    {
-        long lower_total = lower_wins + lower_draws + lower_losses;
-        double lower_win = lower_wins / cast(double)lower_total;
-        double lower_draw = lower_draws / cast(double)lower_total;
-        double lower_loss = lower_losses / cast(double)lower_total;
-        return format("%s, %s, %s, %s", lower_win, lower_draw, lower_loss, lower_total);
-    }
 
     override string toString()
     {
-        long lower_total = lower_wins + lower_draws + lower_losses;
-        long upper_total = upper_wins + upper_draws + upper_losses;
-        double lower_win = lower_wins / cast(double)lower_total;
-        double lower_draw = lower_draws / cast(double)lower_total;
-        double lower_loss = lower_losses / cast(double)lower_total;
-        double upper_win = upper_wins / cast(double)upper_total;
-        double upper_draw = upper_draws / cast(double)upper_total;
-        double upper_loss = upper_losses / cast(double)upper_total;
-
         return format(
-            "%s\nlower=%s, %s, %s, %s\nupper=%s, %s, %s, %s\nfinal=%s, number of children=%s",
+            "%s\nlower=%s, %s\nupper=%s, %s\nfinal=%s, number of children=%s",
             state._toString(T(), T(), player_secure, opponent_secure),
-            lower_win, lower_draw, lower_loss, lower_total,
-            upper_win, upper_draw, upper_loss, upper_total,
+            lower_statistics.mean, lower_statistics.confidence,
+            upper_statistics.mean, upper_statistics.confidence,
             is_final, children.length
         );
     }
