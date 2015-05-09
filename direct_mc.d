@@ -32,6 +32,7 @@ class DirectMCNode(T, S, C)
     bool is_final = false;
     float lower_value = float.nan;
     float upper_value = float.nan;
+    size_t progeny = 1;
     ulong tag = 0;
 
     DirectMCNode!(T, S, C)[] children;
@@ -106,6 +107,11 @@ class DirectMCNode(T, S, C)
 
         lower_value = float.nan;
         upper_value = float.nan;
+
+        progeny = 0;
+        foreach (child; children){
+            progeny += child.progeny;
+        }
 
         foreach (parent; parents.byValue){
             parent.invalidate(tag);
@@ -190,17 +196,29 @@ class DirectMCNode(T, S, C)
         }
     }
 
-    void expand()
+    void expand(double exploration=1.0)
+    {
+        expand(next_tag++, exploration);
+    }
+
+
+    // TODO: Fix a bug that causes 0-exploration expansion to leave the tree unchanged.
+    void expand(ulong tag, double exploration)
     {
         debug(expand) {
             writeln("expand");
             writeln(this);
         }
+        if (this.tag == tag){
+            writeln("Inconsistent expansion! Loop detected! Aborting...");
+            assert(false);
+            return;
+        }
+        this.tag = tag;
         if (!children.length){
             make_children;
             return;
         }
-        enum exploration_constant = 2.0;
 
         double best_value = double.infinity;
         DirectMCNode!(T, S, C) best_child = null;
@@ -213,14 +231,15 @@ class DirectMCNode(T, S, C)
                 writeln(child);
             }
             child.get_value;
-            double child_value = child.value; //+ exploration_constant * sqrt(log(visits + 1) / (child.visits + 1));
+            // (Nega-)optimizing against upper values should prevent loops.
+            double child_value = child.upper_value - exploration * sqrt(log(progeny + 1) / to!(double)(child.progeny + 1));
             if (child_value < best_value){
                 best_child = child;
                 best_value = child_value;
             }
         }
         if (best_child !is null){
-            best_child.expand;
+            best_child.expand(tag, exploration);
         }
     }
 
@@ -295,26 +314,29 @@ class DirectMCNode(T, S, C)
         }
     }
 
-    /*
-    DirectMCNode!(T, S, C) best_child()
+    DirectMCNode!(T, S, C) best_child(out bool is_balanced)
     {
         if (!children.length){
-            make_children;
+            return null;
         }
 
         DirectMCNode!(T, S, C) best_child;
-        float best_value = -float.infinity;
+        float best_value = float.infinity;
+        ulong highest_progeny = 0;
 
-        // TODO: Factor in confidence.
         foreach (child; children){
-            if (-child.value >= best_value){
-                best_value = -child.value;
+            child.get_value;
+            if (child.upper_value <= best_value){
+                best_value = child.upper_value;
                 best_child = child;
             }
+            if (child.progeny >= highest_progeny){
+                highest_progeny = child.progeny;
+             }
         }
+        is_balanced = best_child.progeny == highest_progeny || best_child.is_final;
         return best_child;
     }
-    */
 
     DirectMCNode!(T, S, C) bottom()
     {
@@ -339,10 +361,10 @@ class DirectMCNode(T, S, C)
     override string toString()
     {
         return format(
-            "%s\nlower=%s, upper=%s\nfinal=%s, number of children=%s",
+            "%s\nlower=%s, upper=%s\nfinal=%s, number of children=%s, progeny=%s",
             state._toString(T(), T(), player_secure, opponent_secure),
             lower_value, upper_value,
-            is_final, children.length
+            is_final, children.length, progeny
         );
     }
 }

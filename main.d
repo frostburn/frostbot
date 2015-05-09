@@ -25,6 +25,10 @@ import likelyhood;
 import wdl_node;
 import direct_mc;
 
+
+// Lol "makefile"
+// dmd main.d utils.d board8.d board11.d bit_matrix.d state.d polyomino.d defense_state.d defense_search_state.d defense.d eyeshape.d monte_carlo.d heuristic.d fast_math.d ann.d likelyhood.d wdl_node.d direct_mc.d -O -release -inline -noboundscheck
+
 /*
 void print_state(SearchState!Board8 ss, int depth){
     //
@@ -132,8 +136,8 @@ void main()
     assert(1 ==2);
     */
 
-    int width = 6;
-    int height = 5;
+    int width = 8;
+    int height = 7;
     auto s = State8(rectangle8(width, height));
     s.value_shift = 0;
     //s.player = rectangle8(1, 4).east(2);
@@ -164,19 +168,40 @@ void main()
             n.expand;
         }
         */
-        writeln(n);
-        foreach (k; 0..100){
-            n.expand;
+        //writeln(n);
+        writeln(s);
+        foreach (k; 0..500){
+            n.expand(0.75);
         }
         if (!n.children.length){
             break;
         }
         else {
-            foreach (child; n.children){
-                child.get_value;
+            DirectMCNode8 best_child;
+            bool is_balanced = false;
+            size_t balancing_rounds = 0;
+            while (balancing_rounds < 2000){
+                best_child = n.best_child(is_balanced);
+                if (is_balanced){
+                    break;
+                }
+                else {
+                    n.expand(0);
+                    balancing_rounds++;
+                    /*writeln("balancing...");
+                    foreach (child; n.children){
+                        child.get_value;
+                        writeln(child.lower_value, " ", child.upper_value, " ", child.progeny, " ", child.is_final);
+                    }*/
+                }
             }
-            sort(n.children);
-            n = n.children[0];
+            writeln("Balancing rounds=", balancing_rounds);
+            //foreach (child; n.children){
+            //    child.get_value;
+                //writeln(child.value, " ", child.progeny, " ", child.is_final);
+            //}
+            n = best_child;
+            s = decanonize(s, n.state.state);
         }
     }
 

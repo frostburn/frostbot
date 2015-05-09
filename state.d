@@ -776,6 +776,19 @@ struct CanonicalState(T)
 alias CanonicalState8 = CanonicalState!Board8;
 
 
+State!T decanonize(T)(State!T parent, State!T child)
+{
+    foreach (child_; parent.children){
+        auto canonical_child = child_;
+        canonical_child.canonize;
+        if (child == canonical_child){
+            return child_;
+        }
+    }
+    assert(false);
+}
+
+
 unittest
 {
     auto s = State!Board8(
