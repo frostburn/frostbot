@@ -1,6 +1,5 @@
 module utils;
 
-
 int popcount(ulong b) pure nothrow @nogc @safe
 {
      b = (b & 0x5555555555555555UL) + (b >> 1 & 0x5555555555555555UL);
@@ -32,6 +31,18 @@ else{
 }
 
 
+ulong right_shift(ulong b, int amount) pure nothrow @nogc @safe
+{
+    if (amount <= -64 || amount >= 64){
+        return 0;
+    }
+    else if (amount < 0){
+        return b << (-amount);
+    }
+    return b >> amount;
+}
+
+
 int compare(in ulong a, in ulong b) pure nothrow @nogc @safe
 {
     if (a < b){
@@ -42,6 +53,7 @@ int compare(in ulong a, in ulong b) pure nothrow @nogc @safe
     }
     return 0;
 }
+
 
 int compare_sorted_lists(T)(in T[] a, in T[] b)
 {
@@ -65,6 +77,7 @@ int compare_sorted_lists(T)(in T[] a, in T[] b)
     }
     return 0;
 }
+
 
 int compare_sets(T)(in bool[T] a, in bool[T] b)
 {
@@ -92,6 +105,7 @@ int compare_sets(T)(in bool[T] a, in bool[T] b)
     return 0;
 }
 
+
 bool member_in_list(T)(ref T member, ref T[] list){
     foreach (list_member; list){
         if (member is list_member){
@@ -100,6 +114,7 @@ bool member_in_list(T)(ref T member, ref T[] list){
     }
     return false;
 }
+
 
 /// PowerSet implementation by bearophile @ http://forum.dlang.org/
 struct PowerSet(T) {

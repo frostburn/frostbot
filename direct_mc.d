@@ -32,6 +32,7 @@ class DirectMCNode(T, S, C)
     bool is_final = false;
     float lower_value = float.nan;
     float upper_value = float.nan;
+    ulong confidence;
     size_t progeny = 1;
     ulong tag = 0;
 
@@ -72,6 +73,7 @@ class DirectMCNode(T, S, C)
             this.is_final = true;
             //this.statistics = Statistics(result.score, result.score);
             this.lower_value = this.upper_value = result.score;
+            this.confidence = ulong.max;
         }
         else{
             calculate_available_moves(result);
@@ -107,6 +109,7 @@ class DirectMCNode(T, S, C)
 
         lower_value = float.nan;
         upper_value = float.nan;
+        confidence = 0;
 
         progeny = 0;
         foreach (child; children){
@@ -120,7 +123,14 @@ class DirectMCNode(T, S, C)
 
     void playout()
     {
-        enum rounds = 200;
+        enum rounds = 20;
+        /*
+        foreach (i; 0..rounds){
+            auto default_node = monte_carlo.DefaultNode!(T, S)(state.state, player_secure, opponent_secure, moves);
+            default_node.playout;
+            statistics.add_value(default_node.value);
+        }
+        */
         Statistics[] sub_statisticss;
         foreach (i; 0..totalCPUs){
             sub_statisticss ~= Statistics(statistics.lower_bound, statistics.upper_bound);
@@ -139,18 +149,15 @@ class DirectMCNode(T, S, C)
         }
     }
 
-    void get_value(){
-        float lower_dummy, upper_dummy;
-        return get_value(next_tag++, statistics.lower_bound, statistics.upper_bound, lower_dummy, upper_dummy);
+    void get_value(ulong confidence_target=1000){
+        float dummy1, dummy2;
+        while (confidence < confidence_target){
+            improve_value(next_tag++, confidence_target, dummy1, dummy2);
+        }
     }
 
-    void get_value(ulong tag, float alpha, float beta, out float lower_value, out float upper_value)
+    void improve_value(ulong tag, ulong confidence_target, out float lower_value, out float upper_value)
     {
-        if (!this.lower_value.isNaN && !this.upper_value.isNaN){
-            lower_value = this.lower_value;
-            upper_value = this.upper_value;
-            return;
-        }
         if (this.tag == tag){
             lower_value = lower_loop;
             upper_value = upper_loop;
@@ -160,6 +167,7 @@ class DirectMCNode(T, S, C)
         if (children.length == 0){
             playout;
             lower_value = this.lower_value = upper_value = this.upper_value = statistics.mean;
+            confidence = statistics.confidence;
         }
         else {
             lower_loop = -float.infinity;
@@ -168,31 +176,33 @@ class DirectMCNode(T, S, C)
             upper_value = -float.infinity;
             foreach (child; children){
                 float child_lower_value, child_upper_value;
-                child.get_value(tag, -beta, -alpha, child_upper_value, child_lower_value);
+                float child_value;
+                if (child.upper_value.isNaN){
+                    child.improve_value(tag, confidence_target, child_upper_value, child_lower_value);
+                }
+                else {
+                    child_value = -child.upper_value + 10.0 / sqrt(to!double(child.confidence) + 1);
+                    if (child_value > lower_value && child.confidence < confidence_target){
+                        child.improve_value(tag, confidence_target, child_upper_value, child_lower_value);
+                    }
+                    else {
+                        child_upper_value = child.lower_value;
+                        child_lower_value = child.upper_value;
+                    }
+                }
                 child_lower_value = -child_lower_value;
                 child_upper_value = -child_upper_value;
                 if (child_lower_value > lower_value){
-                    lower_value = child_lower_value;
-                    alpha = max(alpha, lower_value);
+                    confidence = child.confidence;
+                    lower_value = lower_loop = child_lower_value;
                 }
                 if (child_upper_value > upper_value){
                     upper_value = child_upper_value;
                 }
-                /*
-                if (lower_value >= beta){
-                    assert(upper_value >= beta);
-                    if (alpha <= statistics.lower_bound && beta >= statistics.upper_bound){
-                        this.lower_value = lower_loop = lower_value;
-                        this.upper_value = upper_loop = upper_value;
-                    }
-                    return;
-                }
-                */
             }
-            //if (alpha <= statistics.lower_bound && beta >= statistics.upper_bound){
             this.lower_value = lower_loop = lower_value;
             this.upper_value = upper_loop = upper_value;
-            //}
+            //sort(children);
         }
     }
 
@@ -311,6 +321,7 @@ class DirectMCNode(T, S, C)
                     upper_value = -child.lower_value;
                 }
             }
+            confidence = ulong.max;
         }
     }
 
@@ -326,6 +337,7 @@ class DirectMCNode(T, S, C)
 
         foreach (child; children){
             child.get_value;
+            assert(!child.upper_value.isNaN);
             if (child.upper_value <= best_value){
                 best_value = child.upper_value;
                 best_child = child;
@@ -361,9 +373,9 @@ class DirectMCNode(T, S, C)
     override string toString()
     {
         return format(
-            "%s\nlower=%s, upper=%s\nfinal=%s, number of children=%s, progeny=%s",
+            "%s\nlower=%s, upper=%s, confidence=%s\nfinal=%s, number of children=%s, progeny=%s",
             state._toString(T(), T(), player_secure, opponent_secure),
-            lower_value, upper_value,
+            lower_value, upper_value, confidence,
             is_final, children.length, progeny
         );
     }

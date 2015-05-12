@@ -184,12 +184,34 @@ struct Board8
 
     Board8 south(in int n=1) const
     {
-        return Board8((bits << (V_SHIFT* n)) & FULL);
+        return Board8((bits << (V_SHIFT * n)) & FULL);
     }
 
     Board8 north(in int n=1) const
     {
         return Board8(bits >> (V_SHIFT * n));
+    }
+
+    ubyte pattern3_player_at(in int x, in int y) const
+    in
+    {
+        assert((0 <= x) && (x < WIDTH) && (0 <= y) && (y < HEIGHT));
+        assert(valid);
+    }
+    body
+    {
+        int shift = H_SHIFT * (x - 1) + V_SHIFT * (y - 1);
+        return cast(ubyte) (
+            (right_shift(bits, shift) & 7) |
+            (right_shift(bits, shift + V_SHIFT - 3) & 8) |
+            (right_shift(bits, shift + V_SHIFT - 2) & 16) |
+            (right_shift(bits, shift + 2 * V_SHIFT - 5) & 224)
+        );
+    }
+
+    ubyte pattern3_border_at(in int x, in int y) const
+    {
+        return ~pattern3_player_at(x, y);
     }
 
     /**
@@ -926,13 +948,19 @@ unittest
     assert(b.north);
     assert(!b.south);
 }
-/*
-void main()
+
+unittest
 {
-    auto b = Board8(12398724987489237345UL & ~Board8.EAST_WALL & Board8.FULL);
-    writeln(b);
-    writeln;
-    auto r = Board8(b.naive_rotate);
-    writeln(r);
+    auto b = Board8(2349872384947897979UL) & full8;
+    int total_popcount = 0;
+    foreach (y; 0..Board8.HEIGHT){
+        foreach (x; 0..Board8.WIDTH){
+            total_popcount += b.pattern3_player_at(x, y).popcount;
+        }
+    }
+    auto corners = Board8(0, 0) | Board8(0, Board8.HEIGHT - 1) | Board8(Board8.WIDTH - 1, 0) | Board8(Board8.WIDTH - 1, Board8.HEIGHT - 1);
+    auto edges = full8.inner_border ^ corners;
+    auto center = ~(full8.inner_border);
+    int calculated_popcount = 3 * (b & corners).popcount + 5 * (b & edges).popcount + 8 * (b & center).popcount;
+    assert(calculated_popcount == total_popcount);
 }
-*/

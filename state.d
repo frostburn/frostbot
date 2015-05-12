@@ -5,6 +5,7 @@ import std.string;
 
 import bit_matrix;
 import board8;
+import pattern3;
 
 
 struct State(T)
@@ -195,6 +196,15 @@ struct State(T)
         return num_kill;
     }
 
+    Pattern3 pattern3_at(in int x, in int y)
+    {
+        return Pattern3(
+            player.pattern3_player_at(x, y),
+            opponent.pattern3_player_at(x, y),
+            playing_area.pattern3_border_at(x, y)
+        );
+    }
+
     void flip_colors()
     {
         black_to_play = !black_to_play;
@@ -251,6 +261,11 @@ struct State(T)
         return true;
     }
 
+    bool pass()
+    {
+        return make_move(T());
+    }
+
     State!T[] children(T[] moves)
     {
         State!T[] _children = [];
@@ -279,6 +294,22 @@ struct State(T)
         moves ~= T();
 
         return children(moves);
+    }
+
+    void children_with_pattern3(out State!T[] children, out Pattern3[] patterns)
+    {
+        for (int y = 0; y < T.HEIGHT; y++){
+            for (int x = 0; x < T.WIDTH; x++){
+                auto move = T(x, y);
+                if (move & playing_area){
+                    auto child = this;
+                    if (child.make_move(move)){
+                        children ~= child;
+                        patterns ~= pattern3_at(x, y);
+                    }
+                }
+            }
+        }
     }
 
     float liberty_score()

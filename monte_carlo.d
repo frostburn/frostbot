@@ -8,11 +8,56 @@ import std.math;
 import std.array;
 
 import utils;
+import pattern3;
 import board8;
 import state;
 import defense_state;
 import defense_search_state;
 import defense;
+
+T weighted_choice(T)(T[] items, int[] weights)
+{
+    int sum = 0;
+    foreach (weight; weights){
+        assert(weight >= 0);
+        sum += weight;
+    }
+    if (sum == 0){
+        return items[uniform(0, items.length)];
+    }
+    int break_point = uniform(0, sum);
+    int index = 0;
+    foreach (weight; weights){
+        break_point -= weight;
+        if (break_point < 0){
+            break;
+        }
+        index++;
+    }
+    return items[index];
+}
+
+S child_by_pattern3(S)(S state, int[Pattern3] pattern_weights)
+{
+    S[] children;
+    Pattern3[] patterns;
+    int[] weights;
+    state.children_with_pattern3(children, patterns);
+    if (!children.length){
+        state.pass;
+        return state;
+    }
+    foreach (pattern; patterns){
+        pattern.canonize;
+        if (pattern in pattern_weights){
+            weights ~= pattern_weights[pattern];
+        }
+        else {
+            weights ~= 8;
+        }
+    }
+    return weighted_choice(children, weights);
+}
 
 struct DefaultNode(T, S)
 {
