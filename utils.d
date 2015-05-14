@@ -1,5 +1,6 @@
 module utils;
 
+
 int popcount(ulong b) pure nothrow @nogc @safe
 {
      b = (b & 0x5555555555555555UL) + (b >> 1 & 0x5555555555555555UL);

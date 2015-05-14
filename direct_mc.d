@@ -12,6 +12,7 @@ import std.parallelism;
 
 import utils;
 import board8;
+import board11;
 import state;
 import defense_state;
 import defense_search_state;
@@ -382,3 +383,4 @@ class DirectMCNode(T, S, C)
 }
 
 alias DirectMCNode8 = DirectMCNode!(Board8, State8, CanonicalState8);
+alias DirectMCNode11 = DirectMCNode!(Board11, State11, CanonicalState11);

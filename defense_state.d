@@ -5,6 +5,7 @@ import std.string;
 
 import utils;
 import polyomino;
+import board_common;
 import board8;
 import state;
 

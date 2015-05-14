@@ -4,7 +4,9 @@ import std.stdio;
 import std.string;
 
 import bit_matrix;
+import board_common;
 import board8;
+import board11;
 import pattern3;
 
 
@@ -592,6 +594,7 @@ struct State(T)
 }
 
 alias State8 = State!Board8;
+alias State11 = State!Board11;
 
 void benson(T)(ref T[] chains, ref T[] regions, in T opponent, in T immortal, in T playing_area)
 {
@@ -805,6 +808,7 @@ struct CanonicalState(T)
 }
 
 alias CanonicalState8 = CanonicalState!Board8;
+alias CanonicalState11 = CanonicalState!Board11;
 
 
 State!T decanonize(T)(State!T parent, State!T child)
