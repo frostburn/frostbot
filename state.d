@@ -18,6 +18,9 @@ struct State(T)
     T ko;
     bool black_to_play = true;
     int passes;
+
+    T player_unconditional;
+    T opponent_unconditional;
     float value_shift = 0;
 
     this(T playing_area)
@@ -31,7 +34,7 @@ struct State(T)
         this.opponent = opponent;
     }
 
-    this(T player, T opponent, T playing_area, T ko, bool black_to_play, int passes)
+    this(T player, T opponent, T playing_area, T ko, bool black_to_play, int passes, T player_unconditional, T opponent_unconditional, float value_shift)
     {
         this.player = player;
         this.opponent = opponent;
@@ -39,6 +42,9 @@ struct State(T)
         this.ko = ko;
         this.black_to_play = black_to_play;
         this.passes = passes;
+        this.player_unconditional = player_unconditional;
+        this.opponent_unconditional = opponent_unconditional;
+        this.value_shift = value_shift;
     }
 
     invariant
@@ -48,8 +54,9 @@ struct State(T)
         assert(playing_area.valid);
         assert(ko.valid);
         assert(ko.popcount <= 1);
+        assert(player_unconditional.valid);
+        assert(opponent_unconditional.valid);
 
-        /*
         assert(!(player & opponent));
         assert(!(player & ko));
         assert(!(opponent & ko));
@@ -57,7 +64,8 @@ struct State(T)
         assert(!(player & ~playing_area));
         assert(!(opponent & ~playing_area));
         assert(!(ko & ~playing_area));
-        */
+        assert(!(player_unconditional & ~playing_area));
+        assert(!(opponent_unconditional & ~playing_area));
 
         // TODO: Assert that all chains have liberties
         version(all_invariants){
@@ -79,6 +87,8 @@ struct State(T)
             (ko == rhs.ko) &&
             (black_to_play == rhs.black_to_play) &&
             (passes == rhs.passes) &&
+            (player_unconditional == rhs.player_unconditional) &&
+            (opponent_unconditional == rhs.opponent_unconditional) &&
             (value_shift == rhs.value_shift)
         );
     }
@@ -112,6 +122,8 @@ struct State(T)
         }
         mixin(compare_member("ko"));
         mixin(compare_member("playing_area"));
+        mixin(compare_member("player_unconditional"));
+        mixin(compare_member("opponent_unconditional"));
 
         return 0;
     }
@@ -125,6 +137,8 @@ struct State(T)
             (opponent_hash >> (hash_t.sizeof * 4)) ^
             playing_area.toHash ^
             ko.toHash ^
+            player_unconditional.toHash ^
+            opponent_unconditional.toHash ^
             typeid(black_to_play).getHash(&black_to_play) ^
             typeid(passes).getHash(&passes) ^
             typeid(value_shift).getHash(&value_shift)
@@ -172,10 +186,14 @@ struct State(T)
                 writefln("Liberties: %s", i);
                 writeln(chains_in_danger[i].liberties(playing_area & ~player));
             }
+            //Unconditionally alive stones cannot be killed.
+            //Having no liberties can happen as a side effect of a reduction.
+            if (chains_in_danger[i] & opponent_unconditional){
+                continue;
+            }
             if (!(chains_in_danger[i].liberties(playing_area & ~player))){
                 num_kill += chains_in_danger[i].popcount;
                 kill |= chains_in_danger[i];
-                temp = chains_in_danger[i];
             }
         }
 
@@ -219,6 +237,10 @@ struct State(T)
         player = opponent;
         opponent = temp;
 
+        temp = player_unconditional;
+        player_unconditional = opponent_unconditional;
+        opponent_unconditional = temp;
+
         black_to_play = !black_to_play;
     }
 
@@ -238,7 +260,7 @@ struct State(T)
             kill_stones(move);
             temp.flood_into(player);
             // Check if move is suicidal and undo it if necessary.
-            if (!(temp.liberties(playing_area & ~opponent))){
+            if (!(temp & player_unconditional) && !(temp.liberties(playing_area & ~opponent))){
                 player ^= move;
                 ko = old_ko;
                 return false;
@@ -258,6 +280,9 @@ struct State(T)
         temp = player;
         player = opponent;
         opponent = temp;
+        temp = player_unconditional;
+        player_unconditional = opponent_unconditional;
+        opponent_unconditional = temp;
         black_to_play = !black_to_play;
 
         return true;
@@ -288,7 +313,7 @@ struct State(T)
         for (int y = 0; y < T.HEIGHT; y++){
             for (int x = 0; x < T.WIDTH; x++){
                 auto move = T(x, y);
-                if (move & playing_area){
+                if (move & playing_area & ~(player_unconditional | opponent_unconditional)){
                     moves ~= move;
                 }
             }
@@ -303,7 +328,7 @@ struct State(T)
         for (int y = 0; y < T.HEIGHT; y++){
             for (int x = 0; x < T.WIDTH; x++){
                 auto move = T(x, y);
-                if (move & playing_area){
+                if (move & playing_area & ~(player_unconditional | opponent_unconditional)){
                     auto child = this;
                     if (child.make_move(move)){
                         children ~= child;
@@ -318,11 +343,14 @@ struct State(T)
     {
         float score = value_shift;
 
-        score += player.popcount;
-        score -= opponent.popcount;
+        T player_controlled_territory = (player | player_unconditional) & ~opponent_unconditional;
+        T opponent_controlled_territory = (opponent | opponent_unconditional) & ~player_unconditional;
 
-        score += player.liberties(playing_area & ~opponent).popcount;
-        score -= opponent.liberties(playing_area & ~player).popcount;
+        score += player_controlled_territory.popcount;
+        score -= opponent_controlled_territory.popcount;
+
+        score += player_controlled_territory.liberties(playing_area & ~opponent_controlled_territory).popcount;
+        score -= opponent_controlled_territory.liberties(playing_area & ~player_controlled_territory).popcount;
 
         if (black_to_play){
             return score;
@@ -339,7 +367,20 @@ struct State(T)
 
     int reduce()
     {
-        return 0;
+        T space = playing_area & ~player_unconditional & ~opponent_unconditional;
+        playing_area = space.cross(playing_area);
+
+        int delta = (player_unconditional & ~playing_area).popcount;
+        delta -= (opponent_unconditional & ~playing_area).popcount;
+
+        player &= playing_area;
+        opponent &= playing_area;
+        ko &= playing_area;
+        player_unconditional &= playing_area;
+        opponent_unconditional &= playing_area;
+
+        value_shift += delta;
+        return delta;
     }
 
     void snap()
@@ -354,6 +395,8 @@ struct State(T)
         player.fix(westwards, northwards);
         opponent.fix(westwards, northwards);
         ko.fix(westwards, northwards);
+        player_unconditional.fix(westwards, northwards);
+        opponent_unconditional.fix(westwards, northwards);
     }
 
     bool can_rotate()
@@ -372,6 +415,8 @@ struct State(T)
         opponent.rotate;
         ko.rotate;
         playing_area.rotate;
+        player_unconditional.rotate;
+        opponent_unconditional.rotate;
     }
 
     void mirror_h()
@@ -380,6 +425,8 @@ struct State(T)
         opponent.mirror_h;
         ko.mirror_h;
         playing_area.mirror_h;
+        player_unconditional.mirror_h;
+        opponent_unconditional.mirror_h;
     }
 
     void mirror_v()
@@ -388,6 +435,8 @@ struct State(T)
         opponent.mirror_v;
         ko.mirror_v;
         playing_area.mirror_v;
+        player_unconditional.mirror_v;
+        opponent_unconditional.mirror_v;
     }
 
     void canonize()
@@ -402,6 +451,8 @@ struct State(T)
         if (!black_to_play){
             flip_colors;
         }
+        analyze_unconditional;
+        reduce;
         auto initial_playing_area = playing_area;  // TODO: Calculate fixes manually
 
         auto final_transformation = Transformation.none;
@@ -431,6 +482,7 @@ struct State(T)
             temp.snap(final_westwards, final_northwards);
         ";
         if (can_rotate){
+            //TODO: Rotate only once.
             for (int i = 0; i < 3; i++){
                 mixin(do_rotation);
                 current_transformation++;
@@ -470,15 +522,19 @@ struct State(T)
 
     /**
     * Analyzes the state for unconditional life.
-    * The arguments provide pre-calculated unconditional regions that are to be extended.
+    * Pre-calculated unconditional regions that are to be extended.
     */
-    void analyze_unconditional(ref T player_unconditional, ref T opponent_unconditional)
+    void analyze_unconditional()
     in
     {
         assert(!(player_unconditional & opponent_unconditional));
     }
     body
     {
+        // Expand unconditional regions.
+        player_unconditional.flood_into(player);
+        opponent_unconditional.flood_into(opponent);
+
         // The unconditional regions are already analyzed and can be excluded here.
         T[] player_chains = player.chains;
         T[] player_enclosed_regions = (~player & ~player_unconditional & playing_area).chains;
@@ -519,6 +575,26 @@ struct State(T)
         foreach (opponent_enclosed_region; opponent_enclosed_regions){
             opponent_unconditional |= opponent_enclosed_region;
         }
+
+        // Determine unconditional territory of closed regions
+        foreach (region; (~player_unconditional & playing_area).chains){
+            if (region & opponent_unconditional){
+                continue;
+            }
+            region = region.cross(playing_area);
+            if ((region & player_unconditional) && is_unconditional_territory(region, player, opponent, player_unconditional)){
+                player_unconditional |= region;
+            }
+        }
+        foreach (region; (~opponent_unconditional & playing_area).chains){
+            if (region & player_unconditional){
+                continue;
+            }
+            region = region.cross(playing_area);
+            if ((region & opponent_unconditional) && is_unconditional_territory(region, opponent, player, opponent_unconditional)){
+                opponent_unconditional |= region;
+            }
+        }
     }
 
     float target_score()
@@ -528,11 +604,17 @@ struct State(T)
 
     float player_chain_liberties(T chain)
     {
+        if (chain & player_unconditional){
+            return float.infinity;
+        }
         return chain.liberties(playing_area & ~opponent).popcount;
     }
 
     float opponent_chain_liberties(T chain)
     {
+        if (chain & opponent_unconditional){
+            return float.infinity;
+        }
         return chain.liberties(playing_area & ~player).popcount;
     }
 
@@ -583,13 +665,13 @@ struct State(T)
             r ~= "White to play,";
         }
 
-        r ~= format(" passes=%s", passes);
+        r ~= format(" passes=%s, value_shift=%s", passes, value_shift);
 
         return r;
     }
 
     string toString(){
-        return _toString(T(), T(), T(), T());
+        return _toString(T(), T(), player_unconditional, opponent_unconditional);
     }
 }
 
@@ -650,35 +732,79 @@ void benson(T)(ref T[] chains, ref T[] regions, in T opponent, in T immortal, in
     regions = temp;
 }
 
-void examine_state_playout(bool canonize=false)
+bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unconditional)
+{
+    if (region.euler != 1){
+        return false;
+    }
+    T playable = (region | opponent) & ~player_unconditional;
+    T eyes = region & ~opponent & ~player_unconditional.cross(region);
+    foreach (piece; eyes.pieces){
+        if (!piece.liberties(playable).flood_into(piece.blob(region)).is_contiguous){
+            eyes ^= piece;
+            if (player & piece){
+                eyes ^= piece.cross(eyes);
+            }
+        }
+    }
+    int count = eyes.popcount;
+    if (count < 2){
+        /*
+        debug(territory){
+            writeln("region");
+            writeln(region);
+            writeln("player");
+            writeln(player);
+            writeln("opponent");
+            writeln(opponent);
+            writeln("player_unconditional");
+            writeln(player_unconditional);
+        }
+        */
+        return true;
+    }
+    else {
+        if (count == 2 && ((eyes & eyes.north) || (eyes & eyes.west))){
+            return true;
+        }
+        T defender = player & playable;
+        count = defender.popcount;
+        if (count == 1){
+            if (eyes & ~defender.cross(playable)){
+                return false;
+            }
+            else {
+                return true;
+            }
+        }
+        else if (count == 2){
+            if ((defender & defender.north) || (defender & defender.west)){
+                if (!(eyes & ~defender.cross(playable))){
+                    if (defender.liberties(region & ~opponent).popcount < 4){
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+}
+
+void examine_state_playout(T)(State!T s, bool canonize=false)
 {
     import std.random;
     import core.thread;
 
-    auto s = State!Board8();
-    bool success;
-    int i = 0;
     int j = 0;
-    while (j < 1000){
-        success = s.make_move(Board8(
-            uniform(0, Board8.WIDTH), uniform(0, Board8.HEIGHT)
-        ));
-        if (success){
-            i++;
-            j = 0;
-            if (canonize){
-                auto t = s;
-                t.canonize;
-                writeln(t);
-            }
-            else{
-                writeln(s);
-            }
-            Thread.sleep(dur!("msecs")(1000));
+    while (j < 100){
+        auto children = s.children;
+        s = children[uniform(0, children.length)];
+        if (canonize){
+            s.canonize;
         }
-        else{
-            j++;
-        }
+        writeln(s);
+        Thread.sleep(dur!("msecs")(1000));
+        j++;
     }
 }
 
@@ -748,6 +874,16 @@ struct CanonicalState(T)
         return state.black_to_play;
     }
 
+    T player_unconditional() const @property
+    {
+        return state.player_unconditional;
+    }
+
+    T opponent_unconditional() const @property
+    {
+        return state.opponent_unconditional;
+    }
+
     float value_shift() const @property
     {
         return state.value_shift;
@@ -774,11 +910,6 @@ struct CanonicalState(T)
             }
         }
         return _children;
-    }
-
-    void analyze_unconditional(ref T player_unconditional, ref T opponent_unconditional)
-    {
-        state.analyze_unconditional(player_unconditional, opponent_unconditional);
     }
 
     float target_score()
@@ -895,28 +1026,22 @@ unittest
     s.opponent = Board8(7, 6);
     s.opponent |= Board8(7, 4) | Board8(6, 4) | Board8(6, 5) | Board8(5, 5) | Board8(4, 5) | Board8(4, 6);
 
-    Board8 player_unconditional;
-    Board8 opponent_unconditional;
-
-    s.analyze_unconditional(player_unconditional, opponent_unconditional);
-    assert(player_unconditional == (s.player | Board8(0, 0) | Board8(1, 1)));
-    assert(!opponent_unconditional);
+    s.analyze_unconditional;
+    assert(s.player_unconditional == (s.player | Board8(0, 0) | Board8(1, 1)));
+    assert(!s.opponent_unconditional);
 
     s.player |= Board8(5, 6);
-    s.analyze_unconditional(player_unconditional, opponent_unconditional);
-    assert(opponent_unconditional == (s.opponent | Board8(5, 6) | Board8(6, 6) | Board8(7, 5)));
-
-    player_unconditional = Board8();
-    opponent_unconditional = Board8();
+    s.analyze_unconditional;
+    assert(s.opponent_unconditional == (s.opponent | Board8(5, 6) | Board8(6, 6) | Board8(7, 5)));
 
     s = State!Board8(rectangle!Board8(4, 1));
     s.player = Board8(1, 0);
     s.opponent = Board8(3, 0);
 
-    s.analyze_unconditional(player_unconditional, opponent_unconditional);
+    s.analyze_unconditional;
 
-    assert(player_unconditional == s.playing_area);
-    assert(!opponent_unconditional);
+    assert(s.player_unconditional == s.playing_area);
+    assert(!s.opponent_unconditional);
 }
 
 unittest
@@ -933,4 +1058,15 @@ unittest
     assert(c.value_shift == 6.5);
     assert(c.black_to_play);
     assert(s.player == c.player);
+}
+
+unittest
+{
+    auto s = State8(rectangle8(2, 1));
+    s.player = Board8(0, 0);
+    s.player_unconditional = Board8(0, 0);
+    assert(s.make_move(Board8(1, 0)));
+    s.canonize;
+    assert(!s.playing_area);
+    assert(s.value_shift == -2);
 }

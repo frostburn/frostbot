@@ -141,6 +141,29 @@ struct Board11
         );
     }
 
+    Board11 cross(in Board11 playing_area) const pure nothrow @nogc @safe
+    {
+        return Board11(
+            (
+                north_bits |
+                (north_bits << H_SHIFT) |
+                (north_bits >> H_SHIFT) |
+                (north_bits << V_SHIFT) |
+                (north_bits >> V_SHIFT) |
+                (south_bits & FLOOD_LINE)
+            ) & playing_area.north_bits,
+            (
+                south_bits |
+                (south_bits << H_SHIFT) |
+                (south_bits >> H_SHIFT) |
+                (south_bits << V_SHIFT) |
+                (south_bits >> V_SHIFT) |
+                (north_bits & FLOOD_LINE)
+            ) & playing_area.south_bits,
+            true
+        );
+    }
+
     Board11 liberties(in Board11 playing_area) const pure nothrow @nogc @safe
     {
         return Board11(
@@ -582,6 +605,35 @@ struct Board11
             extent--;
         }
         return extent;
+    }
+
+    // TODO:
+    int euler()
+    {
+        return 0;
+    }
+
+    Board11[] pieces() const
+    in
+    {
+        assert(valid);
+    }
+    out(result)
+    {
+        assert(result.length <= WIDTH * HEIGHT);
+    }
+    body
+    {
+        Board11[] result;
+        for (int y = 0; y < HEIGHT; y++){
+            for (int x = 0; x < WIDTH; x++){
+                auto piece = Board11(x, y);
+                if (piece & this){
+                    result ~= piece;
+                }
+            }
+        }
+        return result;
     }
 
     Board11[] chains()

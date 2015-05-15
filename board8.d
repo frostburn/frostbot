@@ -127,6 +127,11 @@ struct Board8
         return Board8(bits | (bits << H_SHIFT) | (bits >> H_SHIFT) | (bits << V_SHIFT) | (bits >> V_SHIFT));
     }
 
+    Board8 cross(in Board8 playing_area) const pure nothrow @nogc @safe
+    {
+        return Board8((bits | (bits << H_SHIFT) | (bits >> H_SHIFT) | (bits << V_SHIFT) | (bits >> V_SHIFT)) & playing_area.bits);
+    }
+
     Board8 liberties(in Board8 playing_area) const pure nothrow @nogc @safe
     {
         return Board8(
