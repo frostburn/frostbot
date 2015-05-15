@@ -150,7 +150,7 @@ class DirectMCNode(T, S, C)
         }
     }
 
-    void get_value(ulong confidence_target=1000){
+    void get_value(ulong confidence_target=2000){
         float dummy1, dummy2;
         while (confidence < confidence_target){
             improve_value(next_tag++, confidence_target, dummy1, dummy2);

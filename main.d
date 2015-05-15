@@ -119,7 +119,7 @@ double compete(int[Pattern3] pw1, int[Pattern3] pw2)
 }
 
 
-void expand_to(WDLNode8 root, int depth)
+void expand_to(WDLNode11 root, int depth)
 {
     if (depth <= 0){
         return;
@@ -141,21 +141,115 @@ void main()
     Transposition[CanonicalState8] empty2;
     auto transposition_table = &empty2;
 
-    //WDLNode8[CanonicalState8] empty3;
-    //auto node_pool = &empty3;
-
-    DirectMCNode11[CanonicalState11] empty3;
+    WDLNode11[CanonicalState11] empty3;
     auto node_pool = &empty3;
+
+    //DirectMCNode11[CanonicalState11] empty3;
+    //auto node_pool = &empty3;
 
 
     auto s = State11(rectangle11(9, 9));
 
+    auto n = new WDLNode11(s, node_pool);
+
+
+    foreach (i; 0..5){
+        expand_to(n, i);
+
+        n.sample_to(10);
+        writeln(n);
+        writeln(n.lower_statistics);
+        writeln("depth=", i);
+    }
+
+
+
+    /+
+    auto state = State11(rectangle11(9, 9));
+
+    auto stats = Statistics(-9 * 9, 9 * 9);
+
+    Board11 black_unconditional, white_unconditional;
+    Board11[] moves;
+    int y_max = state.playing_area.vertical_extent;
+    int x_max = state.playing_area.horizontal_extent;
+
+    for (int y = 0; y < y_max; y++){
+        for (int x = 0; x < x_max; x++){
+            Board11 move = Board11(x, y);
+            if (move & state.playing_area){
+                moves ~= move;
+            }
+        }
+    }
+    moves ~= Board11();
+    auto original_moves = moves.dup;
+    auto original_state = state;
+
+    foreach (k; 200..201){
+        stats.clear;
+        foreach (j; 0..100000){
+            state = original_state;
+            black_unconditional.clear;
+            white_unconditional.clear;
+            moves = original_moves.dup;
+            foreach (i; 0..k){
+                auto move = moves[uniform(0, moves.length)];
+                bool success = state.make_move(move);
+                if (!success && uniform(0, 4) == 0){
+                    Board11[] new_moves;
+                    foreach (m; moves){
+                        if (m != move){
+                            new_moves ~= m;
+                        }
+                    }
+                    moves = new_moves;
+                }
+                /*
+                if (success && (uniform(0, 2) == 0)){
+                    if (state.black_to_play){
+                        state.analyze_unconditional(black_unconditional, white_unconditional);
+                    }
+                    else {
+                        state.analyze_unconditional(white_unconditional, black_unconditional);
+                    }
+                    Board11 allowed = ~(black_unconditional | white_unconditional);
+                    Board11[] new_moves;
+                    foreach (move; moves){
+                        if (move & allowed){
+                            new_moves ~= move;
+                        }
+                    }
+                    moves = new_moves;
+                    moves ~= Board11();
+                }
+                */
+            }
+            auto e = Board11();
+            float score;
+            if (state.black_to_play){
+                score = controlled_liberty_score(state, e, e, e, e, black_unconditional, white_unconditional);
+            }
+            else {
+                score = controlled_liberty_score(state, e, e, e, e, white_unconditional, black_unconditional);
+            }
+            //writeln(state);
+            //writeln(black_unconditional);
+            //writeln(white_unconditional);
+            stats.add_value(score);
+        }
+        writeln(stats);
+        writeln(k);
+    }
+    +/
+
+    /*
     auto n = new DirectMCNode11(s, node_pool);
 
     foreach (i; 0..100){
         //writeln(n);
         writeln(s);
-        foreach (k; 0..2){
+        foreach (k; 0..10){
             n.expand(0.75);
         }
         //foreach (child; n.children){
@@ -168,7 +262,7 @@ void main()
             DirectMCNode11 best_child;
             bool is_balanced = false;
             size_t balancing_rounds = 0;
-            while (balancing_rounds < 1){
+            while (balancing_rounds < 10){
                 best_child = n.best_child(is_balanced);
                 if (is_balanced){
                     break;
@@ -183,6 +277,7 @@ void main()
                     //}
                 }
             }
+            writeln(n.statistics);
             writeln("Balancing rounds=", balancing_rounds);
             //foreach (child; n.children){
             //    child.get_value;
@@ -192,7 +287,7 @@ void main()
             s = decanonize(s, n.state.state);
         }
     }
-
+    */
 
     /*
     auto s = State8(rectangle8(4, 4));

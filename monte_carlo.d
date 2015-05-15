@@ -62,8 +62,8 @@ S child_by_pattern3(S)(S state, int[Pattern3] pattern_weights)
 struct DefaultNode(T, S)
 {
     S state;
-    T player_secure;
-    T opponent_secure;
+    T black_secure;
+    T white_secure;
     float value;
 
     private
@@ -71,7 +71,7 @@ struct DefaultNode(T, S)
         T[] moves;
     }
 
-    this(S state, T player_secure, T opponent_secure, T[] moves)
+    this(S state, T black_secure, T white_secure, T[] moves)
     in
     {
         assert(state.black_to_play);
@@ -79,8 +79,8 @@ struct DefaultNode(T, S)
     body
     {
         this.state = state;
-        this.player_secure = player_secure;
-        this.opponent_secure = opponent_secure;
+        this.black_secure = black_secure;
+        this.white_secure = white_secure;
         this.moves = moves;
     }
 
@@ -105,7 +105,7 @@ struct DefaultNode(T, S)
         T ko2;
 
         if (!moves.length){
-            value = controlled_liberty_score(state, T(), T(), T(), T(), player_secure, opponent_secure);
+            value = controlled_liberty_score(state, T(), T(), T(), T(), black_secure, white_secure);
             return;
         }
 
@@ -128,9 +128,6 @@ struct DefaultNode(T, S)
                         continue;
                     }
                 }
-                else if (!(blob & ~state.player)){
-                    continue;
-                }
             }
             else{
                 temp = r & 7;
@@ -143,15 +140,16 @@ struct DefaultNode(T, S)
             if (state.is_leaf){
                 break;
             }
-            // Accentuate first move advantage.
-            if (!state.black_to_play && i < 4){
-                state.swap_turns;
-            }
             ko1 = ko2;
             ko2 = state.ko;
         }
 
-        value = controlled_liberty_score(state, T(), T(), T(), T(), player_secure, opponent_secure);
+        if (state.black_to_play){
+            value = controlled_liberty_score(state, T(), T(), T(), T(), black_secure, white_secure);
+        }
+        else {
+            value = controlled_liberty_score(state, T(), T(), T(), T(), white_secure, black_secure);
+        }
     }
 
     string toString()

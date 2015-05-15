@@ -12,6 +12,7 @@ import std.parallelism;
 
 import utils;
 import board8;
+import board11;
 import state;
 import defense_state;
 import defense_search_state;
@@ -245,6 +246,7 @@ class WDLNode(T, S, C)
         else{
             calculate_available_moves(result);
             this.node_pool = node_pool;
+            /*
             if (state.value_shift - floor(state.value_shift) > 0.25){
                 this.lower_statistics = Statistics(-3.5, 3.5);
                 this.upper_statistics = Statistics(-3.5, 3.5);
@@ -253,6 +255,9 @@ class WDLNode(T, S, C)
                 this.lower_statistics = Statistics(-3, 3);
                 this.upper_statistics = Statistics(-3, 3);
             }
+            */
+            this.lower_statistics = Statistics(-81, 81);
+            this.upper_statistics = Statistics(-81, 81);
         }
     }
 
@@ -610,3 +615,4 @@ class WDLNode(T, S, C)
 }
 
 alias WDLNode8 = WDLNode!(Board8, State8, CanonicalState8);
+alias WDLNode11 = WDLNode!(Board11, State11, CanonicalState11);
