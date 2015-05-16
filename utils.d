@@ -146,13 +146,13 @@ struct PowerSet(T) {
 class HistoryNode(T)
 {
     T value;
-    HistoryNode!T parent = null;
+    HistoryNode!T *parent = null;
 
     this(T value){
         this.value = value;
     }
 
-    this(T value, ref HistoryNode!T parent){
+    this(T value, HistoryNode!T *parent){
         this.value = value;
         this.parent = parent;
     }
@@ -164,9 +164,19 @@ class HistoryNode(T)
             return true;
         }
         if (parent !is null){
-            return parent.opBinaryRight!"in"(lhs);
+            return (*parent).opBinaryRight!"in"(lhs);
         }
         return false;
+    }
+
+    size_t length()
+    {
+        if (parent is null){
+            return 1;
+        }
+        else {
+            return (*parent).length + 1;
+        }
     }
 }
 

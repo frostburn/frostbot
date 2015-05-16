@@ -114,16 +114,16 @@ struct State(T)
         if (passes != rhs.passes){
             return passes - rhs.passes;
         }
+        mixin(compare_member("ko"));
+        mixin(compare_member("playing_area"));
+        mixin(compare_member("player_unconditional"));
+        mixin(compare_member("opponent_unconditional"));
         if (value_shift < rhs.value_shift){
             return -1;
         }
         if (value_shift > rhs.value_shift){
             return 1;
         }
-        mixin(compare_member("ko"));
-        mixin(compare_member("playing_area"));
-        mixin(compare_member("player_unconditional"));
-        mixin(compare_member("opponent_unconditional"));
 
         return 0;
     }
@@ -307,19 +307,25 @@ struct State(T)
         return _children;
     }
 
-    auto children()
+    T[] moves()
     {
-        T[] moves;
-        for (int y = 0; y < T.HEIGHT; y++){
-            for (int x = 0; x < T.WIDTH; x++){
+        T[] _moves;
+        auto y_max = playing_area.vertical_extent;
+        auto x_max = playing_area.horizontal_extent;
+        foreach (y; 0..y_max){
+            foreach (x; 0..x_max){
                 auto move = T(x, y);
                 if (move & playing_area & ~(player_unconditional | opponent_unconditional)){
-                    moves ~= move;
+                    _moves ~= move;
                 }
             }
         }
-        moves ~= T();
+        _moves ~= T();
+        return _moves;
+    }
 
+    auto children()
+    {
         return children(moves);
     }
 
@@ -927,6 +933,11 @@ struct CanonicalState(T)
         this.state = state;
     }
 
+    invariant
+    {
+        assert(state.black_to_play);
+    }
+
     bool opEquals(in CanonicalState!T rhs) const pure nothrow
     {
         return state == rhs.state;
@@ -1001,11 +1012,11 @@ struct CanonicalState(T)
         state.swap_turns;
     }
 
-    CanonicalState!T[] children(T[] moves)
+    CanonicalState!T[] children()
     {
         CanonicalState!T[] _children;
         bool[CanonicalState!T] seen;
-        foreach (child; state.children(moves)){
+        foreach (child; state.children){
             auto canonical_child = CanonicalState!T(child);
             if (canonical_child !in seen){
                 seen[canonical_child] = true;

@@ -8,7 +8,7 @@ import std.array;
 import utils;
 import board8;
 import state;
-import defense_state;
+//import defense_state;
 
 
 /**
@@ -22,14 +22,12 @@ class GameState(T, S)
     S state;
     float low_value = -float.infinity;
     float high_value = float.infinity;
-    int value_shift = 0;
     bool is_leaf = false;
     GameState!(T, S)[] children;
     GameState!(T, S)[S] parents;
 
     private
     {
-        T[] moves;
         bool is_populated = false;
     }
 
@@ -38,21 +36,12 @@ class GameState(T, S)
         this(S(playing_area));
     }
 
-    this(S state, int value_shift=0, T[] moves=null)
+    this(S state)
     {
         this.state = state;
-        this.value_shift = value_shift;
         if (state.is_leaf){
             is_leaf = true;
-            low_value = high_value = state.liberty_score + value_shift;
-        }
-        else{
-            if (moves is null){
-                calculate_available_moves;
-            }
-            else{
-                this.moves = moves;
-            }
+            low_value = high_value = state.liberty_score;
         }
     }
 
@@ -65,52 +54,19 @@ class GameState(T, S)
         return new GameState!(T, S)(state);
     }
 
-    void calculate_available_moves()
-    {
-        for (int y = 0; y < T.HEIGHT; y++){
-            for (int x = 0; x < T.WIDTH; x++){
-                T move = T(x, y);
-                if (move & state.playing_area){
-                    moves ~= move;
-                }
-            }
-        }
-        moves ~= T();
-    }
-
     void make_children(ref GameState!(T, S)[S] state_pool)
     {
         children = [];
 
-        // Prune out transpositions.
-        S[] child_states;
-        int[] child_value_shifts;
-        bool[S] seen;
-        foreach (child_state; state.children(moves)){
-            int child_value_shift = child_state.reduce;
-            child_state.canonize;
-            if (child_state !in seen){
-                seen[child_state] = true;
-                child_states ~= child_state;
-                child_value_shifts ~= child_value_shift;
-            }
-        }
-
-        foreach (index, child_state; child_states){
+        foreach (child_state; state.children){
+            assert(child_state.black_to_play);
             if (child_state in state_pool){
                 auto child = state_pool[child_state];
                 children ~= child;
                 child.parents[state] = this;
             }
             else{
-                assert(child_state.black_to_play);
-                int child_value_shift = child_value_shifts[index];
-
-                T[] child_moves = null;
-                if (child_state.playing_area == state.playing_area){
-                    child_moves = moves;
-                }
-                auto child = new GameState!(T, S)(child_state, child_value_shift - value_shift, child_moves);
+                auto child = new GameState!(T, S)(child_state);
                 children ~= child;
                 child.parents[state] = this;
                 state_pool[child.state] = child;
@@ -245,11 +201,10 @@ class GameState(T, S)
     override string toString()
     {
         return format(
-            "%s\nlow_value=%s high_value=%s value_shift=%s number of children=%s",
+            "%s\nlow_value=%s high_value=%s number of children=%s",
             state,
             low_value,
             high_value,
-            value_shift,
             children.length
         );
     }
@@ -269,8 +224,8 @@ class GameState(T, S)
         GameState!(T, S)[] result = [this];
         bool found_one = false;
         foreach(child; children){
-            if (mixin("-child." ~ other_type ~ "_value == " ~ type ~ "_value && -child." ~ type ~ "_value == " ~ other_type ~ "_value")){
-                result ~= child.principal_path!type(max_depth - 1);
+            if (mixin("-child." ~ other_type ~ "_value == " ~ type ~ "_value && -child." ~ type ~ "_value == " ~ type ~ "_value")){
+                result ~= child.principal_path!other_type(max_depth - 1);
                 found_one = true;
                 break;
             }
@@ -279,8 +234,16 @@ class GameState(T, S)
         if (!found_one){
             foreach(child; children){
                 if (mixin("-child." ~ other_type ~ "_value == " ~ type ~ "_value")){
-                    result ~= child.principal_path!type(max_depth - 1);
+                    result ~= child.principal_path!other_type(max_depth - 1);
                     break;
+                }
+            }
+        }
+
+        foreach (i, previous_state; result){
+            foreach (j, other_state; result[i+1..$]){
+                if (other_state == previous_state){
+                    return result[0..j];
                 }
             }
         }
@@ -289,8 +252,8 @@ class GameState(T, S)
     }
 }
 
-alias GameState8 = GameState!(Board8, State8);
-alias DefenseGameState8 = GameState!(Board8, DefenseState8);
+alias GameState8 = GameState!(Board8, CanonicalState8);
+//alias DefenseGameState8 = GameState!(Board8, DefenseState8);
 
 unittest
 {
@@ -304,9 +267,10 @@ unittest
     assert(gs.low_value == -2);
     assert(gs.high_value == 2);
 
-    gs = new GameState8(rectangle8(2, 1));
-    gs.state.opponent = Board8(0, 0);
-    gs.state.ko = Board8(1, 0);
+    auto state = State8(rectangle8(2, 1));
+    state.opponent = Board8(0, 0);
+    state.ko = Board8(1, 0);
+    gs = new GameState8(CanonicalState8(state));
     gs.calculate_minimax_value;
     assert(gs.low_value == -2);
     assert(gs.high_value == 2);
@@ -339,7 +303,7 @@ unittest
 {
     auto gs = new GameState8(rectangle8(3, 1));
     gs.calculate_minimax_value;
-    void check_children(GameState8 gs, ref bool[State8] checked){
+    void check_children(GameState8 gs, ref bool[CanonicalState8] checked){
         foreach (child; gs.children){
             if (child.state !in checked){
                 checked[child.state] = true;
@@ -351,7 +315,7 @@ unittest
         assert(c.low_value == gs.low_value);
         assert(c.high_value == gs.high_value);
     }
-    bool[State8] checked;
+    bool[CanonicalState8] checked;
     check_children(gs, checked);
 }
 
@@ -376,6 +340,7 @@ unittest
     assert(gs.high_value == 6);
 }
 
+/*
 unittest
 {
     auto s = DefenseState8(rectangle8(4, 3));
@@ -417,3 +382,4 @@ unittest
     assert(gs.low_value == -14);
     assert(gs.high_value == -14);
 }
+*/

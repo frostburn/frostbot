@@ -13,9 +13,10 @@ import board11;
 import bit_matrix;
 import state;
 import pattern3;
-//import polyomino;
+import polyomino;
+import game_state;
+import bounded_state;
 //import defense_state;
-//import game_state;
 //import search_state;
 //import defense_search_state;
 //import defense;
@@ -37,9 +38,89 @@ void main()
 {
     writeln("main");
 
+    BoundedState8[CanonicalState8] empty;
+    auto state_pool = &empty;
+
+    auto s = State8(rectangle8(4, 3));
+    //s.opponent = Board8(1, 0);
+    //s.value_shift = 0.5;
+    auto bs = new BoundedState8(CanonicalState8(s), state_pool);
+
+    //bs.full_expand;
+    //writeln(bs);
+    /*
+    bs.expand;
+    bs.expand;
+    bs.expand;
+    bs.expand;
+    bs.expand;
+    bs.expand;
+    bs.expand;
+    bs.calculate_current_values;
+    writeln(state_pool.length);
+    //writeln(bs);
+
+    foreach (b; state_pool.byValue){
+        writeln;
+        writeln(b);
+    }
+    */
+    int i = 0;
+    while(bs.expand){
+        i++;
+        //writeln(bs);
+    }
+    writeln(i);
+    writeln(state_pool.length);
+    writeln(bs);
+
+    /*
+    abs.make_children;
+    auto a = abs.children[1];
+    a.calculate_minimax_values;
+    writeln(a);
+    */
+
+    /*
+    abs.calculate_minimax_values;
+
+    writeln(abs);
+    foreach (child; abs.children){
+        writeln;
+        child.calculate_minimax_values;
+        writeln(child);
+        //ABState8[CanonicalState8] e;
+        //auto np = &e;
+        //auto c = new ABState8(child.state, np);
+        //c.calculate_minimax_values;
+        //writeln(c);
+        //writeln(child.high_value);
+    }
+    */
+
+
+    /*
+    auto s = State8(rectangle8(4, 4));
+    s.player = Board8(1, 1) | Board8(2, 1);
+    s.opponent = Board8(1, 2) | Board8(2, 2);
+    s.player_unconditional = s.player;
+    s.opponent_unconditional = s.opponent;
+    */
+    //s = State8(rectangle8(3, 2));
+    //s.value_shift = 0.5;
+    /*
+    auto cs = CanonicalState8(s);
+    //writeln(cs);
+    auto gs = new GameState8(cs);
+    gs.calculate_minimax_value;
+    foreach (c; gs.principal_path!"low"){
+        writeln(c);
+    }
+    */
+
+    /*
     auto s = State8(rectangle8(7, 7));
-
     writeln(s);
-
     examine_state_playout(s, true);
+    */
 }
