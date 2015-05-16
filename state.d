@@ -577,12 +577,19 @@ struct State(T)
         }
 
         // Determine unconditional territory of closed regions
+        debug (territory){
+            writeln("Analyzing unconditional territory:");
+            writeln(this);
+        }
         foreach (region; (~player_unconditional & playing_area).chains){
             if (region & opponent_unconditional){
                 continue;
             }
-            region = region.cross(playing_area);
-            if ((region & player_unconditional) && is_unconditional_territory(region, player, opponent, player_unconditional)){
+            auto extended_region = region.cross(playing_area);
+            if (
+                (extended_region & player_unconditional) &&
+                is_unconditional_territory(extended_region, player & region, opponent & region, player_unconditional & extended_region)
+            ){
                 player_unconditional |= region;
             }
         }
@@ -590,8 +597,11 @@ struct State(T)
             if (region & player_unconditional){
                 continue;
             }
-            region = region.cross(playing_area);
-            if ((region & opponent_unconditional) && is_unconditional_territory(region, opponent, player, opponent_unconditional)){
+            auto extended_region = region.cross(playing_area);
+            if (
+                (extended_region & opponent_unconditional) &&
+                is_unconditional_territory(extended_region, opponent & region, player & region, opponent_unconditional & extended_region)
+            ){
                 opponent_unconditional |= region;
             }
         }
@@ -620,6 +630,14 @@ struct State(T)
 
     string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure)
     {
+        //0 - Gray
+        //1 - Red
+        //2 - Green
+        //3 - Yellow
+        //4 - Blue
+        //5 - Purple
+        //6 - Cyan
+        //7 - White
         string r;
         T p;
         for (int y = 0; y < playing_area.vertical_extent; y++){
@@ -627,13 +645,32 @@ struct State(T)
                 p = T(x, y);
                 if (playing_area & p){
                     r ~= "\x1b[0;30;";
-                    if ((player_secure | opponent_secure) & p){
-                        r ~= "42m";
+                    if (player_secure & p){
+                        if (opponent & p){
+                            // Red
+                            r ~= "41m";
+                        }
+                        else{
+                            // Green
+                            r ~= "42m";
+                        }
+                    }
+                    else if (opponent_secure & p){
+                        if (player & p){
+                            // Red
+                            r ~= "41m";
+                        }
+                        else{
+                            // Green
+                            r ~= "42m";
+                        }
                     }
                     else if ((player_defendable | opponent_defendable) & p){
+                        // Blue
                         r ~= "44m";
                     }
                     else{
+                        // Yeallow
                         r ~= "43m";
                     }
                 }
@@ -732,78 +769,144 @@ void benson(T)(ref T[] chains, ref T[] regions, in T opponent, in T immortal, in
     regions = temp;
 }
 
+
+// NOTE: Allows for huge kills that might not actually count.
+// If the the ruleset demands that all removable stones must be removed then
+// it might be possible for the invader to live under the removed stones.
+// Under weird rulesets it may be even possible to live in seki while in atari.
 bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unconditional)
 {
-    if (region.euler != 1){
-        return false;
+    debug (territory){
+        writeln("Arguments:");
+        writeln("region");
+        writeln(region);
+        writeln("player");
+        writeln(player);
+        writeln("opponent");
+        writeln(opponent);
+        writeln("player_unconditional");
+        writeln(player_unconditional);
     }
-    T playable = (region | opponent) & ~player_unconditional;
-    T eyes = region & ~opponent & ~player_unconditional.cross(region);
-    foreach (piece; eyes.pieces){
-        if (!piece.liberties(playable).flood_into(piece.blob(region)).is_contiguous){
-            eyes ^= piece;
-            if (player & piece){
-                eyes ^= piece.cross(eyes);
+    foreach (chain; player.chains){
+        auto liberties = chain.liberties(region & ~opponent);
+        assert(!(liberties & player_unconditional));
+        if (chain.popcount == 2 && liberties.popcount > 3){
+            //May become seki.
+            if (liberties.chains.length == 4){
+                continue;
+            }
+        }
+        //Otherwise reduces the eyespace or is big enough to capture to get eyes.
+        player ^= chain;
+        opponent |= liberties;
+    }
+    debug (territory){
+        writeln("After initial kills:");
+        writeln("player");
+        writeln(player);
+        writeln("opponent");
+        writeln(opponent);
+    }
+    opponent |= player_unconditional.liberties(region);
+    debug (territory){
+        writeln("After filling the border:");
+        writeln(opponent);
+    }
+    auto inside = region & ~player_unconditional;
+    foreach (chain; opponent.chains){
+        while (true){
+            chain.flood_into(opponent);
+            debug (territory){
+                writeln("Crawling with:");
+                writeln(chain);
+            }
+            auto liberties = chain.liberties(inside);
+            auto true_liberties = liberties & ~player;
+            auto count = true_liberties.popcount;
+            if (count == 0){
+                auto kill = liberties & player;
+                kill.flood_into(player);
+                if (!kill){
+                    assert(!player);
+                    assert(opponent == inside);
+                    debug (territory){
+                        writeln("Crawling left no liberties:");
+                        writeln(opponent);
+                    }
+                    return true;
+                }
+                player ^= kill;
+                opponent |= kill.liberties(region);
+            }
+            // Single stones in atari may live in Moonshine Life.
+            else if (count == 1 && chain.popcount > 1){
+                opponent |= true_liberties;
+            }
+            else {
+                debug (territory){
+                    writeln("Crawl break:");
+                }
+                break;
+            }
+            debug (territory){
+                writeln("Crawled:");
+                writeln(opponent);
             }
         }
     }
-    int count = eyes.popcount;
-    if (count < 2){
-        /*
-        debug(territory){
-            writeln("region");
-            writeln(region);
-            writeln("player");
-            writeln(player);
-            writeln("opponent");
-            writeln(opponent);
-            writeln("player_unconditional");
-            writeln(player_unconditional);
-        }
-        */
+    debug (territory){
+        writeln("After crawling:");
+        writeln("player");
+        writeln(player);
+        writeln("opponent");
+        writeln(opponent);
+    }
+    auto eyes = (inside & ~opponent).chains;
+    if (eyes.length > 1){
+        return false;
+    }
+    // If we reach here it should mean that there is a single eye
+    // that needs to be checked for seki.
+    assert(eyes.length == 1);
+    if (!player){
+        return eyes[0].popcount < 3;
+    }
+    assert(player.popcount == 2);
+    auto liberties = player.liberties(region & ~opponent);
+    if (liberties.popcount < 4){
         return true;
     }
     else {
-        if (count == 2 && ((eyes & eyes.north) || (eyes & eyes.west))){
-            return true;
-        }
-        T defender = player & playable;
-        count = defender.popcount;
-        if (count == 1){
-            if (eyes & ~defender.cross(playable)){
-                return false;
-            }
-            else {
-                return true;
-            }
-        }
-        else if (count == 2){
-            if ((defender & defender.north) || (defender & defender.west)){
-                if (!(eyes & ~defender.cross(playable))){
-                    if (defender.liberties(region & ~opponent).popcount < 4){
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
+        return liberties.chains.length != 4;
     }
 }
+
 
 void examine_state_playout(T)(State!T s, bool canonize=false)
 {
     import std.random;
     import core.thread;
 
+    Mt19937 gen;
+    gen.seed(12345678);
+
     int j = 0;
-    while (j < 100){
+    while (j < 80){
         auto children = s.children;
-        s = children[uniform(0, children.length)];
+        auto n = gen.front;
+        gen.popFront;
+        s = children[n % children.length];
         if (canonize){
             s.canonize;
         }
         writeln(s);
-        Thread.sleep(dur!("msecs")(1000));
+        /*
+        writeln("children");
+        foreach (child; children){
+            writeln(child);
+        }
+        */
+        //Thread.sleep(dur!("msecs")(1000));
         j++;
     }
 }
@@ -1069,4 +1172,18 @@ unittest
     s.canonize;
     assert(!s.playing_area);
     assert(s.value_shift == -2);
+}
+
+unittest
+{
+    auto inside = Board8(0, 0) | Board8(1, 0) | Board8(2, 0) | Board8(0, 1) | Board8(1, 1) | Board8(0, 2);
+    auto playing_area = inside.cross(full8);
+    auto player_unconditional = inside.liberties(playing_area);
+    // The state would be unconditional territory in global search,
+    // but locally white could make Moonshine Life.
+    // auto s = State8(playing_area);
+    // s.player = player_unconditional;
+    // s.player_unconditional = player_unconditional;
+    // s.canonize;
+    assert(!is_unconditional_territory(playing_area, Board8(), Board8(), player_unconditional));
 }
