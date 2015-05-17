@@ -28,6 +28,7 @@ import bounded_state;
 //import likelyhood;
 //import wdl_node;
 //import direct_mc;
+import tsumego;
 
 
 // Lol "makefile"
@@ -41,39 +42,60 @@ void main()
     BoundedState8[CanonicalState8] empty;
     auto state_pool = &empty;
 
-    auto s = State8(rectangle8(4, 3));
-    //s.opponent = Board8(1, 0);
-    //s.value_shift = 0.5;
+    /*
+    auto s = State8(rectangle8(4, 4));
+    s.player = Board8(1, 1) | Board8(2, 1) | Board8(0, 2);
+    s.opponent = Board8(1, 2) | Board8(2, 2) | Board8(3, 1);
+    */
+
+    auto opponent = rectangle8(5, 1).south;
+    auto space = rectangle8(7, 2) | Board8(7, 0) | Board8(0, 2);
+    auto playing_area = rectangle8(8, 4);
+    auto player = playing_area & ~space;
+    //player |= Board8(1, 0);
+    auto s = State8(playing_area);
+    s.player = player;
+    s.player_unconditional = player;
+    s.opponent = opponent;
+    //s.swap_turns;
+    writeln(s);
     auto bs = new BoundedState8(CanonicalState8(s), state_pool);
 
-    //bs.full_expand;
-    //writeln(bs);
-    /*
-    bs.expand;
-    bs.expand;
-    bs.expand;
-    bs.expand;
-    bs.expand;
-    bs.expand;
-    bs.expand;
-    bs.calculate_current_values;
-    writeln(state_pool.length);
-    //writeln(bs);
-
-    foreach (b; state_pool.byValue){
-        writeln;
-        writeln(b);
-    }
-    */
     int i = 0;
     while(bs.expand){
         i++;
-        //writeln(bs);
+        writeln(bs);
+        writeln(state_pool.length);
     }
     writeln(i);
     writeln(state_pool.length);
     writeln(bs);
+    foreach (b; bs.principal_path!"low"){
+        writeln(b);
+    }
 
+    /*
+    foreach (c; bs.children){
+        while (c.expand) {
+        }
+        if (c.low_lower_bound == -32 && c.high_upper_bound == -10){
+            foreach (b; c.principal_path!"high"(100, true)){
+                writeln(b);
+            }
+        }
+        //writeln(c);
+    }
+    */
+
+    /*
+    bool[CanonicalState8] uniques;
+    foreach (b; state_pool.byValue){
+        auto key = b.state;
+        key.value_shift = 0;
+        uniques[key] = true;
+    }
+    writeln(uniques.length);
+    */
     /*
     abs.make_children;
     auto a = abs.children[1];
@@ -106,15 +128,37 @@ void main()
     s.player_unconditional = s.player;
     s.opponent_unconditional = s.opponent;
     */
+    /*
     //s = State8(rectangle8(3, 2));
     //s.value_shift = 0.5;
-    /*
     auto cs = CanonicalState8(s);
     //writeln(cs);
     auto gs = new GameState8(cs);
     gs.calculate_minimax_value;
     foreach (c; gs.principal_path!"low"){
         writeln(c);
+    }
+
+    GameState8[CanonicalState8] pool;
+    void get_all(GameState8 root){
+        if (root.state !in pool){
+            pool[root.state] = root;
+            foreach (child; root.children){
+                get_all(child);
+            }
+        }
+    }
+
+    get_all(gs);
+
+    foreach (g; pool.byValue){
+        float l, u;
+        g.state.get_score_bounds(l, u);
+        if (l > g.low_value || u < g.high_value){
+            writeln(g);
+            writeln(l, ", ", u);
+            writeln;
+        }
     }
     */
 

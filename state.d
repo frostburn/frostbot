@@ -347,22 +347,65 @@ struct State(T)
 
     float liberty_score()
     {
-        float score = value_shift;
-
         T player_controlled_territory = (player | player_unconditional) & ~opponent_unconditional;
         T opponent_controlled_territory = (opponent | opponent_unconditional) & ~player_unconditional;
 
-        score += player_controlled_territory.popcount;
+        auto score = player_controlled_territory.popcount;
         score -= opponent_controlled_territory.popcount;
 
         score += player_controlled_territory.liberties(playing_area & ~opponent_controlled_territory).popcount;
         score -= opponent_controlled_territory.liberties(playing_area & ~player_controlled_territory).popcount;
 
         if (black_to_play){
-            return score;
+            return value_shift + score;
         }
         else{
-            return -score;
+            return value_shift - score;
+        }
+    }
+
+    void get_score_bounds(out float lower_bound, out float upper_bound)
+    {
+        if (is_leaf){
+            lower_bound = upper_bound = liberty_score;
+            return;
+        }
+        // Calculate assuming black to play.
+        float size = playing_area.popcount;
+        lower_bound = -size;
+        upper_bound = size;
+
+        // The minimal strategy is to fill half of sure dames.
+        auto space = playing_area & ~player & ~opponent;
+        int player_crawl = player_unconditional.liberties(space).popcount;
+        int opponent_crawl = opponent_unconditional.liberties(space).popcount;
+
+        lower_bound += player_crawl + (player_crawl & 1);
+        upper_bound -= opponent_crawl - (opponent_crawl & 1);
+
+        lower_bound += 2 * player_unconditional.popcount;
+        upper_bound -= 2 * opponent_unconditional.popcount;
+
+        if (black_to_play){
+            lower_bound += value_shift;
+            upper_bound += value_shift;
+            if (passes == 1){
+                auto score = liberty_score;
+                if (score > lower_bound){
+                    lower_bound = score;
+                }
+            }
+        }
+        else {
+            auto temp = lower_bound;
+            lower_bound = value_shift - upper_bound;
+            upper_bound = value_shift - lower_bound;
+            if (passes == 1){
+                auto score = liberty_score;
+                if (score < upper_bound){
+                    upper_bound = score;
+                }
+            }
         }
     }
 
@@ -445,25 +488,18 @@ struct State(T)
         opponent_unconditional.mirror_v;
     }
 
-    void canonize()
-    {
-        int dummy_w, dummy_n;
-        canonize(dummy_w, dummy_n);
-    }
-
     // TODO: Canonize hierarchically ie. based on opCmp order.
-    Transformation canonize(out int final_westwards, out int final_northwards)
+    Transformation canonize()
     {
         if (!black_to_play){
             flip_colors;
         }
         analyze_unconditional;
         reduce;
-        auto initial_playing_area = playing_area;  // TODO: Calculate fixes manually
+        snap;
 
         auto final_transformation = Transformation.none;
         auto current_transformation = Transformation.none;
-        snap(final_westwards, final_northwards);
         auto temp = this;
         enum compare_and_replace = "
             debug(canonize){
@@ -481,11 +517,11 @@ struct State(T)
         ";
         enum do_rotation = "
             temp.rotate;
-            temp.snap(final_westwards, final_northwards);
+            temp.snap;
         ";
         enum do_mirror_v = "
             temp.mirror_v;
-            temp.snap(final_westwards, final_northwards);
+            temp.snap;
         ";
         if (can_rotate){
             //TODO: Rotate only once.
@@ -511,7 +547,7 @@ struct State(T)
             mixin(compare_and_replace);
 
             temp.mirror_h;
-            temp.snap(final_westwards, final_northwards);
+            temp.snap;
             current_transformation = Transformation.flip;
             mixin(compare_and_replace);
             
@@ -519,10 +555,6 @@ struct State(T)
             current_transformation = Transformation.mirror_h;
             mixin(compare_and_replace);
         }
-
-        initial_playing_area.transform(final_transformation);
-        initial_playing_area.snap(final_westwards, final_northwards);
-
         return final_transformation;
     }
 
@@ -775,6 +807,29 @@ void benson(T)(ref T[] chains, ref T[] regions, in T opponent, in T immortal, in
     regions = temp;
 }
 
+bool can_become_seki(T)(T chain, T liberties)
+{
+    if (chain.popcount != 2){
+        return false;
+    }
+
+    auto count = liberties.popcount;
+    if (count == 6){
+        return true;
+    }
+    else if (count == 5){
+        return liberties.chains.length == 4;
+    }
+    else if(count == 4){
+        if (liberties.chains.length == 4){
+            return !(liberties & liberties.north(2) || liberties & liberties.east(2));
+        }
+        else {
+            return false;
+        }
+    }
+    return false;
+}
 
 // NOTE: Allows for huge kills that might not actually count.
 // If the the ruleset demands that all removable stones must be removed then
@@ -782,6 +837,7 @@ void benson(T)(ref T[] chains, ref T[] regions, in T opponent, in T immortal, in
 // Under weird rulesets it may be even possible to live in seki while in atari.
 bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unconditional)
 {
+    // return false;
     debug (territory){
         writeln("Arguments:");
         writeln("region");
@@ -796,13 +852,11 @@ bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unco
     foreach (chain; player.chains){
         auto liberties = chain.liberties(region & ~opponent);
         assert(!(liberties & player_unconditional));
-        if (chain.popcount == 2 && liberties.popcount > 3){
-            //May become seki.
-            if (liberties.chains.length == 4){
-                continue;
-            }
+        // A chain migh be weak enough for the area to become seki.
+        if (can_become_seki(chain, liberties)){
+            continue;
         }
-        //Otherwise reduces the eyespace or is big enough to capture to get eyes.
+        // Otherwise the chain reduces the eyespace or is big enough to capture to get eyes.
         player ^= chain;
         opponent |= liberties;
     }
@@ -829,6 +883,24 @@ bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unco
             auto liberties = chain.liberties(inside);
             auto true_liberties = liberties & ~player;
             auto count = true_liberties.popcount;
+            T capturing_stone;
+            bool is_double_capture = false;
+            bool is_recapturable;
+            if (count == 1){
+                capturing_stone = true_liberties;
+                assert(!capturing_stone.liberties(player));
+                foreach (piece; [capturing_stone.north, capturing_stone.east, capturing_stone.west, capturing_stone.south]){
+                    if (piece & (chain | ~opponent)){
+                        continue;
+                    }
+                    auto other_chain = piece.flood_into(opponent);
+                    if (other_chain.liberties(inside & ~player).popcount == 1){
+                        is_double_capture = true;
+                        break;
+                    }
+                }
+                is_recapturable = capturing_stone.liberties(chain).popcount == 1;
+            }
             if (count == 0){
                 auto kill = liberties & player;
                 kill.flood_into(player);
@@ -844,8 +916,8 @@ bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unco
                 player ^= kill;
                 opponent |= kill.liberties(region);
             }
-            // Single stones in atari may live in Moonshine Life.
-            else if (count == 1 && chain.popcount > 1){
+            // If capturing this chain leads to recapture then life in double ko or moonshine life may be possible.
+            else if (count == 1 && (is_double_capture || !is_recapturable)){
                 opponent |= true_liberties;
             }
             else {
@@ -874,17 +946,16 @@ bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unco
     // If we reach here it should mean that there is a single eye
     // that needs to be checked for seki.
     assert(eyes.length == 1);
+    auto eye = eyes[0];
     if (!player){
-        return eyes[0].popcount < 3;
+        return eye.popcount < 3;
     }
     assert(player.popcount == 2);
     auto liberties = player.liberties(region & ~opponent);
-    if (liberties.popcount < 4){
-        return true;
+    if ((player | liberties) != eye){
+        return false;
     }
-    else {
-        return liberties.chains.length != 4;
-    }
+    return !can_become_seki(player, liberties);
 }
 
 
@@ -894,7 +965,7 @@ void examine_state_playout(T)(State!T s, bool canonize=false)
     import core.thread;
 
     Mt19937 gen;
-    gen.seed(12345678);
+    gen.seed(2345678);
 
     int j = 0;
     while (j < 80){
@@ -1003,9 +1074,20 @@ struct CanonicalState(T)
         return state.value_shift;
     }
 
+    float value_shift(float shift) @property
+    {
+        state.value_shift = shift;
+        return shift;
+    }
+
     float liberty_score()
     {
         return state.liberty_score;
+    }
+
+    void get_score_bounds(out float lower_bound, out float upper_bound)
+    {
+        state.get_score_bounds(lower_bound, upper_bound);
     }
 
     void swap_turns(){
@@ -1195,6 +1277,42 @@ unittest
     // auto s = State8(playing_area);
     // s.player = player_unconditional;
     // s.player_unconditional = player_unconditional;
+    // writeln(s);
     // s.canonize;
     assert(!is_unconditional_territory(playing_area, Board8(), Board8(), player_unconditional));
+}
+
+unittest
+{
+    // TODO: Turn into proper unittests.
+    /*
+    auto playing_area = rectangle11(9, 9);
+    auto eyespace = (rectangle11(6, 7).south(2) | Board11(6, 3) | Board11(6, 4)) & ~(rectangle11(3, 2).south(4).east(2) | rectangle11(3, 2).south(6).east(1) | Board11(5, 7) | Board11(5, 8) | Board11(0, 2));
+    auto player = playing_area & ~(Board11(7, 1) | Board11(8, 6) | Board11(7, 8) | Board11(2, 6) | Board11(3, 5) | eyespace);
+    player |= Board11(3, 8);  // Without this the invader lives with a multi-headed dragon.
+    auto opponent = player.liberties(playing_area) & eyespace;
+    opponent |= Board11(0, 4); // Without this the invader makes an eye and lives in moonshine.
+    auto s = State11(playing_area);
+    s.player = player;
+    s.opponent = opponent;
+    s.analyze_unconditional;
+    writeln(s);
+    */
+
+    /*
+    auto area = rectangle8(6, 5);
+    auto defender = Board8(2, 2) | Board8(3, 2);
+    auto space = defender.cross(area) | Board8(1, 1);
+    auto invader = space.cross(area).cross(area);
+    auto defender_unconditional = area & ~invader;
+    invader &= ~defender_unconditional;
+    defender |= defender_unconditional;
+    invader &= ~space;
+    auto s = State8(area);
+    s.player = defender;
+    s.player_unconditional = defender_unconditional;
+    s.opponent = invader;
+    s.analyze_unconditional;
+    writeln(s);
+    */
 }

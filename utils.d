@@ -187,7 +187,7 @@ unittest
     auto h = new HistoryNode!int(s);
 
     int child_s = 1;
-    auto child_h = new HistoryNode!int(child_s, h);
+    auto child_h = new HistoryNode!int(child_s, &h);
 
     assert(child_s !in h);
     assert(child_s in child_h);

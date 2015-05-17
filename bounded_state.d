@@ -14,7 +14,56 @@ import state;
 ulong next_tag = 1;
 
 
-//enum ExpansionResult {success, done, loop};
+static bool is_better(T, S)(BoundedState!(T, S) a, BoundedState!(T, S) b){
+    if (a.is_leaf && !b.is_leaf){
+        return false;
+    }
+    if (b.is_leaf && !a.is_leaf){
+        return true;
+    }
+
+    if (a.state.passes < b.state.passes){
+        return true;
+    }
+    if (b.state.passes < a.state.passes){
+        return false;
+    }
+
+    if (a.high_upper_bound < b.high_upper_bound){
+        return true;
+    }
+    if (a.high_upper_bound > b.high_upper_bound){
+        return false;
+    }
+    if (a.low_lower_bound < b.low_lower_bound){
+        return true;
+    }
+    if (a.low_lower_bound > b.low_lower_bound){
+        return false;
+    }
+
+    auto a_euler = a.state.opponent.euler - a.state.player.euler;
+    auto b_euler = b.state.opponent.euler - b.state.player.euler;
+
+    if (a_euler < b_euler){
+        return true;
+    }
+    if (b_euler < a_euler){
+        return false;
+    }
+
+    auto a_popcount = a.state.opponent.popcount - a.state.player.popcount - a.state.value_shift;
+    auto b_popcount = b.state.opponent.popcount - b.state.player.popcount - b.state.value_shift ;
+
+    if (a_popcount > b_popcount){
+        return true;
+    }
+    if (b_popcount > a_popcount){
+        return false;
+    }
+
+    return false;
+}
 
 
 class BoundedState(T, S)
@@ -45,11 +94,21 @@ class BoundedState(T, S)
             is_leaf = true;
             low_lower_bound = high_lower_bound = low_upper_bound = high_upper_bound = state.liberty_score;
         }
+        else {
+            state.get_score_bounds(low_lower_bound, high_upper_bound);
+            high_lower_bound = low_lower_bound;
+            low_upper_bound = high_upper_bound;
+        }
     }
 
     invariant
     {
         assert(state.passes <= 2);
+    }
+
+    bool is_final()
+    {
+        return low_lower_bound == low_upper_bound && high_lower_bound == high_upper_bound;
     }
 
     void make_children()
@@ -70,7 +129,8 @@ class BoundedState(T, S)
                 child.parents[state] = this;
             }
         }
-        children.randomShuffle;
+        //children.randomShuffle;
+        sort!(is_better!(T, S))(children);
     }
 
     bool update_value()
@@ -117,6 +177,7 @@ class BoundedState(T, S)
         //assert(high_lower_bound >= old_high_lower_bound);
         assert(low_lower_bound <= low_upper_bound);
         assert(high_lower_bound <= high_upper_bound);
+        assert(low_lower_bound <= high_upper_bound);
 
         return (
             old_low_lower_bound != low_lower_bound ||
@@ -155,6 +216,7 @@ class BoundedState(T, S)
 
     void calculate_current_values()
     {
+        // TODO: Collect a parent set to update instead.
         BoundedState!(T, S)[] leaf_queue;
 
         foreach (bounded_state; (*state_pool).byValue){
@@ -166,6 +228,7 @@ class BoundedState(T, S)
                 leaf_queue ~= bounded_state;
             }
             else {
+                // TODO: Investigate.
                 bounded_state.low_upper_bound = bounded_state.low_lower_bound;
                 bounded_state.high_lower_bound = bounded_state.high_upper_bound;
             }
@@ -203,7 +266,7 @@ class BoundedState(T, S)
     bool expand()
     {
         calculate_current_values;
-        if (low_lower_bound == low_upper_bound && high_lower_bound == high_upper_bound){
+        if (is_final){
             return false;
         }
         auto result = expand(next_tag++);
@@ -261,24 +324,26 @@ class BoundedState(T, S)
         if (done){
             return true;
         }
-        return false;
-        //assert(false);
-        /*
+         return false;
+         /*
         // Loops suck. I get it.
         foreach (child; children){
             if (child.high_lower_bound != child.high_upper_bound){
-                if (child.expand(tag) != ExpansionResult.loop){
-                    return ExpansionResult.success;
+                if (child.expand(tag)){
+                    return true;
                 }
             }
         }
         foreach (child; children){
             if (child.low_lower_bound != child.low_upper_bound){
-                if (child.expand(tag) != ExpansionResult.loop){
-                    return ExpansionResult.success;
+                if (child.expand(tag)){
+                    return true;
                 }
             }
         }
+        return false;
+        */
+        /*
         // OK. This is just desperate.
         foreach (child; children){
             if (!child.is_leaf && child.tag != tag){
@@ -296,6 +361,61 @@ class BoundedState(T, S)
             return ExpansionResult.loop;
         }
         */
+    }
+
+    BoundedState!(T, S)[] principal_path(string type)(int max_depth=100, bool same=false)
+    {
+        static assert(type == "high" || type == "low");
+        static if (type == "high"){
+            enum other_type = "low";
+        }
+        else{
+            enum other_type = "high";
+        }
+        if (max_depth <= 0){
+            return [];
+        }
+        BoundedState!(T, S)[] result = [this];
+        bool found_one = false;
+        foreach(child; children){
+            if (
+                mixin("-child." ~ other_type ~ "_lower_bound == " ~ type ~ "_lower_bound && -child." ~ type ~ "_lower_bound == " ~ type ~ "_lower_bound") &&
+                mixin("-child." ~ other_type ~ "_upper_bound == " ~ type ~ "_upper_bound && -child." ~ type ~ "_upper_bound == " ~ type ~ "_upper_bound")
+            ){
+                if (same){
+                    result ~= child.principal_path!type(max_depth - 1);
+                }
+                else {
+                    result ~= child.principal_path!other_type(max_depth - 1);
+                }
+                found_one = true;
+                break;
+            }
+        }
+
+        if (!found_one){
+            foreach(child; children){
+                if (mixin("-child." ~ other_type ~ "_lower_bound == " ~ type ~ "_lower_bound && -child." ~ other_type ~ "_upper_bound == " ~ type ~ "_upper_bound")){
+                    if (same){
+                        result ~= child.principal_path!type(max_depth - 1);
+                    }
+                    else {
+                        result ~= child.principal_path!other_type(max_depth - 1);
+                    }
+                    break;
+                }
+            }
+        }
+
+        foreach (i, previous_state; result){
+            foreach (j, other_state; result[i+1..$]){
+                if (other_state == previous_state){
+                    return result[0..j];
+                }
+            }
+        }
+
+        return result;
     }
 
     override string toString()

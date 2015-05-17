@@ -199,6 +199,15 @@ struct Board11
         return Board11((north_bits << H_SHIFT) & FULL, (south_bits << H_SHIFT) & FULL, true);
     }
 
+    Board11 east(in int n) pure nothrow @nogc @safe
+    {
+        auto result = this;
+        foreach (i; 0..n){
+            result = result.east;
+        }
+        return result;
+    }
+
     Board11 west() const pure nothrow @nogc @safe
     in
     {
@@ -211,6 +220,15 @@ struct Board11
     body
     {
         return Board11((north_bits >> H_SHIFT) & FULL, (south_bits >> H_SHIFT) & FULL, true);
+    }
+
+    Board11 west(in int n) pure nothrow @nogc @safe
+    {
+        auto result = this;
+        foreach (i; 0..n){
+            result = result.west;
+        }
+        return result;
     }
 
     Board11 north() const pure nothrow @nogc @safe
@@ -227,6 +245,15 @@ struct Board11
         return Board11((north_bits >> V_SHIFT) | (south_bits & FLOOD_LINE), (south_bits << V_SHIFT) & FULL, true);
     }
 
+    Board11 north(in int n) pure nothrow @nogc @safe
+    {
+        auto result = this;
+        foreach (i; 0..n){
+            result = result.north;
+        }
+        return result;
+    }
+
     Board11 south() const pure nothrow @nogc @safe
     in
     {
@@ -241,14 +268,25 @@ struct Board11
         return Board11((north_bits << V_SHIFT) & FULL, (south_bits >> V_SHIFT) | (north_bits & FLOOD_LINE), true);
     }
 
+    Board11 south(in int n) pure nothrow @nogc @safe
+    {
+        auto result = this;
+        foreach (i; 0..n){
+            result = result.south;
+        }
+        return result;
+    }
+
     //TODO:
     ubyte pattern3_player_at(in int x, in int y) const
     {
+        assert(false);
         return 0;
     }
 
     ubyte pattern3_border_at(in int x, in int y) const
     {
+        assert(false);
         return 0;
     }
 
@@ -610,6 +648,7 @@ struct Board11
     // TODO:
     int euler()
     {
+        assert(false);
         return 0;
     }
 
