@@ -1,0 +1,3 @@
+Consistent naming of classes and structs: Board -> State -> Node
+Consistent naming accross classes and structs
+Delete deprecated and broken modules

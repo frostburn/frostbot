@@ -225,10 +225,11 @@ class BoundedState(T, S)
                 bounded_state.previous_high_lower_bound = bounded_state.high_lower_bound;
             }
             if (bounded_state.is_leaf || !bounded_state.children.length){
+                // DOESN'T INCLUDE ALL NODES WHOSE PARENTS NEED CHECKING!
                 leaf_queue ~= bounded_state;
             }
             else {
-                // TODO: Investigate.
+                // LEADS TO INCORRECT BEHAVIOUR!
                 bounded_state.low_upper_bound = bounded_state.low_lower_bound;
                 bounded_state.high_lower_bound = bounded_state.high_upper_bound;
             }

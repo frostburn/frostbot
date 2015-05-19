@@ -14,8 +14,9 @@ import bit_matrix;
 import state;
 import pattern3;
 import polyomino;
-import game_state;
-import bounded_state;
+import hl_node;
+//import game_state;
+//import bounded_state;
 //import defense_state;
 //import search_state;
 //import defense_search_state;
@@ -28,7 +29,7 @@ import bounded_state;
 //import likelyhood;
 //import wdl_node;
 //import direct_mc;
-import tsumego;
+//import tsumego;
 
 
 // Lol "makefile"
@@ -39,15 +40,16 @@ void main()
 {
     writeln("main");
 
-    BoundedState8[CanonicalState8] empty;
-    auto state_pool = &empty;
+    HLNode8[CanonicalState8] empty;
+    auto node_pool = &empty;
 
+    auto s = State8(rectangle8(4, 3));
     /*
-    auto s = State8(rectangle8(4, 4));
-    s.player = Board8(1, 1) | Board8(2, 1) | Board8(0, 2);
-    s.opponent = Board8(1, 2) | Board8(2, 2) | Board8(3, 1);
+    s.player = Board8(1, 1) | Board8(2, 1);
+    s.opponent = Board8(1, 2) | Board8(2, 2);
     */
 
+    /*
     auto opponent = rectangle8(5, 1).south;
     auto space = rectangle8(7, 2) | Board8(7, 0) | Board8(0, 2);
     auto playing_area = rectangle8(8, 4);
@@ -59,31 +61,67 @@ void main()
     s.opponent = opponent;
     //s.swap_turns;
     writeln(s);
-    auto bs = new BoundedState8(CanonicalState8(s), state_pool);
+    */
+
+    auto h = new HLNode8(CanonicalState8(s), node_pool);
 
     int i = 0;
-    while(bs.expand){
+    while(h.expand){
         i++;
-        writeln(bs);
-        writeln(state_pool.length);
+        writeln(h);
+        writeln(node_pool.length);
     }
     writeln(i);
-    writeln(state_pool.length);
-    writeln(bs);
+    writeln(node_pool.length);
+    writeln(h);
+    foreach (c; h.children){
+        writeln(c);
+    }
+    /*
+    writeln("Full expansion:");
+    h.full_expand;
+    writeln(node_pool.length);
+    writeln(h);
+    foreach (c; h.children){
+        writeln(c);
+    }
+    */
+    /*
+    foreach (i; 0..4){
+        HLNode8[] q;
+        foreach (n; *node_pool){
+            q ~= n;
+        }
+        foreach (n; q){
+            if (!n.is_leaf){
+                n.make_children;
+            }
+        }
+    }
+    h.calculate_current_values;
+    writeln(node_pool.length);
+    foreach (n; *node_pool){
+        writeln(n);
+    }
+    */
+    //writeln(h);
+    /*
     foreach (b; bs.principal_path!"low"){
         writeln(b);
     }
+    */
 
     /*
-    foreach (c; bs.children){
-        while (c.expand) {
-        }
-        if (c.low_lower_bound == -32 && c.high_upper_bound == -10){
-            foreach (b; c.principal_path!"high"(100, true)){
-                writeln(b);
-            }
-        }
-        //writeln(c);
+    foreach (c; h.children){
+        writeln(c);
+    }
+    writeln;
+    */
+    //writeln(h.children[1]);
+    /*
+    foreach (c; h.children[1].children){
+        writeln(c);
+        writeln;
     }
     */
 
