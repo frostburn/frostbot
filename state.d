@@ -759,8 +759,19 @@ void benson(T)(ref T[] chains, ref T[] regions, in T opponent, in T immortal, in
     // if region i is vital to chain j and
     // if region i is the neighbour of chain j
     // stacked on top of each other.
+    // Two virtual regions provide liberties for immortal chains.
     auto chain_count = chains.length;
-    BitMatrix is_vital__is_neighbour = BitMatrix(regions.length, 2 * chain_count);
+    auto region_count = regions.length;
+    auto region_count_plus = region_count;
+    if (immortal){
+        region_count_plus += 2;
+    }
+    if (region_count_plus < 2){
+        chains = chains.init;
+        regions = regions.init;
+        return;
+    }
+    BitMatrix is_vital__is_neighbour = BitMatrix(region_count_plus, 2 * chain_count);
 
     foreach (j, chain; chains){
         T chain_liberties = chain.liberties(playing_area);
@@ -775,14 +786,18 @@ void benson(T)(ref T[] chains, ref T[] regions, in T opponent, in T immortal, in
                 is_vital__is_neighbour.set(i, j + chain_count);
             }
         }
+        if (chain & immortal){
+            is_vital__is_neighbour.set(region_count, j);
+            is_vital__is_neighbour.set(region_count + 1, j);
+        }
     }
 
     bool recheck;
     do{
         recheck = false;
-        foreach (j, chain; chains){
+        foreach (j; 0..chain_count){
             auto vital_count = is_vital__is_neighbour.row_popcount(j);
-            if (vital_count < 2 && !(chain & immortal)){
+            if (vital_count < 2){
                 recheck = recheck || is_vital__is_neighbour.clear_columns_by_row(j + chain_count);
             }
         }

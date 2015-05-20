@@ -41,6 +41,23 @@ struct BitMatrix{
         submatrices.length = submatrix_count;
     }
 
+    bool has_key()
+    {
+        return submatrices.length == 1;
+    }
+
+    ulong key()
+    {
+        assert(has_key);
+        return submatrices[0];
+    }
+
+    void from_key(ulong key)
+    {
+        assert(has_key);
+        submatrices[0] = key;
+    }
+
     void set(size_t i, size_t j)
     in
     {

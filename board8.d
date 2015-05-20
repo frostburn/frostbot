@@ -629,6 +629,9 @@ struct Board8
         ulong temp, temp2;
         Board8[] result;
         foreach (block; FORAGE_TABLE){
+            if (!foragee){
+                break;
+            }
             temp = foragee & block;
             if (temp){
                 temp |= (~(temp + foragee)) & foragee;
@@ -643,9 +646,6 @@ struct Board8
                 } while(temp2 != temp);
                 foragee ^= temp;
                 result ~= Board8(temp);
-            }
-            if (!foragee){
-                break;
             }
         }
         return result;
