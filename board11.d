@@ -2,6 +2,7 @@ module board11;
 
 import std.stdio;
 import std.string;
+import std.stream;
 import core.simd;
 
 import utils;
@@ -63,6 +64,21 @@ struct Board11
         else{
             south_bits = 1UL << (x * H_SHIFT + (9 - y) * V_SHIFT);
         }
+    }
+
+    void to_stream(OutputStream stream)
+    {
+        stream.write(north_bits);
+        stream.write(south_bits);
+    }
+
+    static Board11 from_stream(InputStream stream)
+    {
+        ulong north_bits;
+        ulong south_bits;
+        stream.read(north_bits);
+        stream.read(south_bits);
+        return Board11(north_bits, south_bits, true);
     }
 
     static Board11 full()

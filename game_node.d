@@ -1,4 +1,4 @@
-module game_state;
+module game_node;
 
 import std.stdio;
 import std.string;
@@ -8,23 +8,22 @@ import std.array;
 import utils;
 import board8;
 import state;
-//import defense_state;
 
 
 /**
-* GameState is a wrapper around State structs that maintains a list of descendants and predecessors (of which there can be multiple).
+* GameNode is a wrapper around State structs that maintains a list of descendants and predecessors (of which there can be multiple).
 * It doesn't have a single value. Instead it determines a range of possible values allowed by rulesets with varying super-ko rules.
 */
 
 
-class GameState(T, S)
+class GameNode(T, S)
 {
     S state;
     float low_value = -float.infinity;
     float high_value = float.infinity;
     bool is_leaf = false;
-    GameState!(T, S)[] children;
-    GameState!(T, S)[S] parents;
+    GameNode!(T, S)[] children;
+    GameNode!(T, S)[S] parents;
 
     private
     {
@@ -50,11 +49,11 @@ class GameState(T, S)
         assert(state.passes <= 2);
     }
 
-    GameState!(T, S) copy(){
-        return new GameState!(T, S)(state);
+    GameNode!(T, S) copy(){
+        return new GameNode!(T, S)(state);
     }
 
-    void make_children(ref GameState!(T, S)[S] state_pool)
+    void make_children(ref GameNode!(T, S)[S] state_pool)
     {
         children = [];
 
@@ -66,7 +65,7 @@ class GameState(T, S)
                 child.parents[state] = this;
             }
             else{
-                auto child = new GameState!(T, S)(child_state);
+                auto child = new GameNode!(T, S)(child_state);
                 children ~= child;
                 child.parents[state] = this;
                 state_pool[child.state] = child;
@@ -75,7 +74,7 @@ class GameState(T, S)
 
         //children.randomShuffle;
 
-        static bool more_novel(GameState!(T, S) a, GameState!(T, S) b){
+        static bool more_novel(GameNode!(T, S) a, GameNode!(T, S) b){
             return a.parents.length < b.parents.length;
         }
 
@@ -84,7 +83,7 @@ class GameState(T, S)
 
     void make_children()
     {
-        GameState!(T, S)[S] empty;
+        GameNode!(T, S)[S] empty;
         make_children(empty);
     }
 
@@ -124,33 +123,33 @@ class GameState(T, S)
         return (old_low_value != low_value) || (old_high_value != high_value);
     }
 
-    void populate_game_tree(ref GameState!(T, S)[S] state_pool, ref GameState!(T, S)[] leaf_queue)
+    void populate_game_tree(ref GameNode!(T, S)[S] state_pool, ref GameNode!(T, S)[] leaf_queue)
     {
-        GameState!(T, S)[] queue;
+        GameNode!(T, S)[] queue;
 
         queue ~= this;
 
         while (queue.length){
-            auto game_state = queue.front;
+            auto game_node = queue.front;
             queue.popFront;
             debug(populate) {
                 writeln("Populating with:");
-                writeln(game_state);
+                writeln(game_node);
             }
-            if (!game_state.is_populated){
-                assert(game_state.state in state_pool);
-                assert(state_pool[game_state.state] == game_state);
+            if (!game_node.is_populated){
+                assert(game_node.state in state_pool);
+                assert(state_pool[game_node.state] == game_node);
 
-                game_state.is_populated = true;
+                game_node.is_populated = true;
 
-                if (game_state.is_leaf){
-                    leaf_queue ~= game_state;
+                if (game_node.is_leaf){
+                    leaf_queue ~= game_node;
                     continue;
                 }
 
-                game_state.make_children(state_pool);
+                game_node.make_children(state_pool);
 
-                foreach (child; game_state.children){
+                foreach (child; game_node.children){
                     queue ~= child;
                 }
             }
@@ -163,21 +162,21 @@ class GameState(T, S)
             writeln("Updating parents for:");
             writeln(this);
         }
-        GameState!(T, S)[] queue;
+        GameNode!(T, S)[] queue;
         foreach (parent; parents){
             queue ~= parent;
         }
 
         while (queue.length){
-            auto game_state = queue.front;
+            auto game_node = queue.front;
             queue.popFront;
             debug(update_parents) {
                 writeln("Updating parents for:");
-                writeln(game_state);
+                writeln(game_node);
             }
-            bool changed = game_state.update_value;
+            bool changed = game_node.update_value;
             if (changed){
-                foreach (parent; game_state.parents){
+                foreach (parent; game_node.parents){
                     queue ~= parent;
                 }
             }
@@ -186,8 +185,8 @@ class GameState(T, S)
 
     void calculate_minimax_value()
     {
-        GameState!(T, S)[S] state_pool;
-        GameState!(T, S)[] leaf_queue;
+        GameNode!(T, S)[S] state_pool;
+        GameNode!(T, S)[] leaf_queue;
 
         state_pool[state] = this;
 
@@ -209,7 +208,7 @@ class GameState(T, S)
         );
     }
 
-    GameState!(T, S)[] principal_path(string type)(int max_depth=100)
+    GameNode!(T, S)[] principal_path(string type)(int max_depth=100)
     {
         static assert(type == "high" || type == "low");
         static if (type == "high"){
@@ -221,7 +220,7 @@ class GameState(T, S)
         if (max_depth <= 0){
             return [];
         }
-        GameState!(T, S)[] result = [this];
+        GameNode!(T, S)[] result = [this];
         bool found_one = false;
         foreach(child; children){
             if (mixin("-child." ~ other_type ~ "_value == " ~ type ~ "_value && -child." ~ type ~ "_value == " ~ type ~ "_value")){
@@ -252,17 +251,17 @@ class GameState(T, S)
     }
 }
 
-alias GameState8 = GameState!(Board8, CanonicalState8);
-//alias DefenseGameState8 = GameState!(Board8, DefenseState8);
+alias GameNode8 = GameNode!(Board8, CanonicalState8);
+//alias DefenseGameNode8 = GameNode!(Board8, DefenseState8);
 
 unittest
 {
-    auto gs = new GameState8(rectangle8(1, 1));
+    auto gs = new GameNode8(rectangle8(1, 1));
     gs.calculate_minimax_value;
     assert(gs.low_value == 0);
     assert(gs.high_value == 0);
 
-    gs = new GameState8(rectangle8(2, 1));
+    gs = new GameNode8(rectangle8(2, 1));
     gs.calculate_minimax_value;
     assert(gs.low_value == -2);
     assert(gs.high_value == 2);
@@ -270,12 +269,12 @@ unittest
     auto state = State8(rectangle8(2, 1));
     state.opponent = Board8(0, 0);
     state.ko = Board8(1, 0);
-    gs = new GameState8(CanonicalState8(state));
+    gs = new GameNode8(CanonicalState8(state));
     gs.calculate_minimax_value;
     assert(gs.low_value == -2);
     assert(gs.high_value == 2);
 
-    gs = new GameState8(rectangle8(3, 1));
+    gs = new GameNode8(rectangle8(3, 1));
     gs.calculate_minimax_value;
     assert(gs.low_value == 3);
     assert(gs.high_value == 3);
@@ -283,7 +282,7 @@ unittest
 
 unittest
 {
-    auto gs = new GameState8(rectangle8(2, 1));
+    auto gs = new GameNode8(rectangle8(2, 1));
     gs.calculate_minimax_value;
     foreach (p; gs.principal_path!"high"){
         auto c = p.copy;
@@ -301,9 +300,9 @@ unittest
 
 unittest
 {
-    auto gs = new GameState8(rectangle8(3, 1));
+    auto gs = new GameNode8(rectangle8(3, 1));
     gs.calculate_minimax_value;
-    void check_children(GameState8 gs, ref bool[CanonicalState8] checked){
+    void check_children(GameNode8 gs, ref bool[CanonicalState8] checked){
         foreach (child; gs.children){
             if (child.state !in checked){
                 checked[child.state] = true;
@@ -321,12 +320,12 @@ unittest
 
 unittest
 {
-    auto gs = new GameState8(rectangle8(4, 1));
+    auto gs = new GameNode8(rectangle8(4, 1));
     gs.calculate_minimax_value;
     assert(gs.low_value == 4);
     assert(gs.high_value == 4);
 
-    gs = new GameState8(rectangle8(2, 2));
+    gs = new GameNode8(rectangle8(2, 2));
     gs.calculate_minimax_value;
     assert(gs.low_value == -4);
     assert(gs.high_value == 4);
@@ -334,7 +333,7 @@ unittest
 
 unittest
 {
-    auto gs = new GameState8(rectangle8(3, 2));
+    auto gs = new GameNode8(rectangle8(3, 2));
     gs.calculate_minimax_value;
     assert(gs.low_value == -6);
     assert(gs.high_value == 6);
@@ -348,7 +347,7 @@ unittest
     s.player_target = s.player;
     s.ko_threats = -float.infinity;
 
-    auto gs = new DefenseGameState8(s);
+    auto gs = new DefenseGameNode8(s);
 
     gs.calculate_minimax_value;
 
@@ -365,19 +364,19 @@ unittest
     s.opponent = (rectangle8(5, 4) & ~rectangle8(3, 3).east) & s.playing_area;
     s.opponent_target = s.opponent;
 
-    auto gs = new DefenseGameState8(s);
+    auto gs = new DefenseGameNode8(s);
     gs.calculate_minimax_value;
     assert(gs.low_value == float.infinity);
     assert(gs.high_value == float.infinity);
 
     s.opponent_outside_liberties = 1;
-    gs = new DefenseGameState8(s);
+    gs = new DefenseGameNode8(s);
     gs.calculate_minimax_value;
     assert(gs.low_value == float.infinity);
     assert(gs.high_value == float.infinity);
 
     s.opponent_outside_liberties = 2;
-    gs = new DefenseGameState8(s);
+    gs = new DefenseGameNode8(s);
     gs.calculate_minimax_value;
     assert(gs.low_value == -14);
     assert(gs.high_value == -14);

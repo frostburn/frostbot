@@ -2,6 +2,7 @@ module state;
 
 import std.stdio;
 import std.string;
+import std.stream;
 
 import bit_matrix;
 import board_common;
@@ -76,6 +77,36 @@ struct State(T)
                 assert(opponent_chain.liberties(playing_area & ~player));
             }
         }
+    }
+
+    void to_stream(OutputStream stream)
+    {
+        player.to_stream(stream);
+        opponent.to_stream(stream);
+        playing_area.to_stream(stream);
+        ko.to_stream(stream);
+        stream.write(black_to_play ? ~cast(ubyte) 0 : cast(ubyte) 0);
+        stream.write(passes);
+        player_unconditional.to_stream(stream);
+        opponent_unconditional.to_stream(stream);
+        stream.write(value_shift);
+    }
+
+    static State!T from_stream(InputStream stream)
+    {
+        T player = T.from_stream(stream);
+        T opponent = T.from_stream(stream);
+        T playing_area = T.from_stream(stream);
+        T ko = T.from_stream(stream);
+        ubyte black_to_play;
+        stream.read(black_to_play);
+        int passes;
+        stream.read(passes);
+        T player_unconditional = T.from_stream(stream);
+        T opponent_unconditional = T.from_stream(stream);
+        float value_shift;
+        stream.read(value_shift);
+        return State!T(player, opponent, playing_area, ko, black_to_play != 0, passes, player_unconditional, opponent_unconditional, value_shift);
     }
 
     bool opEquals(in State!T rhs) const
@@ -293,13 +324,16 @@ struct State(T)
         return make_move(T());
     }
 
-    State!T[] children(T[] moves)
+    State!T[] children(T[] moves, bool clear_ko=false)
     {
         State!T[] _children = [];
 
         foreach (move; moves){
             auto child = this;
             if (child.make_move(move)){
+                if (clear_ko){
+                    child.ko.clear;
+                }
                 _children ~= child;
             }
         }
@@ -324,9 +358,9 @@ struct State(T)
         return _moves;
     }
 
-    auto children()
+    auto children(bool clear_ko=false)
     {
-        return children(moves);
+        return children(moves, clear_ko);
     }
 
     void children_with_pattern3(out State!T[] children, out Pattern3[] patterns)
@@ -1109,11 +1143,11 @@ struct CanonicalState(T)
         state.swap_turns;
     }
 
-    CanonicalState!T[] children()
+    CanonicalState!T[] children(bool clear_ko=false)
     {
         CanonicalState!T[] _children;
         bool[CanonicalState!T] seen;
-        foreach (child; state.children){
+        foreach (child; state.children(clear_ko)){
             auto canonical_child = CanonicalState!T(child);
             if (canonical_child !in seen){
                 seen[canonical_child] = true;
@@ -1330,4 +1364,22 @@ unittest
     s.analyze_unconditional;
     writeln(s);
     */
+}
+
+unittest
+{
+    State8 s;
+    s.player = Board8(1, 0) | Board8(2, 0) | Board8(2, 1);
+    s.player |= Board8(0, 1) | Board8(0, 2) | Board8(1, 2);
+
+    s.opponent = Board8(7, 6);
+    s.opponent |= Board8(7, 4) | Board8(6, 4) | Board8(6, 5) | Board8(5, 5) | Board8(4, 5) | Board8(4, 6);
+
+    s.analyze_unconditional;
+
+    auto stream = new MemoryStream;
+    s.to_stream(stream);
+    stream.position = 0;
+    auto c = State8.from_stream(stream);
+    assert(s == c);
 }

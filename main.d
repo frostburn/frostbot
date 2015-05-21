@@ -15,7 +15,7 @@ import state;
 import pattern3;
 import polyomino;
 import hl_node;
-//import game_state;
+import game_node;
 //import bounded_state;
 //import defense_state;
 //import search_state;
@@ -36,6 +36,9 @@ import hl_node;
 // dmd main.d utils.d board8.d board11.d bit_matrix.d state.d polyomino.d defense_state.d defense_search_state.d defense.d eyeshape.d monte_carlo.d heuristic.d fast_math.d ann.d likelyhood.d wdl_node.d direct_mc.d pattern3.d
 // -O -release -inline -noboundscheck
 
+
+// TODO: LocalNode with clear_ko=true and extra_turns that work with negamax.
+
 void main()
 {
     writeln("main");
@@ -43,7 +46,8 @@ void main()
     HLNode8[CanonicalState8] empty;
     auto node_pool = &empty;
 
-    auto s = State8(rectangle8(4, 3));
+    auto s = State8(rectangle8(2, 1));
+    s.passes = 0;
     /*
     s.player = Board8(1, 1) | Board8(2, 1);
     s.opponent = Board8(1, 2) | Board8(2, 2);
@@ -63,6 +67,7 @@ void main()
     writeln(s);
     */
 
+    /*
     auto h = new HLNode8(CanonicalState8(s), node_pool);
 
     int i = 0;
@@ -77,6 +82,7 @@ void main()
     foreach (c; h.children){
         writeln(c);
     }
+    */
     /*
     writeln("Full expansion:");
     h.full_expand;
@@ -166,19 +172,21 @@ void main()
     s.player_unconditional = s.player;
     s.opponent_unconditional = s.opponent;
     */
-    /*
+
     //s = State8(rectangle8(3, 2));
     //s.value_shift = 0.5;
     auto cs = CanonicalState8(s);
+    //cs.clear_ko = true;
     //writeln(cs);
-    auto gs = new GameState8(cs);
+    auto gs = new GameNode8(cs);
     gs.calculate_minimax_value;
     foreach (c; gs.principal_path!"low"){
         writeln(c);
     }
 
-    GameState8[CanonicalState8] pool;
-    void get_all(GameState8 root){
+    /*
+    GameNode8[CanonicalState8] pool;
+    void get_all(GameNode8 root){
         if (root.state !in pool){
             pool[root.state] = root;
             foreach (child; root.children){

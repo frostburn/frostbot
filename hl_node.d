@@ -79,6 +79,7 @@ class HLNode(T, S)
     HLNode!(T, S)[S] *node_pool = null;
     ulong low_tag = 0;
     ulong high_tag = 0;
+    // TODO: check_queue for recently modified nodes.
 
     this(S state, HLNode!(T, S)[S] *node_pool)
     {
@@ -107,6 +108,7 @@ class HLNode(T, S)
         return is_low_final && is_high_final;
     }
 
+    // TODO: Add this to check_queue.
     void make_children()
     {
         assert(!is_leaf);
@@ -129,6 +131,7 @@ class HLNode(T, S)
         sort!(is_better!(T, S))(children);
     }
 
+    // TODO: Make cascading.
     bool update_value()
     {
         if (is_final || !children.length){
@@ -160,6 +163,7 @@ class HLNode(T, S)
 
     void calculate_current_values()
     {
+        // TODO: Use cascading update instead.
         HLNode!(T, S)[] queue;
         HLNode!(T, S)[] leaf_queue;
         foreach (node; *node_pool){

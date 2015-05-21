@@ -2,6 +2,7 @@ module board8;
 
 import std.stdio;
 import std.string;
+import std.stream;
 
 import utils;
 import polyomino;
@@ -21,6 +22,7 @@ struct Board8
     enum NORTH_WALL = 0xFFUL;
     enum SOUTH_WALL = 0x3FC0000000000000UL;
     enum OUTSIDE = 0xC020100804020100UL;
+    enum INVALID = 0xFFFFFFFFFFFFFFFFUL;
 
     static immutable ulong[WIDTH * HEIGHT / 2] FORAGE_TABLE = mixin(get_forage_table);
 
@@ -58,6 +60,18 @@ struct Board8
         bits = 1UL << (x * H_SHIFT + y * V_SHIFT);
     }
 
+    void to_stream(OutputStream stream)
+    {
+        stream.write(bits);
+    }
+
+    static Board8 from_stream(InputStream stream)
+    {
+        ulong bits;
+        stream.read(bits);
+        return Board8(bits);
+    }
+
     static Board8 full()
     {
         return Board8(FULL);
@@ -66,6 +80,11 @@ struct Board8
     static Board8 empty()
     {
         return Board8(EMPTY);
+    }
+
+    static Board8 invalid()
+    {
+        return Board8(INVALID);
     }
 
     Board8 opUnary(string op)() const pure nothrow @nogc @safe
@@ -955,4 +974,14 @@ unittest
     auto center = ~(full8.inner_border);
     int calculated_popcount = 3 * (b & corners).popcount + 5 * (b & edges).popcount + 8 * (b & center).popcount;
     assert(calculated_popcount == total_popcount);
+}
+
+unittest
+{
+    auto stream = new MemoryStream;
+    auto b = Board8(2, 3);
+    b.to_stream(stream);
+    stream.position = 0;
+    auto c = Board8.from_stream(stream);
+    assert(b == c);
 }
