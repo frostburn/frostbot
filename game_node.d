@@ -183,7 +183,7 @@ class GameNode(T, S)
         }
     }
 
-    void calculate_minimax_value()
+    void calculate_minimax_values()
     {
         GameNode!(T, S)[S] state_pool;
         GameNode!(T, S)[] leaf_queue;
@@ -206,6 +206,28 @@ class GameNode(T, S)
             high_value,
             children.length
         );
+    }
+
+    GameNode!(T, S)[] high_children()
+    {
+        GameNode!(T, S)[] result;
+        foreach (child; children){
+            if (-child.low_value == high_value){
+                result ~= child;
+            }
+        }
+        return result;
+    }
+
+    GameNode!(T, S)[] low_children()
+    {
+        GameNode!(T, S)[] result;
+        foreach (child; children){
+            if (-child.high_value == low_value){
+                result ~= child;
+            }
+        }
+        return result;
     }
 
     GameNode!(T, S)[] principal_path(string type)(int max_depth=100)
@@ -257,12 +279,12 @@ alias GameNode8 = GameNode!(Board8, CanonicalState8);
 unittest
 {
     auto gs = new GameNode8(rectangle8(1, 1));
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
     assert(gs.low_value == 0);
     assert(gs.high_value == 0);
 
     gs = new GameNode8(rectangle8(2, 1));
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
     assert(gs.low_value == -2);
     assert(gs.high_value == 2);
 
@@ -270,12 +292,12 @@ unittest
     state.opponent = Board8(0, 0);
     state.ko = Board8(1, 0);
     gs = new GameNode8(CanonicalState8(state));
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
     assert(gs.low_value == -2);
     assert(gs.high_value == 2);
 
     gs = new GameNode8(rectangle8(3, 1));
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
     assert(gs.low_value == 3);
     assert(gs.high_value == 3);
 }
@@ -283,16 +305,16 @@ unittest
 unittest
 {
     auto gs = new GameNode8(rectangle8(2, 1));
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
     foreach (p; gs.principal_path!"high"){
         auto c = p.copy;
-        c.calculate_minimax_value;
+        c.calculate_minimax_values;
         assert(c.low_value == p.low_value);
         assert(c.high_value == p.high_value);
     }
     foreach (p; gs.principal_path!"low"){
         auto c = p.copy;
-        c.calculate_minimax_value;
+        c.calculate_minimax_values;
         assert(c.low_value == p.low_value);
         assert(c.high_value == p.high_value);
     }
@@ -301,7 +323,7 @@ unittest
 unittest
 {
     auto gs = new GameNode8(rectangle8(3, 1));
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
     void check_children(GameNode8 gs, ref bool[CanonicalState8] checked){
         foreach (child; gs.children){
             if (child.state !in checked){
@@ -310,7 +332,7 @@ unittest
             }
         }
         auto c = gs.copy;
-        c.calculate_minimax_value;
+        c.calculate_minimax_values;
         assert(c.low_value == gs.low_value);
         assert(c.high_value == gs.high_value);
     }
@@ -321,12 +343,12 @@ unittest
 unittest
 {
     auto gs = new GameNode8(rectangle8(4, 1));
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
     assert(gs.low_value == 4);
     assert(gs.high_value == 4);
 
     gs = new GameNode8(rectangle8(2, 2));
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
     assert(gs.low_value == -4);
     assert(gs.high_value == 4);
 }
@@ -334,7 +356,7 @@ unittest
 unittest
 {
     auto gs = new GameNode8(rectangle8(3, 2));
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
     assert(gs.low_value == -6);
     assert(gs.high_value == 6);
 }
@@ -349,7 +371,7 @@ unittest
 
     auto gs = new DefenseGameNode8(s);
 
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
 
     assert(gs.low_value == 12);
     assert(gs.high_value == 12);
@@ -365,19 +387,19 @@ unittest
     s.opponent_target = s.opponent;
 
     auto gs = new DefenseGameNode8(s);
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
     assert(gs.low_value == float.infinity);
     assert(gs.high_value == float.infinity);
 
     s.opponent_outside_liberties = 1;
     gs = new DefenseGameNode8(s);
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
     assert(gs.low_value == float.infinity);
     assert(gs.high_value == float.infinity);
 
     s.opponent_outside_liberties = 2;
     gs = new DefenseGameNode8(s);
-    gs.calculate_minimax_value;
+    gs.calculate_minimax_values;
     assert(gs.low_value == -14);
     assert(gs.high_value == -14);
 }

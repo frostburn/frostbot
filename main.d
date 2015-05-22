@@ -16,6 +16,7 @@ import pattern3;
 import polyomino;
 import hl_node;
 import game_node;
+import local;
 //import bounded_state;
 //import defense_state;
 //import search_state;
@@ -37,8 +38,6 @@ import game_node;
 // -O -release -inline -noboundscheck
 
 
-// TODO: LocalNode with clear_ko=true and extra_turns that work with negamax.
-
 void main()
 {
     writeln("main");
@@ -46,8 +45,17 @@ void main()
     HLNode8[CanonicalState8] empty;
     auto node_pool = &empty;
 
-    auto s = State8(rectangle8(2, 1));
-    s.passes = 0;
+    /*
+    auto l = LocalState8(s, 2);
+
+    auto n = new GameNode!(Board8, LocalState8)(l);
+
+    n.calculate_minimax_values;
+    //writeln(n);
+    foreach (c; n.principal_path!"low"){
+        writeln(c);
+    }
+    */
     /*
     s.player = Board8(1, 1) | Board8(2, 1);
     s.opponent = Board8(1, 2) | Board8(2, 2);
@@ -173,6 +181,7 @@ void main()
     s.opponent_unconditional = s.opponent;
     */
 
+    /*
     //s = State8(rectangle8(3, 2));
     //s.value_shift = 0.5;
     auto cs = CanonicalState8(s);
@@ -183,6 +192,7 @@ void main()
     foreach (c; gs.principal_path!"low"){
         writeln(c);
     }
+    */
 
     /*
     GameNode8[CanonicalState8] pool;

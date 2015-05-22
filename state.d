@@ -324,9 +324,10 @@ struct State(T)
         return make_move(T());
     }
 
-    State!T[] children(T[] moves, bool clear_ko=false)
+    State!T[] children(ref T[] moves, bool clear_ko=false)
     {
-        State!T[] _children = [];
+        State!T[] _children;
+        T[] new_moves;
 
         foreach (move; moves){
             auto child = this;
@@ -335,9 +336,11 @@ struct State(T)
                     child.ko.clear;
                 }
                 _children ~= child;
+                new_moves ~= move;
             }
         }
 
+        moves = new_moves;
         return _children;
     }
 
@@ -360,7 +363,8 @@ struct State(T)
 
     auto children(bool clear_ko=false)
     {
-        return children(moves, clear_ko);
+        auto _moves = moves;
+        return children(_moves, clear_ko);
     }
 
     void children_with_pattern3(out State!T[] children, out Pattern3[] patterns)
@@ -1078,6 +1082,13 @@ struct CanonicalState(T)
         return state.passes;
     }
 
+    int passes(int value) @property
+    {
+        state.passes = value;
+        state.canonize;
+        return value;
+    }
+
     bool is_leaf()
     {
         return state.is_leaf;
@@ -1139,8 +1150,16 @@ struct CanonicalState(T)
         state.get_score_bounds(lower_bound, upper_bound);
     }
 
-    void swap_turns(){
+    void swap_turns()
+    {
         state.swap_turns;
+        state.canonize;
+    }
+
+    void pass()
+    {
+        state.pass;
+        state.canonize;
     }
 
     CanonicalState!T[] children(bool clear_ko=false)
