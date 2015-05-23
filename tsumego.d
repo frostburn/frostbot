@@ -13,30 +13,30 @@ import hl_node;
 
 // Intermediate problems
 
+Transposition[LocalState8] loc_trans;
+
 unittest
 {
     // Problem 1
     HLNode8[CanonicalState8] empty;
-    auto state_pool = &empty;
-    Transposition[LocalState8] empty2;
-    auto local_transpositions = &empty2;
+    auto node_pool = &empty;
+    auto local_transpositions = &loc_trans;
 
     auto opponent = rectangle8(5, 1).south;
     auto space = rectangle8(7, 2) | Board8(7, 0) | Board8(0, 2);
-    auto playing_area = rectangle8(8, 4);
+    auto playing_area = rectangle8(8, 3);
     auto player = playing_area & ~space;
     auto s = State8(playing_area);
     s.player = player;
     s.player_unconditional = player;
     s.opponent = opponent;
-    auto n = new HLNode8(CanonicalState8(s), state_pool, local_transpositions);
+    auto n = new HLNode8(CanonicalState8(s), node_pool, local_transpositions);
 
     writeln("Problem 1");
-    writeln(s);
     while(n.expand){
     }
-    writeln(n);
-    writeln(state_pool.length);
+    writeln(n.low_solution);
+    writeln(node_pool.length, " nodes explored");
     assert(n.low == playing_area.popcount);
 
     /*
@@ -51,4 +51,29 @@ unittest
         assert(g.high_value == t.high_value);
     }
     */
+}
+
+unittest
+{
+    // Problem 2
+    HLNode8[CanonicalState8] empty;
+    auto node_pool = &empty;
+    auto local_transpositions = &loc_trans;
+
+    auto opponent = rectangle8(6, 1).south | Board8(6, 0);
+    auto space = rectangle8(6, 2) | Board8(6, 0) | Board8(7, 0) | Board8(0, 2);
+    auto playing_area = rectangle8(8, 3);
+    auto player = playing_area & ~space;
+    auto s = State8(playing_area);
+    s.player = player | Board8(1, 0);
+    s.player_unconditional = player;
+    s.opponent = opponent;
+    auto n = new HLNode8(CanonicalState8(s), node_pool, local_transpositions);
+
+    writeln("Problem 2");
+    while(n.expand){
+    }
+    writeln(n.low_solution);
+    writeln(node_pool.length, " nodes explored");
+    assert(n.low == playing_area.popcount);
 }

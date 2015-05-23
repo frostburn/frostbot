@@ -112,20 +112,26 @@ struct LocalResult(T)
 {
     T moves;
     T threats;
-    float score = float.nan;
+    float pass_low;
+    float pass_high;
+    float low;
+    float high;
 
     bool opEquals(in LocalResult!T rhs) const
     {
         return (
             moves == rhs.moves &&
             threats == rhs.threats &&
-            (score == rhs.score || (score.isNaN && rhs.score.isNaN))
+            pass_low == rhs.pass_low &&
+            pass_high == rhs.pass_high &&
+            low == rhs.low &&
+            high == rhs.high
         );
     }
 
     string toString()
     {
-        return format("Moves\n%s\nThreats\n%s\nscore=%s", moves, threats, score);
+        return format("Moves\n%s\nThreats\n%s\n%s <= pass <= %s, %s <= score <= %s", moves, threats, pass_low, pass_high, low, high);
     }
 }
 
@@ -214,6 +220,7 @@ LocalResult!T get_local_result(T)(T region, T player, T opponent, T player_uncon
         }
     }
 
+    /*
     if (
         pessimistic_node.low_value == pessimistic_node.high_value &&
         pessimistic_node.high_value == -pass_node.low_value &&
@@ -221,6 +228,13 @@ LocalResult!T get_local_result(T)(T region, T player, T opponent, T player_uncon
     ){
         result.score = pessimistic_node.low_value - player_unconditional.popcount + opponent_unconditional.popcount;
     }
+    */
+
+    float adjustment = opponent_unconditional.popcount - player_unconditional.popcount;
+    result.pass_low = adjustment - pass_node.high_value;
+    result.pass_high = adjustment - pass_node.low_value;
+    result.low = adjustment + pessimistic_node.low_value;
+    result.high = adjustment + pessimistic_node.high_value;
 
     debug (local){
         writeln(result);
@@ -240,25 +254,33 @@ void analyze_state(T, S)(S state, out T moves, out float lower_bound, out float 
 
     T space = state.playing_area & ~(state.player | state.opponent);
     moves = space;
-    foreach (region; (state.playing_area & ~(state.player_unconditional | state.opponent_unconditional)).chains){
-        if (region.popcount <= 8){
+    T undecided_space = state.playing_area & ~(state.player_unconditional | state.opponent_unconditional);
+    foreach (region; undecided_space.chains){
+        if (region.popcount <= 10 && !(region & state.ko)){
             auto result = get_local_result(
                 region,
                 state.player, state.opponent,
                 state.player_unconditional, state.opponent_unconditional,
                 transpositions
             );
+            if (region == undecided_space){
+                moves = result.moves;
+                float base_score = state.player_unconditional.popcount - state.opponent_unconditional.popcount + state.value_shift;
+                lower_bound = result.low + base_score;
+                upper_bound = result.high + base_score;
+                return;
+            }
             moves &= ~region;
             moves |= result.moves;
             if (state.ko){
                 moves |= result.threats;
             }
-            if (!result.score.isNaN){
+            //if (result.pass_low == result.high){
                 space &= ~region;
                 float assumed_score = region.popcount;
-                lower_bound += result.score + assumed_score;
-                upper_bound += result.score - assumed_score;
-            }
+                lower_bound += result.pass_low + assumed_score;
+                upper_bound += result.high - assumed_score;
+            //}
         }
     }
     // The minimal strategy is to fill half of sure dames.
@@ -298,13 +320,13 @@ unittest
     auto r = get_local_result8(s.playing_area & ~s.player_unconditional, s.player, s.opponent, s.player_unconditional, s.opponent_unconditional);
     assert(r.moves == Board8(1, 2));
     assert(!r.threats);
-    assert(r.score.isNaN);
+    //assert(r.score.isNaN);
 
     s.swap_turns;
     r = get_local_result8(s.playing_area & ~s.opponent_unconditional, s.player, s.opponent, s.player_unconditional, s.opponent_unconditional);
     assert(r.moves == Board8(1, 2));
     assert(!r.threats);
-    assert(r.score.isNaN);
+    //assert(r.score.isNaN);
 
     s.opponent_unconditional = Board8();
     s.playing_area = rectangle8(4, 3);
@@ -315,13 +337,13 @@ unittest
     r = get_local_result8(s.playing_area & ~s.player_unconditional, s.player, s.opponent, s.player_unconditional, s.opponent_unconditional);
     assert(!r.moves);
     assert((Board8(1,2) | Board8(2, 2)) & r.threats);
-    assert(r.score == -8);
+    assert(r.pass_low == -8);
 
     s.swap_turns;
     r = get_local_result8(s.playing_area & ~s.opponent_unconditional, s.player, s.opponent, s.player_unconditional, s.opponent_unconditional);
     assert(!r.moves);
     assert(!r.threats);
-    assert(r.score == 8);
+    assert(r.pass_low == 8);
 }
 
 unittest
@@ -341,14 +363,14 @@ unittest
 
     auto r = get_local_result8(s.playing_area & ~s.player_unconditional, s.player, s.opponent, s.player_unconditional, s.opponent_unconditional);
     assert(r.moves);
-    assert(r.score.isNaN);
+    //assert(r.score.isNaN);
 
 
     s.swap_turns;
     r = get_local_result8(s.playing_area & ~s.opponent_unconditional, s.player, s.opponent, s.player_unconditional, s.opponent_unconditional);
     assert(!r.moves);
     assert(!r.threats);
-    assert(r.score.isNaN);
+    //assert(r.score.isNaN);
 }
 
 unittest

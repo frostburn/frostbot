@@ -121,7 +121,8 @@ class HLNode(T, S)
         assert(!is_leaf);
         children = [];
 
-        foreach (child_state; state.children(moves.pieces ~ T())){
+        auto _moves = moves.pieces ~ T();
+        foreach (child_state; state.children(_moves)){
             assert(child_state.black_to_play);
             if (child_state in *node_pool){
                 auto child = (*node_pool)[child_state];
@@ -158,6 +159,10 @@ class HLNode(T, S)
 
         if (new_high > high){
             new_high = high;
+        }
+        if (new_low > new_high){
+            writeln(this);
+            writeln(new_low, ", ", new_high);
         }
         assert(new_low <= new_high);
 
@@ -442,6 +447,36 @@ class HLNode(T, S)
         return result;
     }
     */
+
+    HLNode!(T, S)[] low_children()
+    {
+        HLNode!(T, S)[] result;
+        if (!is_leaf && !children.length){
+            make_children;
+        }
+        foreach (child; children){
+            if (-child.high == low && child.is_high_final){
+                result ~= child;
+            }
+        }
+        return result;
+    }
+
+    string low_solution()
+    {
+        auto low_children = this.low_children;
+        T mark;
+        auto moves = state.moves;
+        auto child_states = state.children(moves);
+        foreach (i, child_state; child_states){
+            foreach (child; low_children){
+                if (child.state == child_state){
+                    mark |= moves[i];
+                }
+            }
+        }
+        return format("%s\n%s <= score <= %s", state._toString(T(), T(), state.player_unconditional, state.opponent_unconditional, mark), low, high);
+    }
 
     override string toString()
     {

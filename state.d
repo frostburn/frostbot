@@ -704,7 +704,7 @@ struct State(T)
         return chain.liberties(playing_area & ~player).popcount;
     }
 
-    string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure)
+    string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure, T mark=T.init)
     {
         //0 - Gray
         //1 - Red
@@ -744,6 +744,10 @@ struct State(T)
                     else if ((player_defendable | opponent_defendable) & p){
                         // Blue
                         r ~= "44m";
+                    }
+                    else if (mark & p){
+                        // Cyan
+                        r ~= "46m";
                     }
                     else{
                         // Yeallow
@@ -1162,12 +1166,18 @@ struct CanonicalState(T)
         state.canonize;
     }
 
-    CanonicalState!T[] children(bool clear_ko=false)
+    T[] moves()
     {
-        return children(state.moves, clear_ko);
+        return state.moves;
     }
 
-    CanonicalState!T[] children(T[] moves, bool clear_ko=false)
+    CanonicalState!T[] children(bool clear_ko=false)
+    {
+        auto moves = state.moves;
+        return children(moves, clear_ko);
+    }
+
+    CanonicalState!T[] children(ref T[] moves, bool clear_ko=false)
     {
         CanonicalState!T[] _children;
         bool[CanonicalState!T] seen;
@@ -1196,9 +1206,9 @@ struct CanonicalState(T)
         return state.opponent_chain_liberties(chain);
     }
 
-    string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure)
+    string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure, T mark=T.init)
     {
-        return state._toString(player_defendable, opponent_defendable, player_secure, opponent_secure);
+        return state._toString(player_defendable, opponent_defendable, player_secure, opponent_secure, mark);
     }
 
     string toString()
