@@ -1164,9 +1164,14 @@ struct CanonicalState(T)
 
     CanonicalState!T[] children(bool clear_ko=false)
     {
+        return children(state.moves, clear_ko);
+    }
+
+    CanonicalState!T[] children(T[] moves, bool clear_ko=false)
+    {
         CanonicalState!T[] _children;
         bool[CanonicalState!T] seen;
-        foreach (child; state.children(clear_ko)){
+        foreach (child; state.children(moves, clear_ko)){
             auto canonical_child = CanonicalState!T(child);
             if (canonical_child !in seen){
                 seen[canonical_child] = true;

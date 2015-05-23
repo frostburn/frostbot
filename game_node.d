@@ -15,6 +15,11 @@ import state;
 * It doesn't have a single value. Instead it determines a range of possible values allowed by rulesets with varying super-ko rules.
 */
 
+struct Transposition
+{
+    float low_value;
+    float high_value;
+}
 
 class GameNode(T, S)
 {
@@ -22,8 +27,11 @@ class GameNode(T, S)
     float low_value = -float.infinity;
     float high_value = float.infinity;
     bool is_leaf = false;
+    bool is_final = false;
     GameNode!(T, S)[] children;
     GameNode!(T, S)[S] parents;
+
+    Transposition[S] *transpositions = null;
 
     private
     {
@@ -35,40 +43,52 @@ class GameNode(T, S)
         this(S(playing_area));
     }
 
-    this(S state)
+    this(S state, Transposition[S] *transpositions=null)
     {
         this.state = state;
+        this.transpositions = transpositions;
         if (state.is_leaf){
             is_leaf = true;
             low_value = high_value = state.liberty_score;
+        }
+        else if (transpositions !is null){
+            auto key = state;
+            key.value_shift = 0;
+            if (key in *transpositions){
+                auto transposition = (*transpositions)[key];
+                low_value = transposition.low_value + state.value_shift;
+                high_value = transposition.high_value + state.value_shift;
+                is_final = true;
+            }
         }
     }
 
     invariant
     {
         assert(state.passes <= 2);
+        assert(low_value <= high_value);
     }
 
     GameNode!(T, S) copy(){
         return new GameNode!(T, S)(state);
     }
 
-    void make_children(ref GameNode!(T, S)[S] state_pool)
+    void make_children(ref GameNode!(T, S)[S] node_pool)
     {
         children = [];
 
         foreach (child_state; state.children){
             assert(child_state.black_to_play);
-            if (child_state in state_pool){
-                auto child = state_pool[child_state];
+            if (child_state in node_pool){
+                auto child = node_pool[child_state];
                 children ~= child;
                 child.parents[state] = this;
             }
             else{
-                auto child = new GameNode!(T, S)(child_state);
+                auto child = new GameNode!(T, S)(child_state, transpositions);
                 children ~= child;
                 child.parents[state] = this;
-                state_pool[child.state] = child;
+                node_pool[child.state] = child;
             }
         }
 
@@ -89,41 +109,34 @@ class GameNode(T, S)
 
     bool update_value()
     {
-        if (is_leaf){
+        if (is_leaf || is_final){
             // The value should've been set in the constructor.
             return false;
         }
 
-        float old_low_value = low_value;
-        float old_high_value = high_value;
-
-        low_value = -float.infinity;
-        high_value = -float.infinity;
+        float new_low_value = -float.infinity;
+        float new_high_value = -float.infinity;
 
         foreach (child; children){
-            if (-child.high_value > low_value){
-                low_value = -child.high_value;
+            if (-child.high_value > new_low_value){
+                new_low_value = -child.high_value;
             }
-            if (-child.low_value > high_value){
-                high_value = -child.low_value;
-            }
-        }
-
-        debug(ss_update_value){
-            if (low_value > -float.infinity && high_value < float.infinity){
-                writeln("Updating value: max=", state.black_to_play);
-                writeln("Old value: ", old_low_value, ", ", old_high_value);
-                foreach (child; children){
-                    writeln(" Child: ", child.low_value, ", ", child.high_value, " max=", child.state.black_to_play);
-                }
-                writeln("New value: ", low_value, ", ", high_value);
+            if (-child.low_value > new_high_value){
+                new_high_value = -child.low_value;
             }
         }
 
-        return (old_low_value != low_value) || (old_high_value != high_value);
+        assert(new_low_value >= low_value);
+        assert(new_high_value <= high_value);
+        assert(new_low_value <= new_high_value);
+
+        bool changed = (new_low_value != low_value) || (new_high_value != high_value);
+        low_value = new_low_value;
+        high_value = new_high_value;
+        return changed;
     }
 
-    void populate_game_tree(ref GameNode!(T, S)[S] state_pool, ref GameNode!(T, S)[] leaf_queue)
+    void populate_game_tree(ref GameNode!(T, S)[S] node_pool, ref GameNode!(T, S)[] leaf_queue)
     {
         GameNode!(T, S)[] queue;
 
@@ -137,17 +150,17 @@ class GameNode(T, S)
                 writeln(game_node);
             }
             if (!game_node.is_populated){
-                assert(game_node.state in state_pool);
-                assert(state_pool[game_node.state] == game_node);
+                assert(game_node.state in node_pool);
+                assert(node_pool[game_node.state] == game_node);
 
                 game_node.is_populated = true;
 
-                if (game_node.is_leaf){
+                if (game_node.is_leaf || game_node.is_final){
                     leaf_queue ~= game_node;
                     continue;
                 }
 
-                game_node.make_children(state_pool);
+                game_node.make_children(node_pool);
 
                 foreach (child; game_node.children){
                     queue ~= child;
@@ -185,15 +198,24 @@ class GameNode(T, S)
 
     void calculate_minimax_values()
     {
-        GameNode!(T, S)[S] state_pool;
+        GameNode!(T, S)[S] node_pool;
         GameNode!(T, S)[] leaf_queue;
 
-        state_pool[state] = this;
+        node_pool[state] = this;
 
-        populate_game_tree(state_pool, leaf_queue);
+        populate_game_tree(node_pool, leaf_queue);
 
         foreach (leaf; leaf_queue){
             leaf.update_parents;
+        }
+
+        foreach (node; node_pool.byValue){
+            node.is_final = true;
+            if (transpositions !is null){
+                auto key = node.state;
+                key.value_shift = 0;
+                (*transpositions)[key] = Transposition(node.low_value - node.state.value_shift, node.high_value - node.state.value_shift);
+            }
         }
     }
 
@@ -211,6 +233,9 @@ class GameNode(T, S)
     GameNode!(T, S)[] high_children()
     {
         GameNode!(T, S)[] result;
+        if (!is_leaf && !children.length){
+            make_children;
+        }
         foreach (child; children){
             if (-child.low_value == high_value){
                 result ~= child;
@@ -222,6 +247,9 @@ class GameNode(T, S)
     GameNode!(T, S)[] low_children()
     {
         GameNode!(T, S)[] result;
+        if (!is_leaf && !children.length){
+            make_children;
+        }
         foreach (child; children){
             if (-child.high_value == low_value){
                 result ~= child;

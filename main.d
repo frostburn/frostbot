@@ -30,7 +30,7 @@ import local;
 //import likelyhood;
 //import wdl_node;
 //import direct_mc;
-//import tsumego;
+import tsumego;
 
 
 // Lol "makefile"
@@ -52,7 +52,7 @@ void main()
     }
     */
 
-    writeln(polyominoes!EdgeShape(8).length);
+    //writeln(polyominoes!EdgeShape(8).length);
 
     /*
     foreach (s; polyominoes!EdgeShape(5).byKey){

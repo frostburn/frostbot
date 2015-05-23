@@ -9,6 +9,8 @@ import std.random;
 import utils;
 import board8;
 import state;
+import game_node;
+import local;
 
 
 ulong next_tag = 1;
@@ -79,12 +81,17 @@ class HLNode(T, S)
     HLNode!(T, S)[S] *node_pool = null;
     ulong low_tag = 0;
     ulong high_tag = 0;
+
+    T moves;
+    Transposition[LocalState!T] *local_transpositions = null;
+
     // TODO: check_queue for recently modified nodes.
 
-    this(S state, HLNode!(T, S)[S] *node_pool)
+    this(S state, HLNode!(T, S)[S] *node_pool, Transposition[LocalState!T] *local_transpositions=null)
     {
         this.state = state;
         this.node_pool = node_pool;
+        this.local_transpositions = local_transpositions;
         assert(state !in *node_pool);
         (*node_pool)[state] = this;
         if (state.is_leaf){
@@ -93,7 +100,7 @@ class HLNode(T, S)
             is_low_final = is_high_final = true;
         }
         else {
-            state.get_score_bounds(low, high);
+            analyze_state(state, moves, low, high, local_transpositions);
             is_low_final = is_high_final = (low == high);
         }
     }
@@ -114,7 +121,7 @@ class HLNode(T, S)
         assert(!is_leaf);
         children = [];
 
-        foreach (child_state; state.children){
+        foreach (child_state; state.children(moves.pieces ~ T())){
             assert(child_state.black_to_play);
             if (child_state in *node_pool){
                 auto child = (*node_pool)[child_state];
@@ -122,7 +129,7 @@ class HLNode(T, S)
                 child.parents[state] = this;
             }
             else{
-                auto child = new HLNode!(T, S)(child_state, node_pool);
+                auto child = new HLNode!(T, S)(child_state, node_pool, local_transpositions);
                 children ~= child;
                 child.parents[state] = this;
             }
@@ -138,27 +145,31 @@ class HLNode(T, S)
             return false;
         }
 
-        float old_low = low;
-        float old_high = high;
-
-        high = -float.infinity;
+        float new_low = low;
+        float new_high = -float.infinity;
         foreach (child; children){
-            if (-child.high > low){
-                low = -child.high;
+            if (-child.high > new_low){
+                new_low = -child.high;
             }
-            if (-child.low > high){
-                high = -child.low;
+            if (-child.low > new_high){
+                new_high = -child.low;
             }
         }
-        assert(high <= old_high);
-        assert(low >= old_low);
-        assert(low <= high);
+
+        if (new_high > high){
+            new_high = high;
+        }
+        assert(new_low <= new_high);
+
+        bool changed = (new_low != low || new_high != high);
+        low = new_low;
+        high = new_high;
 
         if (low == high){
             is_low_final = is_high_final = true;
         }
 
-        return (old_low != low || old_high != high);
+        return changed;
     }
 
     void calculate_current_values()
@@ -458,3 +469,30 @@ class HLNode(T, S)
 }
 
 alias HLNode8 = HLNode!(Board8, CanonicalState8);
+
+
+unittest
+{
+    HLNode8[CanonicalState8] empty;
+    auto node_pool = &empty;
+
+    auto a = rectangle8(5, 2) ^ Board8(0, 0);
+    auto p = Board8(1, 1);
+    auto o = Board8(4, 1);
+    auto pu = Board8(3, 0) | Board8(4, 0);
+    auto ou = Board8(1, 0) | Board8(2, 0) | Board8(0, 1);
+
+    auto s = State8(a);
+    s.player = p | pu;
+    s.opponent = o | ou;
+    s.player_unconditional = pu;
+    s.opponent_unconditional = ou;
+
+    auto n = new HLNode8(CanonicalState8(s), node_pool);
+
+    while (n.expand) {
+    }
+
+    assert(n.low == 1);
+    assert(n.high == 1);
+}
