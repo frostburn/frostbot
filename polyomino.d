@@ -36,14 +36,29 @@ struct Piece
 }
 
 
-struct Shape
+class Shape
 {
     Piece[] pieces;
+
+    this()
+    {
+        pieces = pieces.init;
+    }
 
     this(Piece[] pieces)
     {
         this.pieces = pieces.dup;
         this.pieces.sort;
+    }
+
+    bool piece_condition(const Piece piece) const
+    {
+        return true;
+    }
+
+    bool is_good()
+    {
+        return true;
     }
 
     /*
@@ -52,9 +67,13 @@ struct Shape
         for (int index = 0; index < pieces.length - 1; index++){
             assert(pieces[index] < pieces[index + 1]);
         }
+        foreach (piece; pieces){
+            assert(piece_condition(piece));
+        }
     }
     */
 
+    /*
     Shape opAssign(in Shape rhs)
     {
         this.pieces = rhs.pieces.dup;
@@ -66,9 +85,16 @@ struct Shape
     {
         pieces = pieces.dup;
     }
+    */
 
-    bool opEquals(in Shape rhs) const pure nothrow @nogc @safe
+    Shape copy()
     {
+        return new Shape(pieces);
+    }
+
+    override bool opEquals(Object _rhs) const pure nothrow @nogc @safe
+    {
+        Shape rhs = cast(Shape) _rhs;
         if (pieces.length != rhs.pieces.length){
             return false;
         }
@@ -100,7 +126,7 @@ struct Shape
         return 0;
     }
 
-    hash_t toHash() const nothrow @safe
+    override hash_t toHash() const nothrow @safe
     {
         hash_t result;
         foreach (piece; pieces){
@@ -123,7 +149,7 @@ struct Shape
             new_pieces ~= piece;
         }
 
-        return Shape(new_pieces);
+        return new Shape(new_pieces);
     }
 
     Shape opBinary(string op)(in Shape rhs)
@@ -138,7 +164,7 @@ struct Shape
             }
         }
 
-        return Shape(new_pieces);
+        return new Shape(new_pieces);
     }
 
     size_t length(){
@@ -207,13 +233,23 @@ struct Shape
         pieces.sort;
     }
 
+    void mirror_d()
+    {
+        foreach(ref piece; pieces){
+            int temp = piece.x;
+            piece.x = piece.y;
+            piece.y = temp;
+        }
+        pieces.sort;
+    }
+
     void canonize()
     {
         snap;
-        auto temp = this;
+        auto temp = this.copy;
         enum compare_and_replace = "
             if (temp < this){
-                this = temp;
+                this.pieces = temp.pieces.dup;
             }
         ";
         for (int i = 0; i < 3; i++){
@@ -240,9 +276,11 @@ struct Shape
             if (new_piece !in piece_set){
                 auto new_pieces = pieces.dup;
                 new_pieces ~= new_piece;
-                auto new_shape = Shape(new_pieces);
+                auto new_shape = new Shape(new_pieces);
                 new_shape.canonize;
-                result[new_shape] = true;
+                if (new_shape.is_good){
+                    result[new_shape] = true;
+                }
             }
         ";
         foreach (piece; pieces){
@@ -266,7 +304,7 @@ struct Shape
 
         bool[Piece] liberty_piece_set;
         enum add_new_piece = "
-            if (new_piece !in piece_set){
+            if (piece_condition(new_piece) && new_piece !in piece_set){
                 liberty_piece_set[new_piece] = true;
             }
         ";
@@ -287,7 +325,44 @@ struct Shape
         foreach (liberty; liberty_piece_set.byKey){
             new_pieces ~= liberty;
         }
-        return Shape(new_pieces);
+        return new Shape(new_pieces);
+    }
+
+    Shape blob_liberties()
+    {
+        auto piece_set = this.piece_set;
+
+        bool[Piece] liberty_piece_set;
+        enum add_new_piece = "
+            if (piece_condition(new_piece) && new_piece !in piece_set){
+                liberty_piece_set[new_piece] = true;
+            }
+        ";
+
+        foreach (piece; pieces){
+            auto new_piece = piece;
+            new_piece.x += 1;
+            mixin(add_new_piece);
+            new_piece.y += 1;
+            mixin(add_new_piece);
+            new_piece.x -= 1;
+            mixin(add_new_piece);
+            new_piece.x -= 1;
+            mixin(add_new_piece);
+            new_piece.y -= 1;
+            mixin(add_new_piece);
+            new_piece.y -= 1;
+            mixin(add_new_piece);
+            new_piece.x += 1;
+            mixin(add_new_piece);
+            new_piece.x += 1;
+            mixin(add_new_piece);
+        }
+        Piece[] new_pieces;
+        foreach (liberty; liberty_piece_set.byKey){
+            new_pieces ~= liberty;
+        }
+        return new Shape(new_pieces);
     }
 
     Shape corners()
@@ -309,7 +384,7 @@ struct Shape
 
         bool[Piece] corner_piece_set;
         enum add_new_piece = "
-            if (new_piece !in piece_set){
+            if (piece_condition(new_piece) && new_piece !in piece_set){
                 corner_piece_set[new_piece] = true;
             }
         ";
@@ -331,7 +406,7 @@ struct Shape
         foreach (corner; corner_piece_set.byKey){
             new_pieces ~= corner;
         }
-        return Shape(new_pieces);
+        return new Shape(new_pieces);
     }
 
     Shape[] chains()
@@ -368,12 +443,224 @@ struct Shape
                 piece.y -= 2;
                 mixin(add_to_queue);
             }
-            result ~= Shape(chain);
+            result ~= new Shape(chain);
         }
         return result;
     }
+
+    bool is_contiguous()
+    {
+        return chains.length == 1;
+    }
+
+    override string toString()
+    {
+        string r;
+        auto piece_set = this.piece_set;
+        for (int y = north_extent; y <= south_extent; y++){
+            for (int x = west_extent; x <= east_extent; x++){
+                auto piece = Piece(x, y);
+                if (piece in piece_set){
+                    r ~= "# ";
+                }
+                else{
+                    r ~= "  ";
+                }
+            }
+            if (y < south_extent){
+                r ~= "\n";
+            }
+        }
+        return r;
+    }
 }
 
+class CornerShape : Shape
+{
+    this(Piece[] pieces)
+    {
+        super(pieces);
+    }
+
+    this(Shape s)
+    {
+        this(s.pieces);
+    }
+
+    invariant
+    {
+        foreach (piece; pieces){
+            assert(piece.x >= 0 && piece.y >= 0);
+        }
+    }
+
+    override bool is_good()
+    {
+        return blob_liberties.is_contiguous;
+    }
+
+    override bool piece_condition(const Piece piece) const
+    {
+        return piece.x >= 0 && piece.y >= 0;
+    }
+
+    override void canonize()
+    {
+        snap;
+        auto temp = this.copy;
+        temp.mirror_d;
+        if (temp < this){
+            this.pieces = temp.pieces.dup;
+        }
+    }
+
+
+    bool[CornerShape] shapes_plus_one()
+    {
+        auto piece_set = this.piece_set;
+
+        bool[CornerShape] result;
+        enum add_new_shape = "
+            if (new_piece !in piece_set){
+                auto new_pieces = pieces.dup;
+                new_pieces ~= new_piece;
+                auto temp_shape = new Shape(new_pieces);
+                temp_shape.snap;
+                auto new_shape = new CornerShape(temp_shape);
+                new_shape.canonize;
+                if (new_shape.is_good){
+                    result[new_shape] = true;
+                }
+            }
+        ";
+        foreach (piece; pieces){
+            auto new_piece = piece;
+            new_piece.x += 1;
+            mixin(add_new_shape);
+            new_piece.x -= 2;
+            mixin(add_new_shape);
+            new_piece.x += 1;
+            new_piece.y += 1;
+            mixin(add_new_shape);
+            new_piece.y -= 2;
+            mixin(add_new_shape);
+        }
+        return result;
+    }
+
+    // Compilers and their warnings...
+    alias shapes_plus_one = Shape.shapes_plus_one;
+
+    override CornerShape liberties()
+    {
+        return new CornerShape(super.liberties);
+    }
+
+    override CornerShape blob_liberties()
+    {
+        return new CornerShape(super.blob_liberties);
+    }
+
+    override string toString()
+    {
+        return "CornerShape\n" ~ super.toString;
+    }
+}
+
+
+class EdgeShape : Shape
+{
+    this(Piece[] pieces)
+    {
+        super(pieces);
+    }
+
+    this(Shape s)
+    {
+        this(s.pieces);
+    }
+
+    invariant
+    {
+        foreach (piece; pieces){
+            assert(piece.y >= 0);
+        }
+    }
+
+    override bool is_good()
+    {
+        return blob_liberties.is_contiguous;
+    }
+
+    override bool piece_condition(const Piece piece) const
+    {
+        return piece.y >= 0;
+    }
+
+    override void canonize()
+    {
+        snap;
+        auto temp = this.copy;
+        temp.mirror_h;
+        if (temp < this){
+            this.pieces = temp.pieces.dup;
+        }
+    }
+
+
+    bool[EdgeShape] shapes_plus_one()
+    {
+        auto piece_set = this.piece_set;
+
+        bool[EdgeShape] result;
+        enum add_new_shape = "
+            if (new_piece !in piece_set){
+                auto new_pieces = pieces.dup;
+                new_pieces ~= new_piece;
+                auto temp_shape = new Shape(new_pieces);
+                temp_shape.snap;
+                auto new_shape = new EdgeShape(temp_shape);
+                new_shape.canonize;
+                if (new_shape.is_good){
+                    result[new_shape] = true;
+                }
+            }
+        ";
+        foreach (piece; pieces){
+            auto new_piece = piece;
+            new_piece.x += 1;
+            mixin(add_new_shape);
+            new_piece.x -= 2;
+            mixin(add_new_shape);
+            new_piece.x += 1;
+            new_piece.y += 1;
+            mixin(add_new_shape);
+            new_piece.y -= 2;
+            mixin(add_new_shape);
+        }
+        return result;
+    }
+
+    // Compilers and their warnings...
+    alias shapes_plus_one = Shape.shapes_plus_one;
+
+    override EdgeShape liberties()
+    {
+        return new EdgeShape(super.liberties);
+    }
+
+    override EdgeShape blob_liberties()
+    {
+        return new EdgeShape(super.blob_liberties);
+    }
+
+    override string toString()
+    {
+        return "EdgeShape\n" ~ super.toString;
+    }
+}
+
+/*
 struct Eyespace
 {
     Shape space;
@@ -503,13 +790,13 @@ struct Eyespace
         return r;
     }
 }
+*/
 
-
-bool[Shape] polyominoes(int max_size)
+bool[T] polyominoes(T=Shape)(int max_size)
 {
-    bool[Shape] result;
-    Shape[] queue;
-    auto shape = Shape([Piece(0, 0)]);
+    bool[T] result;
+    T[] queue;
+    auto shape = new T([Piece(0, 0)]);
     result[shape] = true;
     queue ~= shape;
     while (queue.length){
@@ -527,7 +814,7 @@ bool[Shape] polyominoes(int max_size)
     return result;
 }
 
-
+/*
 bool[Eyespace] eyespaces(int max_size)
 {
     bool[Eyespace] eyespace_set;
@@ -562,6 +849,7 @@ bool[Eyespace] eyespaces(int max_size)
 
     return eyespace_set;
 }
+*/
 
 
 unittest
@@ -577,12 +865,22 @@ unittest
 
 unittest
 {
-    auto s = Shape([Piece(0, 0)]);
-    assert(s.liberties == Shape([Piece(-1, 0), Piece(0, -1), Piece(0, 1), Piece(1, 0)]));
-    assert(s.corners == Shape([Piece(-1, -1), Piece(-1, 1), Piece(1, -1), Piece(1, 1)]));
+    auto s = new Shape([Piece(0, 0)]);
+    assert(s.liberties == new Shape([Piece(-1, 0), Piece(0, -1), Piece(0, 1), Piece(1, 0)]));
+    assert(s.corners == new Shape([Piece(-1, -1), Piece(-1, 1), Piece(1, -1), Piece(1, 1)]));
     assert(s.corners.chains.length == 4);
 }
 
+unittest
+{
+    auto bent_three_in_the_corner = new CornerShape([Piece(0, 0), Piece(0, 1), Piece(1, 0)]);
+    bent_three_in_the_corner.canonize;
+    auto bent_three_out_of_the_corner = new CornerShape([Piece(0, 0), Piece(0, 1), Piece(1, 1)]);
+    bent_three_out_of_the_corner.canonize;
+    assert(bent_three_in_the_corner != bent_three_out_of_the_corner);
+}
+
+/*
 unittest
 {
     auto s = Shape([Piece(0, 0), Piece(0, 1)]);
@@ -598,3 +896,4 @@ unittest
 {
     assert(eyespaces(4).length == 314);
 }
+*/

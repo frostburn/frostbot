@@ -46,6 +46,23 @@ void main()
     auto node_pool = &empty;
 
     /*
+    auto cs = new CornerShape([Piece(0, 0), Piece(0, 1)]);
+    foreach (s; cs.shapes_plus_one.byKey){
+        writeln(s);
+    }
+    */
+
+    writeln(polyominoes!EdgeShape(8).length);
+
+    /*
+    foreach (s; polyominoes!EdgeShape(5).byKey){
+        writeln(s);
+        writeln(s.liberties);
+        writeln;
+    }
+    */
+
+    /*
     auto l = LocalState8(s, 2);
 
     auto n = new GameNode!(Board8, LocalState8)(l);
