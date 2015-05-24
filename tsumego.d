@@ -77,3 +77,33 @@ unittest
     writeln(node_pool.length, " nodes explored");
     assert(n.low == playing_area.popcount);
 }
+
+unittest
+{
+    // Problem 464
+    HLNode8[CanonicalState8] empty;
+    auto node_pool = &empty;
+    auto local_transpositions = &loc_trans;
+
+    auto opponent = Board8(3, 0) | Board8(4, 1) | Board8(5, 1) | Board8(5, 2) | rectangle8(3, 1).south(2).east | Board8(0, 3);
+    auto playing_area = rectangle8(7, 5);
+    auto player = (rectangle8(6, 4) ^ rectangle8(5, 2)).south.east | Board8(4, 2);
+    auto s = State8(playing_area);
+    s.player = player | Board8(1, 0) | Board8(5, 0);
+    s.player_unconditional = player;
+    s.opponent = opponent;
+    auto n = new HLNode8(CanonicalState8(s), node_pool, local_transpositions);
+
+    writeln("Problem 464");
+    while(n.expand){
+    }
+    foreach (c; n.children){
+        if (-c.high == n.low){
+            while(c.expand){
+            }
+        }
+    }
+    writeln(n.low_solution);
+    writeln(node_pool.length, " nodes explored");
+    assert(n.low == playing_area.popcount);
+}

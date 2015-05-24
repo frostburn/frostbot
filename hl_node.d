@@ -100,7 +100,12 @@ class HLNode(T, S)
             is_low_final = is_high_final = true;
         }
         else {
-            analyze_state(state, moves, low, high, local_transpositions);
+            version (no_local){
+                state.get_score_bounds(low, high);
+            }
+            else {
+                analyze_state(state, moves, low, high, local_transpositions);
+            }
             is_low_final = is_high_final = (low == high);
         }
     }
@@ -121,7 +126,12 @@ class HLNode(T, S)
         assert(!is_leaf);
         children = [];
 
-        auto _moves = moves.pieces ~ T();
+        version (no_local){
+            auto _moves = state.moves;
+        }
+        else {
+            auto _moves = moves.pieces ~ T();
+        }
         foreach (child_state; state.children(_moves)){
             assert(child_state.black_to_play);
             if (child_state in *node_pool){
@@ -530,4 +540,30 @@ unittest
 
     assert(n.low == 1);
     assert(n.high == 1);
+}
+
+unittest
+{
+    Transposition[LocalState8] loc_trans;
+    auto transpositions = &loc_trans;
+    HLNode8[CanonicalState8] empty;
+    auto node_pool = &empty;
+
+    auto b = Board8(0, 0);
+    b = b.cross(full8).cross(full8).cross(full8);
+    auto o = b.liberties(full8) ^ Board8(4, 0) ^ Board8(1, 2);
+    b = b.cross(full8);
+    auto p = rectangle8(3, 2) ^ Board8(2, 0) ^ Board8(3, 0) ^ Board8(0, 1) ^ Board8(0, 2);
+
+    auto s = State8(b);
+    s.player = p;
+    s.opponent = o;
+    s.opponent_unconditional = o;
+
+    auto n = new HLNode8(CanonicalState8(s), node_pool, transpositions);
+
+    while (n.expand) {
+    }
+    assert(n.low == -15);
+    assert(n.high == -15);
 }

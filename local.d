@@ -248,6 +248,18 @@ alias get_local_result8 = get_local_result!Board8;
 
 
 void analyze_state(T, S)(S state, out T moves, out float lower_bound, out float upper_bound, Transposition[LocalState!T] *transpositions=null){
+    enum check_passes = "
+        if (state.passes == 1){
+            auto score = state.liberty_score;
+            if (score > lower_bound){
+                lower_bound = score;
+            }
+            if (score > upper_bound){
+                upper_bound = score;
+            }
+        }
+    ";
+    assert(state.black_to_play);
     float size = state.playing_area.popcount;
     lower_bound = -size;
     upper_bound = size;
@@ -263,50 +275,57 @@ void analyze_state(T, S)(S state, out T moves, out float lower_bound, out float 
                 state.player_unconditional, state.opponent_unconditional,
                 transpositions
             );
+            // TODO: Investigate why this breaks.
+            /*
             if (region == undecided_space){
                 moves = result.moves;
-                float base_score = state.player_unconditional.popcount - state.opponent_unconditional.popcount + state.value_shift;
+                float base_score = state.player_unconditional.popcount - state.opponent_unconditional.popcount;
                 lower_bound = result.low + base_score;
                 upper_bound = result.high + base_score;
+                assert(lower_bound >= -size);
+                assert(lower_bound <= size);
+                assert(upper_bound >= -size);
+                assert(upper_bound <= size);
+                lower_bound += state.value_shift;
+                upper_bound += state.value_shift;
+                mixin(check_passes);
+                assert(lower_bound <= upper_bound);
                 return;
             }
+            */
             moves &= ~region;
             moves |= result.moves;
             if (state.ko){
                 moves |= result.threats;
             }
-            //if (result.pass_low == result.high){
+            // TODO: Check if this condition is necessary.
+            if (result.pass_low == result.high){
                 space &= ~region;
                 float assumed_score = region.popcount;
                 lower_bound += result.pass_low + assumed_score;
                 upper_bound += result.high - assumed_score;
-            //}
+            }
         }
     }
     // The minimal strategy is to fill half of sure dames.
     int player_crawl = state.player_unconditional.liberties(space).popcount;
     int opponent_crawl = state.opponent_unconditional.liberties(space).popcount;
 
-    lower_bound += player_crawl + (player_crawl & 1);
-    upper_bound -= opponent_crawl - (opponent_crawl & 1);
+    // TODO: Check if this is right.
+    lower_bound += (player_crawl / 2) + (player_crawl & 1);
+    upper_bound -= (opponent_crawl / 2); //- (opponent_crawl & 1);
 
     lower_bound += 2 * state.player_unconditional.popcount;
     upper_bound -= 2 * state.opponent_unconditional.popcount;
 
-    assert(state.black_to_play);
     assert(lower_bound >= -size);
     assert(lower_bound <= size);
     assert(upper_bound >= -size);
     assert(upper_bound <= size);
-    assert(lower_bound <= upper_bound);
     lower_bound += state.value_shift;
     upper_bound += state.value_shift;
-    if (state.passes == 1){
-        auto score = state.liberty_score;
-        if (score > lower_bound){
-            lower_bound = score;
-        }
-    }
+    mixin(check_passes);
+    assert(lower_bound <= upper_bound);
 }
 
 

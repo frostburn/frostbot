@@ -418,11 +418,17 @@ struct State(T)
         int player_crawl = player_unconditional.liberties(space).popcount;
         int opponent_crawl = opponent_unconditional.liberties(space).popcount;
 
-        lower_bound += player_crawl + (player_crawl & 1);
-        upper_bound -= opponent_crawl - (opponent_crawl & 1);
+        // TODO: Check if this is right.
+        lower_bound += (player_crawl / 2) + (player_crawl & 1);
+        upper_bound -= (opponent_crawl / 2); // - (opponent_crawl & 1);
 
         lower_bound += 2 * player_unconditional.popcount;
         upper_bound -= 2 * opponent_unconditional.popcount;
+
+        assert(lower_bound >= -size);
+        assert(lower_bound <= size);
+        assert(upper_bound >= -size);
+        assert(upper_bound <= size);
 
         if (black_to_play){
             lower_bound += value_shift;
@@ -431,6 +437,9 @@ struct State(T)
                 auto score = liberty_score;
                 if (score > lower_bound){
                     lower_bound = score;
+                }
+                if (score > upper_bound){
+                    upper_bound = score;
                 }
             }
         }
@@ -443,8 +452,12 @@ struct State(T)
                 if (score < upper_bound){
                     upper_bound = score;
                 }
+                if (score < lower_bound){
+                    lower_bound = score;
+                }
             }
         }
+        assert(lower_bound <= upper_bound);
     }
 
     bool is_leaf()
@@ -945,7 +958,6 @@ bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unco
             bool is_recapturable;
             if (count == 1){
                 capturing_stone = true_liberties;
-                assert(!capturing_stone.liberties(player));
                 foreach (piece; [capturing_stone.north, capturing_stone.east, capturing_stone.west, capturing_stone.south]){
                     if (piece & (chain | ~opponent)){
                         continue;
@@ -956,7 +968,7 @@ bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unco
                         break;
                     }
                 }
-                is_recapturable = capturing_stone.liberties(chain).popcount == 1;
+                is_recapturable = !capturing_stone.liberties(player) && capturing_stone.liberties(chain).popcount == 1;
             }
             if (count == 0){
                 auto kill = liberties & player;

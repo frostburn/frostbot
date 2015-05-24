@@ -42,8 +42,31 @@ void main()
 {
     writeln("main");
 
+    Transposition[LocalState8] loc_trans;
+    auto transpositions = &loc_trans;
     HLNode8[CanonicalState8] empty;
     auto node_pool = &empty;
+
+    /*
+    auto b = Board8(0, 0);
+    b = b.cross(full8).cross(full8).cross(full8);
+    auto o = b.liberties(full8) ^ Board8(4, 0) ^ Board8(1, 2);
+    b = b.cross(full8);
+    auto p = rectangle8(3, 2) ^ Board8(2, 0) ^ Board8(3, 0) ^ Board8(0, 1) ^ Board8(0, 2);
+
+    auto s = State8(b);
+    s.player = p;
+    s.opponent = o;
+    s.opponent_unconditional = o;
+
+    auto n = new HLNode8(CanonicalState8(s), node_pool, transpositions);
+
+    while (n.expand) {
+    }
+    assert(n.low == -15);
+    assert(n.high == -15);
+    */
+
 
     /*
     auto cs = new CornerShape([Piece(0, 0), Piece(0, 1)]);
