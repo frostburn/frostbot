@@ -446,7 +446,7 @@ struct State(T)
         else {
             auto temp = lower_bound;
             lower_bound = value_shift - upper_bound;
-            upper_bound = value_shift - lower_bound;
+            upper_bound = value_shift - temp;
             if (passes == 1){
                 auto score = liberty_score;
                 if (score < upper_bound){

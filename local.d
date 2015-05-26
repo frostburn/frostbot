@@ -268,7 +268,7 @@ void analyze_state(T, S)(S state, out T moves, out float lower_bound, out float 
     moves = space;
     T undecided_space = state.playing_area & ~(state.player_unconditional | state.opponent_unconditional);
     foreach (region; undecided_space.chains){
-        if (region.popcount <= 10 && !(region & state.ko)){
+        if (region.popcount <= 10 && !(region & state.ko) && !state.passes){
             auto result = get_local_result(
                 region,
                 state.player, state.opponent,
@@ -276,7 +276,7 @@ void analyze_state(T, S)(S state, out T moves, out float lower_bound, out float 
                 transpositions
             );
             // TODO: Investigate why this breaks.
-            /*
+            // Maybe check if the real value can fall outside these bounds.
             if (region == undecided_space){
                 moves = result.moves;
                 float base_score = state.player_unconditional.popcount - state.opponent_unconditional.popcount;
@@ -292,19 +292,18 @@ void analyze_state(T, S)(S state, out T moves, out float lower_bound, out float 
                 assert(lower_bound <= upper_bound);
                 return;
             }
-            */
             moves &= ~region;
             moves |= result.moves;
             if (state.ko){
                 moves |= result.threats;
             }
-            // TODO: Check if this condition is necessary.
-            if (result.pass_low == result.high){
+            // TODO: Check why this condition is necessary.
+            //if (result.pass_low == result.high){
                 space &= ~region;
                 float assumed_score = region.popcount;
                 lower_bound += result.pass_low + assumed_score;
                 upper_bound += result.high - assumed_score;
-            }
+            //}
         }
     }
     // The minimal strategy is to fill half of sure dames.
@@ -425,4 +424,45 @@ unittest
     n.calculate_minimax_values;
     assert(n.low_value == -2);
     assert(n.high_value == 2);
+}
+
+unittest
+{
+    Transposition[LocalState8] loc_trans;
+    auto transpositions = &loc_trans;
+
+    auto b = Board8(0, 0);
+    b = b.cross(full8).cross(full8).cross(full8);
+    auto o = b.liberties(full8) ^ Board8(4, 0) ^ Board8(1, 2);
+    b = b.cross(full8);
+    auto p = rectangle8(3, 2) ^ Board8(2, 0) ^ Board8(3, 0) ^ Board8(0, 1) ^ Board8(0, 2);
+
+    auto s = State8(b);
+    s.player = p;
+    s.opponent = o;
+    s.opponent_unconditional = o;
+
+    auto n = new GameNode8(CanonicalState8(s));
+    n.calculate_minimax_values;
+
+    bool[CanonicalState8] seen;
+    void check(GameNode8 root)
+    {
+        if (root.state in seen){
+            return;
+        }
+        seen[root.state] = true;
+        Board8 moves;
+        float low, high;
+        root.state.get_score_bounds(low, high);
+        assert(low <= root.low_value);
+        assert(root.high_value <= high);
+        analyze_state(root.state, moves, low, high, transpositions);
+        assert(low <= root.low_value);
+        assert(root.high_value <= high);
+        foreach (child; root.children){
+            check(child);
+        }
+    }
+    check(n);
 }

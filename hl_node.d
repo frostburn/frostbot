@@ -113,6 +113,7 @@ class HLNode(T, S)
     invariant
     {
         assert(state.passes <= 2);
+        assert(low <= high);
     }
 
     bool is_final()
@@ -238,13 +239,17 @@ class HLNode(T, S)
             return true;
         }
 
-        // Check if my high could change by a non selected low getting higher.
+        // Check if my high could change by a non selected -low getting lower.
+        // This can happen if the score bound checking is better on this node
+        // than on any of the children.
         foreach (child; children){
-            if (-child.high < high && !child.update_low_finality(tag)){
+            if (-child.low > high){
+                //child.update_low_finality(tag);
+                assert(!child.is_low_final);
                 return false;
             }
         }
-        // Check if my high could change by the selected low getting higher.
+        // Check if my high could change by the selected -low getting lower.
         foreach (child; children){
             if (-child.low == high && child.update_low_finality(tag)){
                 is_high_final = true;
@@ -271,13 +276,13 @@ class HLNode(T, S)
             return true;
         }
 
-        // Check if my low could change by a non selected high getting lower.
+        // Check if my low could change by a non selected -high getting higher.
         foreach (child; children){
-            if (-child.low > low && !child.update_high_finality(tag)){
+            if (-child.high != low && -child.low > low && !child.update_high_finality(tag)){
                 return false;
             }
         }
-        // Check if my low could change by the selected high getting lower.
+        // Check if my low could change by the selected -high getting higher.
         foreach (child; children){
             if (-child.high == low && child.update_high_finality(tag)){
                 is_low_final = true;
@@ -327,6 +332,10 @@ class HLNode(T, S)
         }
         if (!is_high_final){
             result = expand_high(next_tag++);
+            if (!result){
+                writeln(this);
+                foreach(c;children)writeln(c);
+            }
             assert(result);
         }
         return true;
@@ -365,6 +374,15 @@ class HLNode(T, S)
         if (expansions){
             return true;
         }
+        /*
+        foreach (child; children){
+            if (!child.is_high_final){
+                if (child.expand_high(tag)){
+                    return true;
+                }
+            }
+        }
+        */
         return false;
     }
 
@@ -381,14 +399,22 @@ class HLNode(T, S)
         }
         int expansions = 0;
         foreach (child; children){
-            if (-child.low == high && !child.is_low_final){
+            if (-child.low >= high){
+                if (child.is_low_final){
+                    writeln(this);
+                    foreach(c;children)writeln(c);
+                }
+                assert(!child.is_low_final);
                 if (child.expand_low(tag)){
                     expansions++;
-                    break;
+                    if (expansions > 1){
+                        break;
+                    }
                     //return true;
                 }
             }
         }
+        /*
         foreach (child; children){
             if (-child.high < high && !child.is_low_final){
                 if (child.expand_low(tag)){
@@ -398,9 +424,19 @@ class HLNode(T, S)
                 }
             }
         }
+        */
         if (expansions){
             return true;
         }
+        /*
+        foreach (child; children){
+            if (!child.is_low_final){
+                if (child.expand_low(tag)){
+                    return true;
+                }
+            }
+        }
+        */
         return false;
     }
 
