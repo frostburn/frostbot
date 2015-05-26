@@ -85,8 +85,6 @@ class HLNode(T, S)
     T moves;
     Transposition[LocalState!T] *local_transpositions = null;
 
-    // TODO: check_queue for recently modified nodes.
-
     this(S state, HLNode!(T, S)[S] *node_pool, Transposition[LocalState!T] *local_transpositions=null)
     {
         this.state = state;
@@ -190,15 +188,11 @@ class HLNode(T, S)
 
     void calculate_current_values()
     {
-        // TODO: Use cascading update instead.
+        // TODO: Use cascading update from check queue instead.
         HLNode!(T, S)[] queue;
-        HLNode!(T, S)[] leaf_queue;
         foreach (node; *node_pool){
             if (!node.is_final){
                 queue ~= node;
-            }
-            if (node.is_leaf){
-                leaf_queue ~= node;
             }
         }
 
@@ -213,86 +207,102 @@ class HLNode(T, S)
             }
         }
 
-        /*
-        foreach (leaf; leaf_queue){
-            leaf.update_low_finality(next_tag++);
-            leaf.update_high_finality(next_tag++);
+
+        if (is_final){
+            return;
         }
-        */
-        foreach (node; *node_pool){
-            node.update_low_finality(next_tag++);
-            node.update_high_finality(next_tag++);
+        HLNode!(T, S)[S] escape_pool;
+        _low_escapes(escape_pool);
+        _high_escapes(escape_pool);
+
+
+        foreach (node; escape_pool){
+            assert(!node.is_final);
+            foreach (parent; node.parents){
+                queue ~= parent;
+            }
+        }
+
+        while (queue.length){
+            auto node = queue.front;
+            queue.popFront;
+            bool changed = node.update_low_finality;
+            changed = changed || node.update_high_finality;
+            if (changed){
+                foreach (parent; node.parents){
+                    queue ~= parent;
+                }
+            }
         }
     }
 
-    bool update_high_finality(ulong tag)
+    void _low_escapes(ref HLNode!(T, S)[S] escape_pool)
     {
-        if (this.high_tag == tag){
-            return true;
-        }
-        this.high_tag = tag;
-
-        if (is_high_final){
-            //foreach (parent; parents){
-            //    parent.update_low_finality(tag);
-            //}
-            return true;
-        }
-
-        // Check if my high could change by a non selected -low getting lower.
-        // This can happen if the score bound checking is better on this node
-        // than on any of the children.
-        foreach (child; children){
-            if (-child.low > high){
-                //child.update_low_finality(tag);
-                assert(!child.is_low_final);
-                return false;
+        if (children.length){
+            is_low_final = true;
+            foreach (child; children){
+                if (-child.low >= low && !child.is_high_final){
+                    child._high_escapes(escape_pool);
+                }
             }
         }
-        // Check if my high could change by the selected -low getting lower.
-        foreach (child; children){
-            if (-child.low == high && child.update_low_finality(tag)){
-                is_high_final = true;
-                foreach (parent; parents){
-                    parent.update_low_finality(next_tag++);
+        else {
+            escape_pool[state] = this;
+        }
+    }
+
+    void _high_escapes(ref HLNode!(T, S)[S] escape_pool)
+    {
+        if (children.length){
+            is_high_final = true;
+            foreach (child; children){
+                if (-child.low >= high && !child.is_low_final){
+                    child._low_escapes(escape_pool);
                 }
+            }
+        }
+        else {
+            escape_pool[state] = this;
+        }
+    }
+
+    bool update_low_finality()
+    {
+        if (!is_low_final){
+            return false;
+        }
+
+        // Check if my low could change by a selectable -high getting higher.
+        foreach (child; children){
+            if (-child.low >= low && !child.is_high_final){
+                is_low_final = false;
                 return true;
             }
         }
         return false;
     }
 
-    bool update_low_finality(ulong tag)
+    bool update_high_finality()
     {
-        if (this.low_tag == tag){
-            return true;
-        }
-        this.low_tag = tag;
-
-        if (is_low_final){
-            //foreach (parent; parents){
-            //    parent.update_high_finality(tag);
-            //}
-            return true;
+        if (!is_high_final){
+            return false;
         }
 
-        // Check if my low could change by a non selected -high getting higher.
         foreach (child; children){
-            if (-child.high != low && -child.low > low && !child.update_high_finality(tag)){
+            if (-child.low == high && child.is_low_final){
+                assert(is_high_final);
                 return false;
             }
         }
-        // Check if my low could change by the selected -high getting higher.
+        // Check if my high could change by a selectable -low getting lower.
+        // -child.low being higher than this.high can happen if the score 
+        // bound checking is better on this node than on any of the children.
         foreach (child; children){
-            if (-child.high == low && child.update_high_finality(tag)){
-                is_low_final = true;
-                foreach (parent; parents){
-                    parent.update_high_finality(next_tag++);
-                }
+            if (-child.low >= high && !child.is_low_final){
+                is_high_final = false;
                 return true;
             }
         }
-
         return false;
     }
 
@@ -325,13 +335,13 @@ class HLNode(T, S)
         if (is_final){
             return false;
         }
-        bool result;
+        bool result = false;
         if (!is_low_final){
             result = expand_low(next_tag++);
             assert(result);
         }
         if (!is_high_final){
-            result = expand_high(next_tag++);
+            result = result || expand_high(next_tag++);
             if (!result){
                 writeln(this);
                 foreach(c;children)writeln(c);
@@ -354,20 +364,12 @@ class HLNode(T, S)
         }
         int expansions = 0;
         foreach (child; children){
-            if (-child.high == low && !child.is_high_final){
+            if (-child.low >= low && !child.is_high_final){
                 if (child.expand_high(tag)){
                     expansions++;
-                    break;
-                    //return true;
-                }
-            }
-        }
-        foreach (child; children){
-            if (-child.low > low && !child.is_high_final){
-                if (child.expand_high(tag)){
-                    expansions++;
-                    break;
-                    //return true;
+                    if (expansions > 1){
+                        break;
+                    }
                 }
             }
         }
@@ -399,32 +401,23 @@ class HLNode(T, S)
         }
         int expansions = 0;
         foreach (child; children){
-            if (-child.low >= high){
+            if (-child.low >= high && !child.is_low_final){
+                /*
                 if (child.is_low_final){
+                    update_high_finality;
                     writeln(this);
                     foreach(c;children)writeln(c);
                 }
                 assert(!child.is_low_final);
+                */
                 if (child.expand_low(tag)){
                     expansions++;
                     if (expansions > 1){
                         break;
                     }
-                    //return true;
                 }
             }
         }
-        /*
-        foreach (child; children){
-            if (-child.high < high && !child.is_low_final){
-                if (child.expand_low(tag)){
-                    expansions++;
-                    break;
-                    //return true;
-                }
-            }
-        }
-        */
         if (expansions){
             return true;
         }

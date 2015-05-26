@@ -275,8 +275,6 @@ void analyze_state(T, S)(S state, out T moves, out float lower_bound, out float 
                 state.player_unconditional, state.opponent_unconditional,
                 transpositions
             );
-            // TODO: Investigate why this breaks.
-            // Maybe check if the real value can fall outside these bounds.
             if (region == undecided_space){
                 moves = result.moves;
                 float base_score = state.player_unconditional.popcount - state.opponent_unconditional.popcount;
@@ -297,7 +295,7 @@ void analyze_state(T, S)(S state, out T moves, out float lower_bound, out float 
             if (state.ko){
                 moves |= result.threats;
             }
-            // TODO: Check why this condition is necessary.
+            // TODO: Check why this condition is ever necessary.
             //if (result.pass_low == result.high){
                 space &= ~region;
                 float assumed_score = region.popcount;
