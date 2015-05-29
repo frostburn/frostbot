@@ -47,7 +47,77 @@ void main()
     HLNode8[CanonicalState8] empty;
     auto node_pool = &empty;
 
+    /*
+    auto s = State8(rectangle8(4, 1));
+    auto n = new HLNode8(CanonicalState8(s), node_pool, transpositions);
+    while (n.expand) {
+    }
+    assert(n.low == 4);
+    assert(n.high == 4);
 
+    s = State8(rectangle8(5, 1));
+    n = new HLNode8(CanonicalState8(s), node_pool, transpositions);
+    while (n.expand) {
+    }
+    assert(n.low == -5);
+    assert(n.high == 5);
+
+    s = State8(rectangle8(4, 2));
+    n = new HLNode8(CanonicalState8(s), node_pool, transpositions);
+
+    while (n.expand) {
+    }
+    assert(n.low == 8);
+    assert(n.high == 8);
+
+    s = State8(rectangle8(4, 3));
+    n = new HLNode8(CanonicalState8(s), node_pool, transpositions);
+
+    while (n.expand) {
+    }
+    assert(n.low == 4);
+    assert(n.high == 12);
+    */
+
+    //n.full_expand;
+    //writeln(n);
+
+    /*
+    foreach (i;0..9){
+        auto b = Board11();
+        foreach (j;0..5){
+            int x = j;
+            int y = i - j;
+            if (x >= 0 && x < 5 && y >= 0 && y < 5){
+                b |= Board11(x, y);
+            }
+        }
+        b |= b.east(5);
+        writeln(b);
+        writeln(b.repr);
+    }
+    */
+
+    /*
+    auto b = rectangle11(5, 1).east(5);
+    foreach (i; 0..5){
+        writeln(b);
+        writeln(b.repr);
+        b |= b.south;
+    }
+    */
+
+    /*
+    auto b = Board11(123881237912738987, 2349237497823847897, true) & square11;
+    foreach (i; 0..100000000){
+        //b.mirror_d;
+        //b.mirror_v;
+        b.rotate;
+    }
+    writeln(b);
+    */
+
+    /*
     auto b = Board8(0, 0);
     b = b.cross(full8).cross(full8).cross(full8);
     auto o = b.liberties(full8) ^ Board8(4, 0) ^ Board8(1, 2);
@@ -84,6 +154,7 @@ void main()
     }
     check(n);
     writeln(seen.length);
+    */
 
     /*
     auto b = Board8(0, 0);

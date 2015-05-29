@@ -26,8 +26,6 @@ struct Board8
 
     static immutable ulong[WIDTH * HEIGHT / 2] FORAGE_TABLE = mixin(get_forage_table);
 
-    static immutable ulong[1 << HEIGHT] ROTATION_TABLE = mixin(get_rotation_table);
-
     ulong bits = EMPTY;
 
     bool valid() const pure nothrow @nogc @safe
@@ -339,7 +337,7 @@ struct Board8
         return !(bits & EAST_WALL);
     }
 
-    void rotate() nothrow @nogc @safe
+    void rotate() pure nothrow @nogc @safe
     in
     {
         assert(valid);
@@ -352,20 +350,8 @@ struct Board8
     }
     body
     {
-        //version(assert){
-        //    auto rotated_bits = naive_rotate;
-        //}
-        auto old_bits = bits;
-        bits = EMPTY;
-        assert(HEIGHT <= WIDTH);
-        for (int y = 0; y < HEIGHT; y++){
-            auto north_line = (old_bits >> (y * V_SHIFT)) & NORTH_WALL;
-            bits |= ROTATION_TABLE[north_line] >> (y * H_SHIFT);
-        }
-        assert(old_bits.popcount == bits.popcount);
-        //version(assert){
-        //    assert(bits == rotated_bits);
-        //}
+        mirror_d;
+        mirror_v;
     }
 
     private ulong naive_rotate() pure nothrow @nogc @safe
@@ -382,16 +368,47 @@ struct Board8
     body
     {
         auto result = EMPTY;
-        assert(HEIGHT <= WIDTH);
+        assert(HEIGHT == WIDTH - 1);
         for (int y = 0; y < HEIGHT; y++){
             for (int x = 0; x < HEIGHT; x++){
                 result |= (
                     (1UL & ( bits >> (x * H_SHIFT + y * V_SHIFT))) <<
-                    ((HEIGHT - 1 - y) * H_SHIFT + x * V_SHIFT)
+                    (y * H_SHIFT + (WIDTH - 2 - x) * V_SHIFT)
                 );
             }
         }
         return result;
+    }
+
+    void mirror_d() pure nothrow @nogc @safe
+    in
+    {
+        assert(valid);
+        assert(can_rotate);
+    }
+    out
+    {
+        assert(valid);
+        assert(can_rotate);
+    }
+    body
+    {
+        enum D_SHIFT = V_SHIFT - H_SHIFT;
+        bits = (
+            (bits & 0x40UL) << (6 * D_SHIFT) |
+            (bits & 0x8020UL) << (5 * D_SHIFT) |
+            (bits & 0x1004010UL) << (4 * D_SHIFT) |
+            (bits & 0x200802008UL) << (3 * D_SHIFT) |
+            (bits & 0x40100401004UL) << (2 * D_SHIFT) |
+            (bits & 0x8020080200802UL) << D_SHIFT |
+            (bits & 0x1004010040100401UL) |
+            (bits & 0x802008020080200UL) >> D_SHIFT |
+            (bits & 0x401004010040000UL) >> (2 * D_SHIFT) |
+            (bits & 0x200802008000000UL) >> (3 * D_SHIFT) |
+            (bits & 0x100401000000000UL) >> (4 * D_SHIFT) |
+            (bits & 0x80200000000000UL) >> (5 * D_SHIFT) |
+            (bits & 0x40000000000000UL) >> (6 * D_SHIFT)
+        );
     }
 
     void mirror_h() pure nothrow @nogc @safe
@@ -790,6 +807,7 @@ alias from_shape8 = from_shape!Board8;
 
 immutable Board8 full8 = Board8(Board8.FULL);
 immutable Board8 empty8 = Board8(Board8.EMPTY);
+immutable Board8 square8 = Board8(Board8.FULL & ~Board8.EAST_WALL);
 
 
 string get_forage_table()
@@ -850,23 +868,6 @@ string get_forage_table()
     */
 }
 
-string get_rotation_table(){
-    string r;
-    assert(Board8.HEIGHT <= Board8.WIDTH);
-    ulong[1 << Board8.HEIGHT] rotation_table;
-    for (ulong north_line = 0; north_line < (1 << Board8.HEIGHT); north_line++){
-        rotation_table[north_line] = Board8(north_line).naive_rotate;
-    }
-    r ~= "[";
-    foreach (index, rotation; rotation_table){
-        r ~= format("0x%xUL", rotation);
-        if (index < rotation_table.length - 1){
-            r ~= ", ";
-        }
-    }
-    r ~= "]";
-    return r;
-}
 
 unittest
 {
@@ -984,4 +985,12 @@ unittest
     stream.position = 0;
     auto c = Board8.from_stream(stream);
     assert(b == c);
+}
+
+unittest
+{
+    auto b = Board8(123881237912738987) & square8;
+    auto a = Board8(b.naive_rotate);
+    b.rotate;
+    assert(a == b);
 }

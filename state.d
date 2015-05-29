@@ -519,6 +519,21 @@ struct State(T)
         opponent_unconditional.rotate;
     }
 
+    void mirror_d()
+    in
+    {
+        can_rotate;
+    }
+    body
+    {
+        player.mirror_d;
+        opponent.mirror_d;
+        ko.mirror_d;
+        playing_area.mirror_d;
+        player_unconditional.mirror_d;
+        opponent_unconditional.mirror_d;
+    }
+
     void mirror_h()
     {
         player.mirror_h;
@@ -540,7 +555,7 @@ struct State(T)
     }
 
     // TODO: Canonize hierarchically ie. based on opCmp order.
-    Transformation canonize()
+    void canonize()
     {
         if (!black_to_play){
             flip_colors;
@@ -549,64 +564,44 @@ struct State(T)
         reduce;
         snap;
 
-        auto final_transformation = Transformation.none;
-        auto current_transformation = Transformation.none;
         auto temp = this;
         enum compare_and_replace = "
-            debug(canonize){
+            debug (canonize){
                 writeln(\"Comparing:\");
                 writeln(this);
                 writeln(temp);
             }
             if (temp < this){
-                debug(canonize) {
+                debug (canonize){
                     writeln(\"Replacing with current transformation=\", current_transformation);
                 }
-                final_transformation = current_transformation;
                 this = temp;
             }
         ";
-        enum do_rotation = "
-            temp.rotate;
+        enum do_mirror_h = "
+            temp.mirror_h;
             temp.snap;
         ";
         enum do_mirror_v = "
             temp.mirror_v;
             temp.snap;
         ";
+        mixin(do_mirror_v);
+        mixin(compare_and_replace);
+        mixin(do_mirror_h);
+        mixin(compare_and_replace);
+        mixin(do_mirror_v);
+        mixin(compare_and_replace);
         if (can_rotate){
-            //TODO: Rotate only once.
-            for (int i = 0; i < 3; i++){
-                mixin(do_rotation);
-                current_transformation++;
-                mixin(compare_and_replace);
-            }
-
-            mixin(do_mirror_v);
-            current_transformation++;
+            temp.mirror_d;  // Diagonal mirror doesn't need snap.
             mixin(compare_and_replace);
-
-            for (int i = 0; i < 3; i++){
-                mixin(do_rotation);
-                current_transformation++;
-                mixin(compare_and_replace);
-            }
-        }
-        else{
             mixin(do_mirror_v);
-            current_transformation = Transformation.mirror_v;
             mixin(compare_and_replace);
-
-            temp.mirror_h;
-            temp.snap;
-            current_transformation = Transformation.flip;
+            mixin(do_mirror_h);
             mixin(compare_and_replace);
-            
             mixin(do_mirror_v);
-            current_transformation = Transformation.mirror_h;
             mixin(compare_and_replace);
         }
-        return final_transformation;
     }
 
     /**

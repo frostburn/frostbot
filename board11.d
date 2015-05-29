@@ -28,11 +28,6 @@ struct Board11
 
     static immutable Board11[WIDTH * HEIGHT / 2] FORAGE_TABLE = mixin(get_forage_table);
 
-    static immutable ulong[1 << 5] NORTH_NORTH_ROTATION_TABLE = mixin(get_rotation_table("north-north"));
-    static immutable ulong[1 << 5] NORTH_SOUTH_ROTATION_TABLE = mixin(get_rotation_table("north-south"));
-    static immutable ulong[1 << 5] SOUTH_NORTH_ROTATION_TABLE = mixin(get_rotation_table("south-north"));
-    static immutable ulong[1 << 5] SOUTH_SOUTH_ROTATION_TABLE = mixin(get_rotation_table("south-south"));
-
     ulong north_bits;
     ulong south_bits;
 
@@ -471,7 +466,7 @@ struct Board11
     }
     body
     {
-        return !(north_bits & EAST_WALL);
+        return !((north_bits | south_bits) & EAST_WALL);
     }
 
     Board11 naive_rotate() pure nothrow @nogc @safe
@@ -488,19 +483,19 @@ struct Board11
     body
     {
         Board11 result;
-        assert(HEIGHT <= WIDTH);
+        assert(HEIGHT == WIDTH - 1);
         for (int y = 0; y < HEIGHT; y++){
             for (int x = 0; x < HEIGHT; x++){
                 auto p = Board11(x, y);
                 if (this & p){
-                    result |= Board11(HEIGHT - 1 - y, x);
+                    result |= Board11(y, WIDTH - 2 - x);
                 }
             }
         }
         return result;
     }
 
-    void rotate() nothrow @nogc @safe
+    void rotate() pure nothrow @nogc @safe
     in
     {
         assert(valid);
@@ -513,22 +508,63 @@ struct Board11
     }
     body
     {
-        auto old_north_bits = north_bits;
-        auto old_south_bits = south_bits;
-        north_bits = EMPTY;
-        south_bits = EMPTY;
-        assert(HEIGHT <= WIDTH);
-        for (int y = 0; y < 5; y++){
-            auto line = (old_north_bits >> (y * V_SHIFT)) & R_LINE;
-            north_bits |= NORTH_NORTH_ROTATION_TABLE[line] >> (y * H_SHIFT);
-            line = (old_north_bits >> (y * V_SHIFT + 5 * H_SHIFT)) & R_LINE;
-            south_bits |= NORTH_SOUTH_ROTATION_TABLE[line] >> (y * H_SHIFT);
-            line = (old_south_bits >> (y * V_SHIFT)) & R_LINE;
-            north_bits |= SOUTH_NORTH_ROTATION_TABLE[line] << (y * H_SHIFT);
-            line = (old_south_bits >> (y * V_SHIFT + 5 * H_SHIFT)) & R_LINE;
-            south_bits |= SOUTH_SOUTH_ROTATION_TABLE[line] << (y * H_SHIFT);
-        }
-        assert(old_north_bits.popcount + old_south_bits.popcount == north_bits.popcount + south_bits.popcount);
+        mirror_d;
+        mirror_v;
+    }
+
+    void mirror_d() pure nothrow @nogc @safe
+    in
+    {
+        assert(valid);
+        assert(can_rotate);
+    }
+    out
+    {
+        assert(valid);
+        assert(can_rotate);
+    }
+    body
+    {
+        enum D_SHIFT = V_SHIFT - H_SHIFT;
+        enum Z_SHIFT = V_SHIFT + H_SHIFT;
+        enum WEST_BLOCK = 0x1F01F01F01F01FUL;
+        enum EAST_BLOCK = 0x3E03E03E03E03E0UL;
+        north_bits = (
+            (north_bits & 0x210UL) << (4 * D_SHIFT) |
+            (north_bits & 0x210108UL) << (3 * D_SHIFT) |
+            (north_bits & 0x210108084UL) << (2 * D_SHIFT) |
+            (north_bits & 0x210108084042UL) << D_SHIFT |
+            (north_bits & 0x210108084042021UL) |
+            (north_bits & 0x108084042021000UL) >> D_SHIFT |
+            (north_bits & 0x84042021000000UL) >> (2 * D_SHIFT) |
+            (north_bits & 0x42021000000000UL) >> (3 * D_SHIFT) |
+            (north_bits & 0x21000000000000UL) >> (4 * D_SHIFT)
+        );
+        auto temp = north_bits & EAST_BLOCK;
+
+        south_bits = (
+            (south_bits & 0x21UL) << (4 * Z_SHIFT) |
+            (south_bits & 0x21042UL) << (3 * Z_SHIFT) |
+            (south_bits & 0x21042084UL) << (2 * Z_SHIFT) |
+            (south_bits & 0x21042084108UL) << Z_SHIFT |
+            (south_bits & 0x21042084108210UL) |
+            (south_bits & 0x42084108210000UL) >> Z_SHIFT |
+            (south_bits & 0x84108210000000UL) >> (2 * Z_SHIFT) |
+            (south_bits & 0x108210000000000UL) >> (3 * Z_SHIFT) |
+            (south_bits & 0x210000000000000UL) >> (4 * Z_SHIFT)
+        );
+        temp |= south_bits & WEST_BLOCK;
+
+        temp = (
+            (temp & (H_WALL << (0 * V_SHIFT))) << (4 * V_SHIFT) |
+            (temp & (H_WALL << (1 * V_SHIFT))) << (2 * V_SHIFT) |
+            (temp & (H_WALL << (2 * V_SHIFT))) |
+            (temp & (H_WALL << (3 * V_SHIFT))) >> (2 * V_SHIFT) |
+            (temp & (H_WALL << (4 * V_SHIFT))) >> (4 * V_SHIFT)
+        );
+
+        north_bits = (north_bits & WEST_BLOCK) | (temp & WEST_BLOCK) << (5 * H_SHIFT);
+        south_bits = (south_bits & EAST_BLOCK) | (temp & EAST_BLOCK) >> (5 * H_SHIFT);
     }
 
     void mirror_h() pure nothrow @nogc @safe
@@ -807,35 +843,6 @@ immutable Board11 square11 = Board11(0x3FF3FF3FF3FF3FFUL, 0x3FF3FF3FF3FF3FFUL, t
 alias rectangle11 = rectangle!Board11;
 
 
-string get_rotation_table(string parts){
-    string r;
-    assert(Board11.HEIGHT <= Board11.WIDTH);
-    ulong[1 << 5] rotation_table;
-    for (ulong line = 0; line < (1 << 5); line++){
-        if (parts == "north-north"){
-            rotation_table[line] = Board11(line, 0, true).naive_rotate.north_bits;
-        }
-        else if (parts == "north-south"){
-            rotation_table[line] = Board11(line << 5, 0, true).naive_rotate.south_bits;
-        }
-        else if (parts == "south-north"){
-            rotation_table[line] = Board11(0, line, true).naive_rotate.north_bits;
-        }
-        else if (parts == "south-south"){
-            rotation_table[line] = Board11(0, line << 5, true).naive_rotate.south_bits;
-        }
-    }
-    r ~= "[";
-    foreach (index, rotation; rotation_table){
-        r ~= format("0x%xUL", rotation);
-        if (index < rotation_table.length - 1){
-            r ~= ", ";
-        }
-    }
-    r ~= "]";
-    return r;
-}
-
 string get_forage_table()
 {
     string r;
@@ -940,4 +947,12 @@ unittest
     d.flood_into(c);
 
     assert(d == b);
+}
+
+unittest
+{
+    auto b = Board11(123881237912738987, 9231278367867832, true) & square11;
+    auto a = b.naive_rotate;
+    b.rotate;
+    assert(a == b);
 }
