@@ -1,5 +1,6 @@
 module utils;
 
+import std.container;
 
 int popcount(ulong b) pure nothrow @nogc @safe
 {
@@ -177,6 +178,49 @@ class HistoryNode(T)
         else {
             return (*parent).length + 1;
         }
+    }
+}
+
+
+struct SetQueue(T)
+{
+    DList!T queue;
+    bool[T] members;
+
+    size_t insert(T item)
+    {
+        if (item in members){
+            return 0;
+        }
+        else {
+            members[item] = true;
+            return queue.insert(item);
+        }
+    }
+
+
+    size_t insertBack(T item)
+    {
+        if (item in members){
+            return 0;
+        }
+        else {
+            members[item] = true;
+            return queue.insertBack(item);
+        }
+    }
+
+    T removeFront()
+    {
+        auto item = queue.front;
+        queue.removeFront;
+        members.remove(item);
+        return item;
+    }
+
+    bool empty()
+    {
+        return queue.empty;
     }
 }
 

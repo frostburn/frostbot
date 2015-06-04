@@ -77,23 +77,18 @@ class HLNode(T, S)
     bool is_high_final = false;
     bool is_leaf = false;
     HLNode!(T, S)[] children;
-    HLNode!(T, S)[S] parents;
-    HLNode!(T, S)[S] *node_pool = null;
-    ulong low_tag = 0;
-    ulong high_tag = 0;
+    HLNode!(T, S)[] parents;
+    //ulong low_tag = 0;
+    //ulong high_tag = 0;
 
     T moves;
-    Transposition[LocalState!T] *local_transpositions = null;
 
-    this(S state, HLNode!(T, S)[S] *node_pool, Transposition[LocalState!T] *local_transpositions=null)
+    this(S state, Transposition[LocalState!T] *local_transpositions=null)
     {
         this.state = state;
-        this.node_pool = node_pool;
-        this.local_transpositions = local_transpositions;
-        assert(state !in *node_pool);
-        (*node_pool)[state] = this;
         if (state.is_leaf){
             is_leaf = true;
+            // FIX: This really should come through analyze_state
             low = high = state.liberty_score;
             is_low_final = is_high_final = true;
         }
@@ -102,6 +97,7 @@ class HLNode(T, S)
                 state.get_score_bounds(low, high);
             }
             else {
+                assert(false);
                 analyze_state(state, moves, low, high, local_transpositions);
             }
             is_low_final = is_high_final = (low == high);
@@ -119,8 +115,7 @@ class HLNode(T, S)
         return is_low_final && is_high_final;
     }
 
-    // TODO: Add this to check_queue.
-    void make_children()
+    void make_children(ref HLNode!(T, S)[S] node_pool, Transposition[LocalState!T] *local_transpositions=null)
     {
         assert(!is_leaf);
         children = [];
@@ -133,22 +128,22 @@ class HLNode(T, S)
         }
         foreach (child_state; state.children(_moves)){
             assert(child_state.black_to_play);
-            if (child_state in *node_pool){
-                auto child = (*node_pool)[child_state];
+            if (child_state in node_pool){
+                auto child = node_pool[child_state];
                 children ~= child;
-                child.parents[state] = this;
+                child.parents ~= this;
             }
             else{
-                auto child = new HLNode!(T, S)(child_state, node_pool, local_transpositions);
+                auto child = new HLNode!(T, S)(child_state, local_transpositions);
+                node_pool[child_state] = child;
                 children ~= child;
-                child.parents[state] = this;
+                child.parents ~= this;
             }
         }
         children.randomShuffle;
         sort!(is_better!(T, S))(children);
     }
 
-    // TODO: Make cascading.
     bool update_value()
     {
         if (is_final || !children.length){
@@ -186,6 +181,7 @@ class HLNode(T, S)
         return changed;
     }
 
+    /*
     void calculate_current_values()
     {
         // TODO: Use cascading update from check queue instead.
@@ -235,77 +231,111 @@ class HLNode(T, S)
             }
         }
     }
+    */
 
-    void _low_escapes(ref HLNode!(T, S)[S] escape_pool)
+    void _low_leaks(ref SetQueue!(HLNode!(T, S)) leak_queue)
     {
         if (children.length){
             is_low_final = true;
             foreach (child; children){
-                if (-child.low >= low && !child.is_high_final){
-                    child._high_escapes(escape_pool);
+                if (-child.low > low && !child.is_high_final){
+                    child._high_leaks(leak_queue);
                 }
             }
         }
         else {
-            escape_pool[state] = this;
+            leak_queue.insertBack(this);
         }
     }
 
-    void _high_escapes(ref HLNode!(T, S)[S] escape_pool)
+    void _high_leaks(ref SetQueue!(HLNode!(T, S)) leak_queue)
     {
         if (children.length){
             is_high_final = true;
             foreach (child; children){
+                if (-child.low == high && child.is_low_final){
+                    return;
+                }
+                if (-child.high == high){
+                    // This can happen if bounds checking is better on this node than on a child node.
+                    return;
+                }
+            }
+            foreach (child; children){
                 if (-child.low >= high && !child.is_low_final){
-                    child._low_escapes(escape_pool);
+                    child._low_leaks(leak_queue);
                 }
             }
         }
         else {
-            escape_pool[state] = this;
+            leak_queue.insertBack(this);
         }
     }
 
-    bool update_low_finality()
+    bool update_low_finality(bool only_invalidate=false)
     {
-        if (!is_low_final){
+        if (only_invalidate && !is_low_final){
             return false;
         }
-
-        // Check if my low could change by a selectable -high getting higher.
-        foreach (child; children){
-            if (-child.low >= low && !child.is_high_final){
-                is_low_final = false;
-                return true;
+        if (children.length){
+            bool new_low_final = true;
+            if (low != high){
+                foreach (child; children){
+                    if (-child.low > low && !child.is_high_final){
+                        new_low_final = false;
+                        break;
+                    }
+                }
             }
+            bool changed = new_low_final != is_low_final;
+            is_low_final = new_low_final;
+            return changed;
         }
-        return false;
-    }
-
-    bool update_high_finality()
-    {
-        if (!is_high_final){
+        else {
             return false;
         }
-
-        foreach (child; children){
-            if (-child.low == high && child.is_low_final){
-                assert(is_high_final);
-                return false;
-            }
-        }
-        // Check if my high could change by a selectable -low getting lower.
-        // -child.low being higher than this.high can happen if the score 
-        // bound checking is better on this node than on any of the children.
-        foreach (child; children){
-            if (-child.low >= high && !child.is_low_final){
-                is_high_final = false;
-                return true;
-            }
-        }
-        return false;
     }
 
+    bool update_high_finality(bool only_invalidate=false)
+    {
+        if (only_invalidate && !is_high_final){
+            return false;
+        }
+        if (children.length){
+            bool new_high_final = false;
+            if (low == high){
+                new_high_final = true;
+            }
+            else {
+                foreach (child; children){
+                    if (-child.low == high && child.is_low_final){
+                        new_high_final = true;
+                        break;
+                    }
+                    if (-child.high == high){
+                        // This can happen if bounds checking is better on this node than on a child node.
+                        new_high_final = true;
+                        break;
+                    }
+                }
+            }
+            bool changed = new_high_final != is_high_final;
+            is_high_final = new_high_final;
+            return changed;
+        }
+        else {
+            return false;
+        }
+    }
+
+    bool update_finality(bool only_invalidate=false)
+    {
+        bool low_result = update_low_finality(only_invalidate);
+        bool high_result = update_high_finality(only_invalidate);
+        return low_result || high_result;
+    }
+
+    /*
     void full_expand()
     {
         bool again = true;
@@ -328,110 +358,7 @@ class HLNode(T, S)
         }
         calculate_current_values;
     }
-
-    bool expand()
-    {
-        calculate_current_values;
-        if (is_final){
-            return false;
-        }
-        bool result = false;
-        if (!is_low_final){
-            result = expand_low(next_tag++);
-            assert(result);
-        }
-        if (!is_high_final){
-            result = result || expand_high(next_tag++);
-            if (!result){
-                writeln(this);
-                foreach(c;children)writeln(c);
-            }
-            assert(result);
-        }
-        return true;
-    }
-
-    bool expand_low(ulong tag)
-    {
-        assert(!is_low_final);
-        if (this.low_tag == tag){
-            return false;
-        }
-        this.low_tag = tag;
-        if (!children.length){
-            make_children;
-            return true;
-        }
-        int expansions = 0;
-        foreach (child; children){
-            if (-child.low >= low && !child.is_high_final){
-                if (child.expand_high(tag)){
-                    expansions++;
-                    if (expansions > 1){
-                        break;
-                    }
-                }
-            }
-        }
-        if (expansions){
-            return true;
-        }
-        /*
-        foreach (child; children){
-            if (!child.is_high_final){
-                if (child.expand_high(tag)){
-                    return true;
-                }
-            }
-        }
-        */
-        return false;
-    }
-
-    bool expand_high(ulong tag)
-    {
-        assert(!is_high_final);
-        if (this.high_tag == tag){
-            return false;
-        }
-        this.high_tag = tag;
-        if (!children.length){
-            make_children;
-            return true;
-        }
-        int expansions = 0;
-        foreach (child; children){
-            if (-child.low >= high && !child.is_low_final){
-                /*
-                if (child.is_low_final){
-                    update_high_finality;
-                    writeln(this);
-                    foreach(c;children)writeln(c);
-                }
-                assert(!child.is_low_final);
-                */
-                if (child.expand_low(tag)){
-                    expansions++;
-                    if (expansions > 1){
-                        break;
-                    }
-                }
-            }
-        }
-        if (expansions){
-            return true;
-        }
-        /*
-        foreach (child; children){
-            if (!child.is_low_final){
-                if (child.expand_low(tag)){
-                    return true;
-                }
-            }
-        }
-        */
-        return false;
-    }
+    */
 
     /*
     HLNode!(T, S)[] principal_path(string type)(int max_depth=100, bool same=false)
@@ -487,6 +414,7 @@ class HLNode(T, S)
     }
     */
 
+    /*
     HLNode!(T, S)[] low_children()
     {
         HLNode!(T, S)[] result;
@@ -516,6 +444,7 @@ class HLNode(T, S)
         }
         return format("%s\n%s <= score <= %s", state._toString(T(), T(), state.player_unconditional, state.opponent_unconditional, mark), low, high);
     }
+    */
 
     override string toString()
     {
@@ -545,11 +474,73 @@ class HLNode(T, S)
 alias HLNode8 = HLNode!(Board8, CanonicalState8);
 
 
+class HLManager(T, S)
+{
+    HLNode!(T, S) root;
+    HLNode!(T, S)[S] node_pool;
+    Transposition[LocalState!T] *local_transpositions = null;
+
+    private {
+        SetQueue!(HLNode!(T, S)) queue;
+    }
+
+    this(S state, Transposition[LocalState!T] *local_transpositions=null)
+    {
+        root = new HLNode!(T, S)(state, local_transpositions);
+        node_pool[state] = root;
+        this.local_transpositions = local_transpositions;
+        queue.insert(root);
+    }
+
+    bool expand(float limit=float.infinity)
+    {
+        assert(limit >= 1);
+        while (!queue.empty){
+            auto node = queue.removeFront;
+            if (node.update_value){
+                foreach (parent; node.parents){
+                    queue.insertBack(parent);
+                }
+            }
+        }
+        SetQueue!(HLNode!(T, S)) leak_queue;
+        root._low_leaks(leak_queue);
+        root._high_leaks(leak_queue);
+        if (leak_queue.empty){
+            assert(root.is_final);
+            return false;
+        }
+        foreach (node; leak_queue.queue){
+            foreach (parent; node.parents){
+                queue.insert(parent);
+            }
+        }
+        while (!queue.empty){
+            auto node = queue.removeFront;
+            if (node.update_finality(true)){
+                foreach (parent; node.parents){
+                    queue.insertBack(parent);
+                }
+            }
+        }
+        float i = 0;
+        foreach (node; leak_queue.queue){
+            i += 1;
+            if (i > limit){
+                break;
+            }
+            node.make_children(node_pool, local_transpositions);
+            queue.insert(node);
+        }
+        return true;
+    }
+}
+
+alias HLManager8 = HLManager!(Board8, CanonicalState8);
+
+
 unittest
 {
-    HLNode8[CanonicalState8] empty;
-    auto node_pool = &empty;
-
     auto a = rectangle8(5, 2) ^ Board8(0, 0);
     auto p = Board8(1, 1);
     auto o = Board8(4, 1);
@@ -562,21 +553,18 @@ unittest
     s.player_unconditional = pu;
     s.opponent_unconditional = ou;
 
-    auto n = new HLNode8(CanonicalState8(s), node_pool);
+    auto m = new HLManager8(CanonicalState8(s));
 
-    while (n.expand) {
+    while (m.expand){
     }
-
-    assert(n.low == 1);
-    assert(n.high == 1);
+    assert(m.root.low == 1);
+    assert(m.root.high == 1);
 }
 
 unittest
 {
     Transposition[LocalState8] loc_trans;
     auto transpositions = &loc_trans;
-    HLNode8[CanonicalState8] empty;
-    auto node_pool = &empty;
 
     auto b = Board8(0, 0);
     b = b.cross(full8).cross(full8).cross(full8);
@@ -589,10 +577,44 @@ unittest
     s.opponent = o;
     s.opponent_unconditional = o;
 
-    auto n = new HLNode8(CanonicalState8(s), node_pool, transpositions);
+    auto m = new HLManager8(CanonicalState8(s), transpositions);
 
-    while (n.expand) {
+    while (m.expand) {
     }
-    assert(n.low == -15);
-    assert(n.high == -15);
+    assert(m.root.low == -15);
+    assert(m.root.high == -15);
+}
+
+unittest
+{
+    Transposition[LocalState8] loc_trans;
+    auto transpositions = &loc_trans;
+
+    auto s = State8(rectangle8(4, 1));
+    auto m = new HLManager8(CanonicalState8(s), transpositions);
+    while (m.expand) {
+    }
+    assert(m.root.low == 4);
+    assert(m.root.high == 4);
+
+    s = State8(rectangle8(5, 1));
+    m = new HLManager8(CanonicalState8(s), transpositions);
+    while (m.expand) {
+    }
+    assert(m.root.low == -5);
+    assert(m.root.high == 5);
+
+    s = State8(rectangle8(4, 2));
+    m = new HLManager8(CanonicalState8(s), transpositions);
+    while (m.expand) {
+    }
+    assert(m.root.low == 8);
+    assert(m.root.high == 8);
+
+    s = State8(rectangle8(4, 3));
+    m = new HLManager8(CanonicalState8(s), transpositions);
+    while (m.expand(600)) {
+    }
+    assert(m.root.low == 4);
+    assert(m.root.high == 12);
 }

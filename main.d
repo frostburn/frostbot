@@ -43,9 +43,32 @@ void main()
     writeln("main");
 
     Transposition[LocalState8] loc_trans;
+    //auto transpositions = &loc_trans;
+
+    auto local_transpositions = &loc_trans;
     auto transpositions = &loc_trans;
-    HLNode8[CanonicalState8] empty;
-    auto node_pool = &empty;
+
+    auto s = State8(rectangle8(4, 3));
+    writeln(s);
+    auto m = new HLManager8(CanonicalState8(s), transpositions);
+    while (m.expand(1000)) {
+        writeln(m.root.low, ", ", m.root.high);
+    }
+    assert(m.root.low == 4);
+    assert(m.root.high == 12);
+    writeln(m.node_pool.length);
+    /*
+
+
+    /*
+    writeln("done");
+    writeln(m.root);
+    foreach(c; m.root.children){
+        writeln("child");
+        writeln(c);
+    }
+    writeln(m.node_pool.length);
+    */
 
     /*
     auto s = State8(rectangle8(4, 1));
