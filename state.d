@@ -410,20 +410,34 @@ struct State(T)
         }
         // Calculate assuming black to play.
         float size = playing_area.popcount;
-        lower_bound = -size;
-        upper_bound = size;
+        version (conservative_bounds){
+            lower_bound = -size;
+            upper_bound = size;
 
-        // The minimal strategy is to fill half of sure dames.
-        auto space = playing_area & ~player & ~opponent;
-        int player_crawl = player_unconditional.liberties(space).popcount;
-        int opponent_crawl = opponent_unconditional.liberties(space).popcount;
+            // The minimal strategy is to fill half of sure dames.
+            auto space = playing_area & ~player & ~opponent;
+            int player_crawl = player_unconditional.liberties(space).popcount;
+            int opponent_crawl = opponent_unconditional.liberties(space).popcount;
 
-        // TODO: Check if this is right.
-        lower_bound += (player_crawl / 2) + (player_crawl & 1);
-        upper_bound -= (opponent_crawl / 2); // - (opponent_crawl & 1);
+            // TODO: Check if this is right.
+            lower_bound += (player_crawl / 2) + (player_crawl & 1);
+            upper_bound -= (opponent_crawl / 2); // - (opponent_crawl & 1);
 
-        lower_bound += 2 * player_unconditional.popcount;
-        upper_bound -= 2 * opponent_unconditional.popcount;
+            lower_bound += 2 * player_unconditional.popcount;
+            upper_bound -= 2 * opponent_unconditional.popcount;
+        }
+        else {
+            T space = playing_area & ~(player | opponent);
+            T player_dames = player_unconditional.liberties(space);
+            T opponent_dames = opponent_unconditional.liberties(space);
+            int player_dame_count = player_dames.popcount;
+            int opponent_dame_count = opponent_dames.popcount;
+            int player_pass_sure = player_dame_count / 2;
+            int player_sure = player_pass_sure + (player_dame_count & 1);
+            int opponent_pass_sure = opponent_dame_count / 2;
+            lower_bound = 2 * player_sure - size;
+            upper_bound = size - 2 * opponent_pass_sure;
+        }
 
         assert(lower_bound >= -size);
         assert(lower_bound <= size);
@@ -795,8 +809,21 @@ struct State(T)
         return r;
     }
 
-    string toString(){
+    string toString()
+    {
         return _toString(T(), T(), player_unconditional, opponent_unconditional);
+    }
+
+    string repr()
+    {
+        return format(
+            "State!%s(%s, %s, %s, %s, %s, %s, %s, %s, %s)", T.stringof,
+            player.repr, opponent.repr,
+            playing_area.repr, ko.repr,
+            black_to_play, passes,
+            player_unconditional.repr, opponent_unconditional.repr,
+            value_shift
+        );
     }
 }
 
@@ -1221,6 +1248,11 @@ struct CanonicalState(T)
     string toString()
     {
         return state.toString;
+    }
+
+    string repr()
+    {
+        return format("CanonicalState!%s(%s)", T.stringof, state.repr);
     }
 }
 

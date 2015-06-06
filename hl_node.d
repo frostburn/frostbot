@@ -81,15 +81,20 @@ class HLNode(T, S)
     //ulong low_tag = 0;
     //ulong high_tag = 0;
 
-    T moves;
+    T[] moves;
 
     this(S state, Transposition[LocalState!T] *local_transpositions=null)
     {
         this.state = state;
         if (state.is_leaf){
             is_leaf = true;
-            // FIX: This really should come through analyze_state
-            low = high = state.liberty_score;
+            version (no_local){
+                low = high = state.liberty_score;
+            }
+            else {
+                analyze_state(state, moves, low, high, local_transpositions);
+                assert(low == high);
+            }
             is_low_final = is_high_final = true;
         }
         else {
@@ -97,7 +102,6 @@ class HLNode(T, S)
                 state.get_score_bounds(low, high);
             }
             else {
-                assert(false);
                 analyze_state(state, moves, low, high, local_transpositions);
             }
             is_low_final = is_high_final = (low == high);
@@ -118,15 +122,14 @@ class HLNode(T, S)
     void make_children(ref HLNode!(T, S)[S] node_pool, Transposition[LocalState!T] *local_transpositions=null)
     {
         assert(!is_leaf);
-        children = [];
+        if (children.length){
+            return;
+        }
 
         version (no_local){
-            auto _moves = state.moves;
+            moves = state.moves;
         }
-        else {
-            auto _moves = moves.pieces ~ T();
-        }
-        foreach (child_state; state.children(_moves)){
+        foreach (child_state; state.children(moves)){
             assert(child_state.black_to_play);
             if (child_state in node_pool){
                 auto child = node_pool[child_state];
@@ -167,6 +170,10 @@ class HLNode(T, S)
         if (new_low > new_high){
             writeln(this);
             writeln(new_low, ", ", new_high);
+            writeln("Children:");
+            foreach (child; children){
+                writeln(child);
+            }
         }
         assert(new_low <= new_high);
 
@@ -361,60 +368,6 @@ class HLNode(T, S)
     */
 
     /*
-    HLNode!(T, S)[] principal_path(string type)(int max_depth=100, bool same=false)
-    {
-        static assert(type == "high" || type == "low");
-        static if (type == "high"){
-            enum other_type = "low";
-        }
-        else{
-            enum other_type = "high";
-        }
-        if (max_depth <= 0){
-            return [];
-        }
-        HLNode!(T, S)[] result = [this];
-        bool found_one = false;
-        foreach(child; children){
-            if (mixin("-child." ~ other_type ~ " == " ~ type ~ " && -child." ~ type ~ " == " ~ type)){
-                if (same){
-                    result ~= child.principal_path!type(max_depth - 1);
-                }
-                else {
-                    result ~= child.principal_path!other_type(max_depth - 1);
-                }
-                found_one = true;
-                break;
-            }
-        }
-
-        if (!found_one){
-            foreach(child; children){
-                if (mixin("-child." ~ other_type ~ "_lower_bound == " ~ type ~ "_lower_bound && -child." ~ other_type ~ "_upper_bound == " ~ type ~ "_upper_bound")){
-                    if (same){
-                        result ~= child.principal_path!type(max_depth - 1);
-                    }
-                    else {
-                        result ~= child.principal_path!other_type(max_depth - 1);
-                    }
-                    break;
-                }
-            }
-        }
-
-        foreach (i, previous_state; result){
-            foreach (j, other_state; result[i+1..$]){
-                if (other_state == previous_state){
-                    return result[0..j];
-                }
-            }
-        }
-
-        return result;
-    }
-    */
-
-    /*
     HLNode!(T, S)[] low_children()
     {
         HLNode!(T, S)[] result;
@@ -534,6 +487,63 @@ class HLManager(T, S)
         }
         return true;
     }
+
+    HLNode!(T, S)[] principal_path(string type, string other_type)(HLNode!(T, S) node, int max_depth=100)
+    {
+        static assert(type == "high" || type == "low");
+        static assert(other_type == "high" || other_type == "low");
+        if (max_depth <= 0){
+            return [];
+        }
+        HLNode!(T, S)[] result = [node];
+
+        assert(node.is_leaf || node.is_final || node.children.length);
+        if (node.is_final && !node.is_leaf){
+            node.make_children(node_pool, local_transpositions);
+        }
+        assert(queue.empty);
+        auto old_root = root;
+        foreach (child; node.children){
+            if (!child.is_final){
+                root = child;
+                queue.insert(root);
+                while (expand){
+                }
+            }
+        }
+        root = old_root;
+        assert(queue.empty);
+
+        bool found_one = false;
+        foreach (child; node.children){
+            if (mixin("-child." ~ other_type ~ " == node." ~ type ~ " && -child." ~ type ~ " == node." ~ type)){
+                result ~= principal_path!(other_type, type)(child, max_depth - 1);
+                found_one = true;
+                break;
+            }
+        }
+
+        if (!found_one){
+            foreach(child; node.children){
+                if (mixin("-child." ~ other_type ~ " == node." ~ type)){
+                    result ~= principal_path!(other_type, type)(child, max_depth - 1);
+                    break;
+                }
+            }
+        }
+
+        /*
+        foreach (i, previous_state; result){
+            foreach (j, other_state; result[i+1..$]){
+                if (other_state == previous_state){
+                    return result[0..j];
+                }
+            }
+        }
+        */
+
+        return result;
+    }
 }
 
 alias HLManager8 = HLManager!(Board8, CanonicalState8);
@@ -617,4 +627,24 @@ unittest
     }
     assert(m.root.low == 4);
     assert(m.root.high == 12);
+}
+
+unittest
+{
+    Transposition[LocalState8] loc_trans;
+    auto transpositions = &loc_trans;
+
+    auto s = State8(rectangle8(5, 3));
+    s.player = rectangle8(5, 1).south;
+    s.opponent_unconditional = rectangle8(5, 1);
+    s.opponent = s.opponent_unconditional | Board8(1, 2);
+
+    auto cs = CanonicalState8(s);
+
+    auto m = new HLManager8(cs, transpositions);
+    while (m.expand) {
+    }
+    assert(m.root.low == 5);
+    assert(m.root.high == 5);
+    assert(m.node_pool.length <= 3);
 }

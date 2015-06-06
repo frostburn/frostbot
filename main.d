@@ -42,21 +42,126 @@ void main()
 {
     writeln("main");
 
+    /*
     Transposition[LocalState8] loc_trans;
-    //auto transpositions = &loc_trans;
-
-    auto local_transpositions = &loc_trans;
     auto transpositions = &loc_trans;
 
-    auto s = State8(rectangle8(4, 3));
-    writeln(s);
+    auto b = Board8(0, 0);
+    b = b.cross(full8).cross(full8).cross(full8);
+    auto o = b.liberties(full8) ^ Board8(4, 0) ^ Board8(1, 2);
+    b = b.cross(full8);
+    auto p = rectangle8(3, 2) ^ Board8(2, 0) ^ Board8(3, 0) ^ Board8(0, 1) ^ Board8(0, 2);
+
+    auto s = State8(b);
+    s.player = p;
+    s.opponent = o;
+    s.opponent_unconditional = o;
+
     auto m = new HLManager8(CanonicalState8(s), transpositions);
+
+    while (m.expand) {
+    }
+    assert(m.root.low == -15);
+    assert(m.root.high == -15);
+    */
+
+    /*
+    Transposition[LocalState8] loc_trans;
+    auto transpositions = &loc_trans;
+
+    auto b = Board8(0, 0);
+    b = b.cross(full8).cross(full8).cross(full8);
+    auto o = b.liberties(full8) ^ Board8(4, 0) ^ Board8(1, 2);
+    b = b.cross(full8);
+    auto p = rectangle8(3, 2) ^ Board8(2, 0) ^ Board8(3, 0) ^ Board8(0, 1) ^ Board8(0, 2);
+
+    auto s = State8(b);
+    s.player = p;
+    s.opponent = o;
+    s.opponent_unconditional = o;
+
+    auto n = new GameNode8(CanonicalState8(s));
+    n.calculate_minimax_values;
+
+    bool[CanonicalState8] seen;
+    void check(GameNode8 root)
+    {
+        if (root.state in seen){
+            return;
+        }
+        seen[root.state] = true;
+        Board8[] moves;
+        float low, high;
+        root.state.get_score_bounds(low, high);
+        assert(low <= root.low_value);
+        assert(root.high_value <= high);
+        // Liberty score gives score to dead stones still on the board, ignore.
+        if (root.state.passes == 0){
+            analyze_state(root.state, moves, low, high, transpositions);
+            if (low > root.low_value || root.high_value > high){
+                writeln(root);
+                writeln(low, ", ", high);
+            }
+            assert(low <= root.low_value);
+            assert(root.high_value <= high);
+        }
+        foreach (child; root.children){
+            check(child);
+        }
+    }
+    check(n);
+    */
+
+    Transposition[LocalState8] loc_trans;
+    auto transpositions = &loc_trans;
+    auto local_transpositions = &loc_trans;
+
+
+    auto s = State8(rectangle8(5, 3));
+    s.player = rectangle8(5, 1).south;
+    s.opponent_unconditional = rectangle8(5, 1);
+    s.opponent = s.opponent_unconditional | Board8(1, 2);
+
+    auto cs = CanonicalState8(s);
+
+    auto m = new HLManager8(cs, transpositions);
+    while (m.expand) {
+    }
+    assert(m.root.low == 5);
+    assert(m.root.high == 5);
+    assert(m.node_pool.length <= 3);
+
+
+    /*
+    auto s = State8(rectangle8(4, 3));
+
+    auto cs = CanonicalState8(s);
+    //auto cs = CanonicalState!Board8(State!Board8(Board8(0x1605UL), Board8(0x180800UL), Board8(0x3c1e0fUL), Board8(0x0UL), true, 1, Board8(0x0UL), Board8(0x0UL), 0));
+    //cs = cs.children[$ - 1];
+    //writeln(cs);
+    auto m = new HLManager8(cs, transpositions);
     while (m.expand(1000)) {
         writeln(m.root.low, ", ", m.root.high);
     }
-    assert(m.root.low == 4);
-    assert(m.root.high == 12);
+    foreach (c; m.principal_path!("low", "high")(m.root, 20)){
+        writeln(c);
+        Board8[] moves;
+        float low, high;
+        analyze_state(c.state, moves, low, high, transpositions);
+        writeln(low, ", ", high);
+        foreach (child; c.children){
+            writeln(child.low, ", ", child.high, ": ", child.state.passes);
+        }
+        writeln(c.state.repr);
+    }
+    //assert(m.root.low == 4);
+    //assert(m.root.high == 12);
     writeln(m.node_pool.length);
+    /*
+
+    //writeln(r);
+
+
     /*
 
 

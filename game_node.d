@@ -29,14 +29,7 @@ class GameNode(T, S)
     bool is_leaf = false;
     bool is_final = false;
     GameNode!(T, S)[] children;
-    GameNode!(T, S)[S] parents;
-
-    Transposition[S] *transpositions = null;
-
-    private
-    {
-        bool is_populated = false;
-    }
+    GameNode!(T, S)[] parents;
 
     this(T playing_area)
     {
@@ -46,9 +39,9 @@ class GameNode(T, S)
     this(S state, Transposition[S] *transpositions=null)
     {
         this.state = state;
-        this.transpositions = transpositions;
         if (state.is_leaf){
             is_leaf = true;
+            is_final = true;
             low_value = high_value = state.liberty_score;
         }
         else if (transpositions !is null){
@@ -73,21 +66,23 @@ class GameNode(T, S)
         return new GameNode!(T, S)(state);
     }
 
-    void make_children(ref GameNode!(T, S)[S] node_pool)
+    void make_children(ref GameNode!(T, S)[S] node_pool, Transposition[S] *transpositions=null)
     {
-        children = [];
+        if (is_leaf || children.length){
+            return;
+        }
 
         foreach (child_state; state.children){
             assert(child_state.black_to_play);
             if (child_state in node_pool){
                 auto child = node_pool[child_state];
                 children ~= child;
-                child.parents[state] = this;
+                child.parents ~= this;
             }
             else{
                 auto child = new GameNode!(T, S)(child_state, transpositions);
                 children ~= child;
-                child.parents[state] = this;
+                child.parents ~= this;
                 node_pool[child.state] = child;
             }
         }
@@ -101,10 +96,10 @@ class GameNode(T, S)
         sort!more_novel(children);
     }
 
-    void make_children()
+    void make_children(Transposition[S] *transpositions)
     {
         GameNode!(T, S)[S] empty;
-        make_children(empty);
+        make_children(empty, transpositions);
     }
 
     bool update_value()
@@ -133,80 +128,60 @@ class GameNode(T, S)
         bool changed = (new_low_value != low_value) || (new_high_value != high_value);
         low_value = new_low_value;
         high_value = new_high_value;
+        if (low_value == high_value){
+            is_final = true;
+        }
         return changed;
     }
 
-    void populate_game_tree(ref GameNode!(T, S)[S] node_pool, ref GameNode!(T, S)[] leaf_queue)
+    void populate_game_tree(ref GameNode!(T, S)[S] node_pool, ref SetQueue!(GameNode!(T, S)) leaf_queue, Transposition[S] *transpositions=null)
     {
-        GameNode!(T, S)[] queue;
+        SetQueue!(GameNode!(T, S)) queue;
 
-        queue ~= this;
+        queue.insert(this);
 
-        while (queue.length){
-            auto game_node = queue.front;
-            queue.popFront;
-            debug(populate) {
+        while (!queue.empty){
+            auto game_node = queue.removeFront;
+            debug (populate){
                 writeln("Populating with:");
                 writeln(game_node);
             }
-            if (!game_node.is_populated){
-                assert(game_node.state in node_pool);
-                assert(node_pool[game_node.state] == game_node);
-
-                game_node.is_populated = true;
-
-                if (game_node.is_leaf || game_node.is_final){
-                    leaf_queue ~= game_node;
-                    continue;
-                }
-
-                game_node.make_children(node_pool);
+            if (game_node.is_leaf || game_node.is_final){
+                leaf_queue.insert(game_node);
+            }
+            else if (!game_node.children.length){
+                game_node.make_children(node_pool, transpositions);
 
                 foreach (child; game_node.children){
-                    queue ~= child;
+                    queue.insert(child);
                 }
             }
         }
     }
 
-    void update_parents()
-    {
-        debug(update_parents) {
-            writeln("Updating parents for:");
-            writeln(this);
-        }
-        GameNode!(T, S)[] queue;
-        foreach (parent; parents){
-            queue ~= parent;
-        }
-
-        while (queue.length){
-            auto game_node = queue.front;
-            queue.popFront;
-            debug(update_parents) {
-                writeln("Updating parents for:");
-                writeln(game_node);
-            }
-            bool changed = game_node.update_value;
-            if (changed){
-                foreach (parent; game_node.parents){
-                    queue ~= parent;
-                }
-            }
-        }
-    }
-
-    void calculate_minimax_values()
+    void calculate_minimax_values(Transposition[S] *transpositions=null)
     {
         GameNode!(T, S)[S] node_pool;
-        GameNode!(T, S)[] leaf_queue;
+        SetQueue!(GameNode!(T, S)) leaf_queue;
 
         node_pool[state] = this;
 
-        populate_game_tree(node_pool, leaf_queue);
+        populate_game_tree(node_pool, leaf_queue, transpositions);
 
-        foreach (leaf; leaf_queue){
-            leaf.update_parents;
+        SetQueue!(GameNode!(T, S)) queue;
+        foreach (leaf; leaf_queue.queue){
+            foreach (parent; leaf.parents){
+                queue.insert(parent);
+            }
+        }
+
+        while (!queue.empty){
+            auto node = queue.removeFront;
+            if (node.update_value){
+                foreach (parent; node.parents){
+                    queue.insertBack(parent);
+                }
+            }
         }
 
         foreach (node; node_pool.byValue){
@@ -230,6 +205,7 @@ class GameNode(T, S)
         );
     }
 
+    /*
     GameNode!(T, S)[] high_children()
     {
         GameNode!(T, S)[] result;
@@ -257,6 +233,7 @@ class GameNode(T, S)
         }
         return result;
     }
+    */
 
     GameNode!(T, S)[] principal_path(string type)(int max_depth=100)
     {
