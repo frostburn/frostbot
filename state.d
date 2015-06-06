@@ -3,6 +3,7 @@ module state;
 import std.stdio;
 import std.string;
 import std.stream;
+import std.conv;
 
 import bit_matrix;
 import board_common;
@@ -1271,6 +1272,203 @@ State!T decanonize(T)(State!T parent, State!T child)
     }
     assert(false);
 }
+
+
+struct CompressedState(T)
+{
+    T p;
+    T o;
+    T a;
+    byte _passes;
+    byte _value_shift;
+
+    this(State!T state)
+    {
+        state.canonize;
+        assert(!(state.player_unconditional & state.opponent));
+        assert(!(state.opponent_unconditional & state.player));
+        p = state.player | state.ko;
+        o = state.opponent | state.ko;
+        a = state.player_unconditional | state.opponent_unconditional | (state.playing_area & ~(p | o));
+
+        assert(state.passes >= 0 && state.passes <= 2);
+        assert(state.value_shift > -64 && state.passes < 64);
+        _passes = to!byte(state.passes);
+        _value_shift = to!byte(state.value_shift * 2);
+    }
+
+    bool opEquals(in CompressedState!T rhs) const pure nothrow
+    {
+        return (
+            p == rhs.p &&
+            o == rhs.o &&
+            a == rhs.a &&
+            _passes == rhs._passes &&
+            _value_shift == rhs._value_shift
+        );
+    }
+
+    hash_t toHash() const nothrow @safe
+    {
+        hash_t o_hash = o.toHash;
+        return (
+            p.toHash ^
+            (o_hash << (hash_t.sizeof * 4)) ^
+            (o_hash >> (hash_t.sizeof * 4)) ^
+            a.toHash ^
+            typeid(_passes).getHash(&_passes) ^
+            typeid(_value_shift).getHash(&_value_shift)
+        );
+    }
+
+    int passes() const @property
+    {
+        return _passes;
+    }
+
+    int passes(int value) @property
+    {
+        passes = to!byte(value);
+        return value;
+    }
+
+    bool is_leaf()
+    {
+        return passes >= 2;
+    }
+
+    T playing_area() const @property
+    {
+        return p | o | a;
+    }
+
+    T player() const @property
+    {
+        return p & ~o;
+    }
+
+    T opponent() const @property
+    {
+        return o & ~p;
+    }
+
+    T ko() const @property
+    {
+        return p & o;
+    }
+
+    bool black_to_play() const @property
+    {
+        return true;
+    }
+
+    T player_unconditional() const @property
+    {
+        return p & a;
+    }
+
+    T opponent_unconditional() const @property
+    {
+        return o & a;
+    }
+
+    float value_shift() const @property
+    {
+        return 0.5 * to!float(_value_shift);
+    }
+
+    float value_shift(float shift) @property
+    {
+        _value_shift = to!byte(2 * shift);
+        return shift;
+    }
+
+    State!T state()
+    {
+        return State!T(player, opponent, playing_area, ko, black_to_play, passes, player_unconditional, opponent_unconditional, value_shift);
+    }
+
+    float liberty_score()
+    {
+        return state.liberty_score;
+    }
+
+    void get_score_bounds(out float lower_bound, out float upper_bound)
+    {
+        state.get_score_bounds(lower_bound, upper_bound);
+    }
+
+    void swap_turns()
+    {
+        auto s = state;
+        s.swap_turns;
+        this = CompressedState!T(s);
+    }
+
+    void pass()
+    {
+        auto s = state;
+        s.pass;
+        this = CompressedState!T(s);
+    }
+
+    T[] moves()
+    {
+        return state.moves;
+    }
+
+    CompressedState!T[] children(bool clear_ko=false)
+    {
+        auto moves = state.moves;
+        return children(moves, clear_ko);
+    }
+
+    CompressedState!T[] children(ref T[] moves, bool clear_ko=false)
+    {
+        CompressedState!T[] _children;
+        bool[CompressedState!T] seen;
+        foreach (child; state.children(moves, clear_ko)){
+            auto canonical_child = CompressedState!T(child);
+            if (canonical_child !in seen){
+                seen[canonical_child] = true;
+                _children ~= canonical_child;
+            }
+        }
+        return _children;
+    }
+
+    float target_score()
+    {
+        return state.target_score;
+    }
+
+    float player_chain_liberties(T chain)
+    {
+        return state.player_chain_liberties(chain);
+    }
+
+    float opponent_chain_liberties(T chain)
+    {
+        return state.opponent_chain_liberties(chain);
+    }
+
+    string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure, T mark=T.init)
+    {
+        return state._toString(player_defendable, opponent_defendable, player_secure, opponent_secure, mark);
+    }
+
+    string toString()
+    {
+        return state.toString;
+    }
+
+    string repr()
+    {
+        return format("CompressedState!%s(%s)", T.stringof, state.repr);
+    }
+}
+
+alias CompressedState8 = CompressedState!Board8;
 
 
 unittest

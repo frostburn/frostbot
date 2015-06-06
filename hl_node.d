@@ -488,10 +488,22 @@ class HLManager(T, S)
         return true;
     }
 
-    HLNode!(T, S)[] principal_path(string type, string other_type)(HLNode!(T, S) node, int max_depth=100)
+    HLNode!(T, S)[] principal_path(string type, string other_type)(int max_depth=100)
+    {
+        return principal_path!(type, other_type)(root, max_depth);
+    }
+
+    HLNode!(T, S)[] principal_path(string type, string opponent_type)(HLNode!(T, S) node, int max_depth=100)
     {
         static assert(type == "high" || type == "low");
-        static assert(other_type == "high" || other_type == "low");
+        static assert(opponent_type == "high" || opponent_type == "low");
+
+        static if (type == "high"){
+            enum other_type = "low";
+        }
+        static if (type == "low"){
+            enum other_type = "high";
+        }
         if (max_depth <= 0){
             return [];
         }
@@ -504,7 +516,7 @@ class HLManager(T, S)
         assert(queue.empty);
         auto old_root = root;
         foreach (child; node.children){
-            if (!child.is_final){
+            if (-child.low >= node.low && !child.is_final){
                 root = child;
                 queue.insert(root);
                 while (expand){
@@ -517,7 +529,7 @@ class HLManager(T, S)
         bool found_one = false;
         foreach (child; node.children){
             if (mixin("-child." ~ other_type ~ " == node." ~ type ~ " && -child." ~ type ~ " == node." ~ type)){
-                result ~= principal_path!(other_type, type)(child, max_depth - 1);
+                result ~= principal_path!(opponent_type, type)(child, max_depth - 1);
                 found_one = true;
                 break;
             }
@@ -526,7 +538,7 @@ class HLManager(T, S)
         if (!found_one){
             foreach(child; node.children){
                 if (mixin("-child." ~ other_type ~ " == node." ~ type)){
-                    result ~= principal_path!(other_type, type)(child, max_depth - 1);
+                    result ~= principal_path!(opponent_type, type)(child, max_depth - 1);
                     break;
                 }
             }
@@ -543,6 +555,34 @@ class HLManager(T, S)
         */
 
         return result;
+    }
+
+    string low_solution()
+    {
+        assert(queue.empty);
+        auto old_root = root;
+        foreach (child; old_root.children){
+            if (-child.low >= old_root.low && !child.is_high_final){
+                root = child;
+                queue.insert(root);
+                while (expand){
+                }
+            }
+        }
+        root = old_root;
+        assert(queue.empty);
+
+        T mark;
+        auto moves = root.state.moves;
+        auto child_states = root.state.children(moves);
+        foreach (i, child_state; child_states){
+            foreach (child; root.children){
+                if (-child.high == root.low && child.state == child_state){
+                    mark |= moves[i];
+                }
+            }
+        }
+        return format("%s\n%s <= score <= %s", root.state._toString(T(), T(), root.state.player_unconditional, root.state.opponent_unconditional, mark), root.low, root.high);
     }
 }
 

@@ -18,7 +18,7 @@ Transposition[LocalState8] loc_trans;
 
 unittest
 {
-    // Problem 1
+    writeln("Problem 1");
     auto local_transpositions = &loc_trans;
 
     auto opponent = rectangle8(5, 1).south;
@@ -31,33 +31,16 @@ unittest
     s.opponent = opponent;
     auto m = new HLManager8(CanonicalState8(s), local_transpositions);
 
-    writeln("Problem 1");
     while(m.expand){
     }
-    writeln(m.root);
+    writeln(m.low_solution);
     writeln(m.node_pool.length, " nodes explored");
     assert(m.root.low == playing_area.popcount);
-    /*
-    writeln(n.low_solution);
-    */
-
-    /*
-    foreach (ls; (*local_transpositions).byKey){
-        auto t = (*local_transpositions)[ls];
-        writeln(ls);
-        writeln(t);
-        auto g = new GameNode!(Board8, LocalState8)(ls);
-        g.calculate_minimax_values;
-        writeln(g.low_value, ", ", g.high_value);
-        assert(g.low_value == t.low_value);
-        assert(g.high_value == t.high_value);
-    }
-    */
 }
 
 unittest
 {
-    // Problem 2
+    writeln("Problem 2");
     auto local_transpositions = &loc_trans;
 
     auto opponent = rectangle8(6, 1).south | Board8(6, 0);
@@ -70,23 +53,38 @@ unittest
     s.opponent = opponent;
     auto m = new HLManager8(CanonicalState8(s), local_transpositions);
 
-    writeln("Problem 2");
     while(m.expand){
     }
-    writeln(m.root);
+    writeln(m.low_solution);
     writeln(m.node_pool.length, " nodes explored");
     assert(m.root.low == playing_area.popcount);
-    /*
-    writeln(n.low_solution);
-    */
 }
 
 
 unittest
 {
-    // Problem 464
-    HLNode8[CanonicalState8] empty;
-    auto node_pool = &empty;
+    writeln("Problem 13");
+    auto local_transpositions = &loc_trans;
+
+    auto s = State8(rectangle8(7, 5));
+    s.player = rectangle8(4, 1).south.east | Board8(1, 2);
+    s.opponent = rectangle8(7, 5) ^ (rectangle8(7, 1) | rectangle8(5, 1).south | rectangle8(1, 5) | Board8(1, 2));
+    s.opponent_unconditional = s.opponent;
+
+    auto m = new HLManager8(CanonicalState8(s), local_transpositions);
+
+    while(m.expand){
+    }
+    writeln(m.low_solution);
+    writeln(m.node_pool.length, " nodes explored");
+    assert(m.root.low == -11);
+    assert(m.root.high == -11);
+}
+
+
+unittest
+{
+    writeln("Problem 464");;
     auto local_transpositions = &loc_trans;
 
     auto opponent = Board8(3, 0) | Board8(4, 1) | Board8(5, 1) | Board8(5, 2) | rectangle8(3, 1).south(2).east | Board8(0, 3);
@@ -98,19 +96,9 @@ unittest
     s.opponent = opponent;
     auto m = new HLManager8(CanonicalState8(s), local_transpositions);
 
-    writeln("Problem 464");
     while(m.expand){
     }
-    writeln(m.root);
+    writeln(m.low_solution);
     writeln(m.node_pool.length, " nodes explored");
     assert(m.root.low == playing_area.popcount);
-    /*
-    foreach (c; n.children){
-        if (-c.high == n.low){
-            while(c.expand){
-            }
-        }
-    }
-    writeln(n.low_solution);
-    */
 }

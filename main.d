@@ -43,9 +43,47 @@ void main()
     writeln("main");
 
     /*
+    auto s = State8(rectangle8(4, 4));
+    auto c = CompressedState8(s);
+    writeln(c);
+    */
+
     Transposition[LocalState8] loc_trans;
     auto transpositions = &loc_trans;
+    auto local_transpositions = &loc_trans;
 
+    /*
+    auto s = State8(rectangle8(7, 5));
+    s.player = rectangle8(4, 1).south.east | Board8(1, 2);
+    s.opponent = rectangle8(7, 5) ^ (rectangle8(7, 1) | rectangle8(5, 1).south | rectangle8(1, 5) | Board8(1, 2));
+    s.opponent_unconditional = s.opponent;
+    */
+    auto s = State8(rectangle8(4, 4));
+    s.player = Board8(1, 1) | Board8(2, 1);
+    s.opponent = Board8(1, 2) | Board8(2, 2);
+    //s.player = Board8(1, 1) | Board8(2, 2);
+    //s.opponent = Board8(2, 1) | Board8(1, 2);
+
+    auto m = new HLManager!(Board8, CompressedState8)(CompressedState8(s), local_transpositions);
+
+    while(m.expand(2000)){
+        writeln(m.root);
+        writeln(m.node_pool.length);
+    }
+    writeln(m.root);
+    //writeln(m.low_solution);
+    //writeln(m.node_pool.length, " nodes explored");
+
+    foreach (i, c; m.principal_path!("high", "high")(40)){
+        if (i > 0){
+            s = decanonize(s, c.state.state);
+            s.analyze_unconditional;
+        }
+        writeln(s);
+    }
+    writeln(m.node_pool.length, " nodes explored");
+
+    /*
     auto b = Board8(0, 0);
     b = b.cross(full8).cross(full8).cross(full8);
     auto o = b.liberties(full8) ^ Board8(4, 0) ^ Board8(1, 2);
@@ -112,6 +150,7 @@ void main()
     check(n);
     */
 
+    /*
     Transposition[LocalState8] loc_trans;
     auto transpositions = &loc_trans;
     auto local_transpositions = &loc_trans;
@@ -130,6 +169,7 @@ void main()
     assert(m.root.low == 5);
     assert(m.root.high == 5);
     assert(m.node_pool.length <= 3);
+    */
 
 
     /*
