@@ -32,6 +32,8 @@ import local;
 //import direct_mc;
 import tsumego;
 
+import chess;
+
 
 // Lol "makefile"
 // dmd main.d utils.d board8.d board11.d bit_matrix.d state.d polyomino.d defense_state.d defense_search_state.d defense.d eyeshape.d monte_carlo.d heuristic.d fast_math.d ann.d likelyhood.d wdl_node.d direct_mc.d pattern3.d
@@ -42,15 +44,68 @@ void main()
 {
     writeln("main");
 
-    /*
-    auto s = State8(rectangle8(4, 4));
-    auto c = CompressedState8(s);
-    writeln(c);
-    */
-
     Transposition[LocalState8] loc_trans;
     auto transpositions = &loc_trans;
     auto local_transpositions = &loc_trans;
+
+    /*
+    auto move = (RANK2 & EFILE) | (RANK4 & EFILE);
+    s.player ^= move;
+    s.pawns ^= move;
+    s.empty ^= move;
+
+    move = (RANK2 & HFILE) | (RANK4 & HFILE);
+    s.player ^= move;
+    s.pawns ^= move;
+    s.empty ^= move;
+
+    move = RANK1 & (BFILE | CFILE | DFILE);
+    s.player ^= move;
+    s.queens &= ~move;
+    s.bishops &= ~move;
+    s.knights &= ~move;
+    s.empty |= move;
+
+    s.player ^= RANK4 & EFILE;
+    */
+
+    /*
+    foreach (c; chess_initial.children){
+        //c.moved = c.true_moved;
+        //c.full_canonize;
+        writeln(c);
+        //auto cs = CanonicalChessState(c);
+        //writeln(cs);
+    }
+    */
+
+    //auto s = PseudoChessState(0xef80928020000000UL, 0x801a8072002400UL, 0x800000000200800UL, 0x400800000000020UL, 0xa200000000000080UL, 0x200UL, 0x4000000000000010UL, 0x7fffffffffffff6fUL, 0x0UL);
+
+    size_t i = 0;
+    while (true){
+        examine_chess_playout(chess_initial, false);
+        i++;
+        if (i > 100){
+            //break;
+        }
+    }
+
+    /*
+    writeln(h_rays(RANK4 & HFILE, FULL).on_board);
+
+    assert(h_rays(RANK4 & AFILE, FULL) == RANK4);
+    assert(h_rays(RANK5 & HFILE, FULL) == RANK5);
+    assert(h_rays(RANK5 & (BFILE | HFILE), FULL) == RANK5);
+    assert(h_rays((RANK2 | RANK7) & CFILE, FULL) == (RANK2 | RANK7));
+    assert(h_rays(RANK6 | RANK7, FULL) == (RANK6 | RANK7));
+    assert(h_rays(CFILE, FULL) == FULL);
+    */
+
+    /*
+    ulong b = 2392384789732987;
+    writeln(b.on_board);
+    writeln(b.mirror_d.on_board);
+    */
 
     /*
     auto s = State8(rectangle8(7, 5));
@@ -58,9 +113,11 @@ void main()
     s.opponent = rectangle8(7, 5) ^ (rectangle8(7, 1) | rectangle8(5, 1).south | rectangle8(1, 5) | Board8(1, 2));
     s.opponent_unconditional = s.opponent;
     */
-    auto s = State8(rectangle8(4, 4));
-    s.player = Board8(1, 1) | Board8(2, 1);
-    s.opponent = Board8(1, 2) | Board8(2, 2);
+    /*
+    auto s = State8(rectangle8(5, 5));
+    s.opponent = Board8(2, 2);
+    //s.player = Board8(1, 1) | Board8(2, 1);
+    //s.opponent = Board8(1, 2) | Board8(2, 2);
     //s.player = Board8(1, 1) | Board8(2, 2);
     //s.opponent = Board8(2, 1) | Board8(1, 2);
 
@@ -82,6 +139,7 @@ void main()
         writeln(s);
     }
     writeln(m.node_pool.length, " nodes explored");
+    */
 
     /*
     auto b = Board8(0, 0);

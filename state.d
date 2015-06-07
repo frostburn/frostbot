@@ -773,7 +773,7 @@ struct State(T)
                         r ~= "46m";
                     }
                     else{
-                        // Yeallow
+                        // Yellow
                         r ~= "43m";
                     }
                 }
@@ -1274,6 +1274,7 @@ State!T decanonize(T)(State!T parent, State!T child)
 }
 
 
+// TODO: Merge with CanonicalState and do canonization using only 3 boards.
 struct CompressedState(T)
 {
     T p;
