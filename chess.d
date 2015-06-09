@@ -21,7 +21,7 @@ enum RANK4 = 0xFF00000000UL;
 enum RANK3 = 0xFF0000000000UL;
 enum RANK2 = 0xFF000000000000UL;
 enum RANK1 = 0xFF00000000000000UL;
-enum CHECKERBOARD = 0XAAAAAAAAAAAAAAAAUL;
+enum CHECKERBOARD = 0X55AA55AA55AA55AAUL;
 enum FULL = 0xFFFFFFFFFFFFFFFFUL;
 
 
@@ -276,6 +276,12 @@ bool bpawn_attacks(ulong pawns, ulong target) pure nothrow @nogc @safe
     return cast(bool)((pawns.east | pawns.west) & target);
 }
 
+bool wpawn_attacks(ulong pawns, ulong target) pure nothrow @nogc @safe
+{
+    pawns = pawns.north;
+    return cast(bool)((pawns.east | pawns.west) & target);
+}
+
 bool knight_attacks(ulong knights, ulong target) pure nothrow @nogc @safe
 {
     auto e = knights.east;
@@ -354,6 +360,149 @@ struct Castling
     ulong rook_move;
 }
 
+struct EndgameType
+{
+    int p_pawns;
+    int o_pawns;
+    int p_knights;
+    int o_knights;
+    int p_bishops;
+    int o_bishops;
+    int p_rooks;
+    int o_rooks;
+    int p_queens;
+    int o_queens;
+
+    enum MEMBERS = "[p_pawns, o_pawns, p_knights, o_knights, p_bishops, o_bishops, p_rooks, o_rooks, p_queens, o_queens]";
+
+    this(int p_pawns, int o_pawns, int p_knights, int o_knights, int p_bishops, int o_bishops, int p_rooks, int o_rooks, int p_queens, int o_queens)
+    {
+        this.p_pawns = p_pawns;
+        this.o_pawns = o_pawns;
+        this.p_knights = p_knights;
+        this.o_knights = o_knights;
+        this.p_bishops = p_bishops;
+        this.o_bishops = o_bishops;
+        this.p_rooks = p_rooks;
+        this.o_rooks = o_rooks;
+        this.p_queens = p_queens;
+        this.o_queens = o_queens;
+    }
+
+    this(int[] members)
+    {
+        p_pawns = members[0];
+        o_pawns = members[1];
+        p_knights = members[2];
+        o_knights = members[3];
+        p_bishops = members[4];
+        o_bishops = members[5];
+        p_rooks = members[6];
+        o_rooks = members[7];
+        p_queens = members[8];
+        o_queens = members[9];
+    }
+
+    hash_t toHash() const nothrow @safe
+    {
+        static assert(hash_t.sizeof > 4);
+        hash_t result = 0;
+        foreach (member; mixin(MEMBERS)){
+            result = 16 * result + member;
+        }
+        return result;
+    }
+
+    bool opEquals(in EndgameType rhs) const nothrow @safe
+    {
+        return toHash == rhs.toHash;
+    }
+
+    size_t size()
+    {
+        size_t result = 64 * 64;
+        foreach (member; mixin(MEMBERS)){
+            foreach (i; 0..member){
+                result *= 64;
+            }
+        }
+        return result;
+    }
+
+    EndgameType pair()
+    {
+        return EndgameType(o_pawns, p_pawns, o_knights, p_knights, o_bishops, p_bishops, o_rooks, p_rooks, o_queens, p_queens);
+    }
+
+    bool[EndgameType] subtypes()
+    {
+        bool[EndgameType] result;
+        int[] members = mixin(MEMBERS);
+        foreach (i, member; members){
+            if (member > 0){
+                if (i == 0 || i == 1){
+                    //TODO: Pawn promotions.
+                    assert(false);
+                }
+                int[] submembers;
+                foreach (j, submember; members){
+                    if (i == j){
+                        submembers ~= submember - 1;
+                    }
+                    else {
+                        submembers ~= submember;
+                    }
+                }
+                auto subtype = EndgameType(submembers);
+                result[subtype] = true;
+                foreach (st; subtype.subtypes.byKey){
+                    result[st] = true;
+                }
+            }
+        }
+        result[this] = true;
+        result[pair] = true;
+        return result;
+    }
+
+    string toString()
+    {
+        string r = "k";
+        foreach (i; 0..p_pawns){
+            r ~= "p";
+        }
+        foreach (i; 0..p_knights){
+            r ~= "n";
+        }
+        foreach (i; 0..p_bishops){
+            r ~= "b";
+        }
+        foreach (i; 0..p_rooks){
+            r ~= "r";
+        }
+        foreach (i; 0..p_queens){
+            r ~= "q";
+        }
+        r ~= "_k";
+        foreach (i; 0..o_pawns){
+            r ~= "p";
+        }
+        foreach (i; 0..o_knights){
+            r ~= "n";
+        }
+        foreach (i; 0..o_bishops){
+            r ~= "b";
+        }
+        foreach (i; 0..o_rooks){
+            r ~= "r";
+        }
+        foreach (i; 0..o_queens){
+            r ~= "q";
+        }
+        return r;
+    }
+}
+
 struct PseudoChessState
 {
     ulong player;
@@ -391,11 +540,13 @@ struct PseudoChessState
         */
     }
 
+    /*
     invariant
     {
         assert(!(player & empty));
         assert(popcount(player & pawns) <= 8);
         assert(popcount(~player & pawns) <= 8);
+        assert(!(pawns & (RANK1 | RANK8)));
         assert(!(pawns & (knights | bishops | rooks | queens | kings)));
         assert(popcount(pawns ^ knights ^ bishops ^ rooks ^ queens ^ kings) == popcount(~empty));
         assert(popcount(player & kings) == 1);
@@ -403,6 +554,26 @@ struct PseudoChessState
         assert(!(unmoved & ~(RANK1 | RANK8)));
         assert(!(enpassant & ~(RANK3 | RANK6)));
         assert(!(unmoved & ~(rooks | kings)));
+    }
+    */
+
+    bool valid_before()
+    {
+        if (player & empty){
+            return false;
+        }
+        if (popcount(player & kings) != 1 || popcount(~player & kings) != 1){
+            return false;
+        }
+        if (pawns + knights + bishops + rooks + queens + kings != ~empty){
+            return false;
+        }
+        if (pawns.mirror_v + knights.mirror_v + bishops.mirror_v + rooks.mirror_v + queens.mirror_v + kings.mirror_v != ~empty.mirror_v){
+            return false;
+        }
+        // This actually checks that the opposing king cannot be taken
+        // because valid_before is called prior to canonical conversion.
+        return !king_in_check;
     }
 
     bool king_in_check()
@@ -415,6 +586,18 @@ struct PseudoChessState
             rook_attacks(opponent & (rooks | queens), king, empty) ||
             bishop_attacks(opponent & (bishops | queens), king, empty) ||
             king_attacks(opponent & kings, king)
+        );
+    }
+
+    bool opponent_king_in_check()
+    {
+        auto king = ~player & kings;
+        return !(
+            wpawn_attacks(player & pawns, king) ||
+            knight_attacks(player & knights, king) ||
+            rook_attacks(player & (rooks | queens), king, empty) ||
+            bishop_attacks(player & (bishops | queens), king, empty) ||
+            king_attacks(player & kings, king)
         );
     }
 
@@ -625,12 +808,36 @@ struct PseudoChessState
                 return true;
             }
         }
-        else if (piece_count == 4){
-            if ((player & bishops) && (~player & bishops)){
-                auto w_bishops = bishops & CHECKERBOARD;
-                auto b_bishops = bishops & ~CHECKERBOARD;
-                // King and bishop against king and bishop with both bishops of the same color
-                return (!w_bishops) ^ (!b_bishops);
+        else if ((bishops | kings) == ~empty){
+            auto w_bishops = bishops & CHECKERBOARD;
+            auto b_bishops = bishops & ~CHECKERBOARD;
+            // King and bishops against king and bishops with all bishops of the same color
+            return (!w_bishops) ^ (!b_bishops);
+        }
+        return false;
+    }
+
+    bool book_win()
+    {
+        auto piece_count = (~empty).popcount;
+        assert(piece_count >= 2);
+        if (piece_count == 3){
+            if (player & (rooks | queens)){
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool book_draw()
+    {
+        auto piece_count = (~empty).popcount;
+        assert(piece_count >= 2);
+        if (piece_count == 4){
+            if (knights.popcount == 2){
+                if (!(player & knights)){
+                    return true;
+                }
             }
         }
         return false;
@@ -638,10 +845,23 @@ struct PseudoChessState
 
     PseudoChessState[] children(out float score)
     {
+        // If we give non-zero score for stalemates we
+        // cannot automatically draw kn_k or kb_k,
+        // because of forceable stalemates.
+        /*
         if (insufficient_material){
             score = 0;
             return [];
         }
+        if (book_win){
+            score = 1;
+            return [];
+        }
+        if (book_draw){
+            score = 0;
+            return [];
+        }
+        */
         enum king_lives = "
             version (assert){
                 if (!(~player & kings & action.mask)){
@@ -794,20 +1014,24 @@ struct PseudoChessState
 
         if (result.length == 0){
             if (king_in_check){
-                score = -1;
+                score = -2;
             }
             else {
-                score = 0;
+                // We give score for stalemating to differentiate it from other draws.
+                score = -1;
             }
             return result;
         }
 
+        // Required if allowing for draws.
+        /*
         if ((kings | pawns) == ~empty){
-            if (!has_pawn_move && !kings_can_capture_pawns){
+            if ((player & pawns) && !has_pawn_move && !kings_can_capture_pawns){
                 score = 0;
                 return [];
             }
         }
+        */
 
         return result;
     }
@@ -822,6 +1046,102 @@ struct PseudoChessState
         temp = pawns.north;
         space = empty & ~(temp.east | temp.west);
         return player_can_capture || king_can_reach(~player & kings, pawns, space);
+    }
+
+    size_t endgame_state(out EndgameType type)
+    {
+        auto opponent = ~player;
+        auto p_pawns = player & pawns;
+        auto o_pawns = opponent & pawns;
+        auto p_knights = player & knights;
+        auto o_knights = opponent & knights;
+        auto p_bishops = player & bishops;
+        auto o_bishops = opponent & bishops;
+        auto p_rooks = player & rooks;
+        auto o_rooks = opponent & rooks;
+        auto p_queens = player & queens;
+        auto o_queens = opponent & queens;
+        type = EndgameType(
+            popcount(p_pawns),
+            popcount(o_pawns),
+            popcount(p_knights),
+            popcount(o_knights),
+            popcount(p_bishops),
+            popcount(o_bishops),
+            popcount(p_rooks),
+            popcount(o_rooks),
+            popcount(p_queens),
+            popcount(o_queens)
+        );
+        size_t endgame = 0;
+        string serialize_member(string member){
+            return "
+                while (" ~ member ~ "){
+                    size_t index = bitScanForward(" ~ member ~ ");
+                    endgame = index + 64 * endgame;
+                    " ~ member ~ " ^= (1UL << index);
+                }
+            ";
+        }
+        mixin(serialize_member("p_pawns"));
+        mixin(serialize_member("o_pawns"));
+        mixin(serialize_member("p_knights"));
+        mixin(serialize_member("o_knights"));
+        mixin(serialize_member("p_bishops"));
+        mixin(serialize_member("o_bishops"));
+        mixin(serialize_member("p_rooks"));
+        mixin(serialize_member("o_rooks"));
+        mixin(serialize_member("p_queens"));
+        mixin(serialize_member("o_queens"));
+        endgame = bitScanForward(player & kings) + 64 * endgame;
+        endgame = bitScanForward(opponent & kings) + 64 * endgame;
+        return endgame;
+    }
+
+    static bool from_endgame_state(size_t endgame, EndgameType type, out PseudoChessState state)
+    {
+        ulong player;
+        ulong pawns;
+        ulong knights;
+        ulong bishops;
+        ulong rooks;
+        ulong queens;
+        ulong kings = 1UL << (endgame % 64);
+        endgame /= 64;
+        player |= kings;
+        kings |= 1UL << (endgame % 64);
+        endgame /= 64;
+        if (kings.popcount != 2){
+            return false;
+        }
+        string unravel_member(string member){
+            return "
+                foreach (i; 0..type.o_" ~ member ~ "){
+                    " ~ member ~ " |= (1UL << (endgame % 64));
+                    endgame /= 64;
+                }
+                if (" ~ member ~ ".popcount != type.o_" ~ member ~ "){
+                    return false;
+                }
+                player |= " ~ member ~ ";
+                foreach (i; 0..type.p_" ~ member ~ "){
+                    " ~ member ~ " |= (1UL << (endgame % 64));
+                    endgame /= 64;
+                }
+                if (" ~ member ~ ".popcount != type.p_" ~ member ~ " + type.o_" ~ member ~ "){
+                    return false;
+                }
+            ";
+        }
+
+        mixin(unravel_member("queens"));
+        mixin(unravel_member("rooks"));
+        mixin(unravel_member("bishops"));
+        mixin(unravel_member("knights"));
+        mixin(unravel_member("pawns"));
+
+        state = PseudoChessState(player, pawns, knights, bishops, rooks, queens, kings, 0);
+        return state.valid_before;
     }
 
     void pseudo_decanonize()
@@ -980,6 +1300,22 @@ struct CanonicalChessState
         }
     }
 
+    bool is_leaf()
+    {
+        return false;
+    }
+
+    float value_shift() const @property
+    {
+        return 0;
+    }
+
+    float value_shift(float shift) @property
+    {
+        assert(shift == 0);
+        return 0;
+    }
+
     void mirror_v()
     {
         player = player.mirror_v;
@@ -1110,6 +1446,21 @@ struct CanonicalChessState
         return result;
     }
 
+    size_t endgame_state(out EndgameType type) const
+    {
+        return state.endgame_state(type);
+    }
+
+    static bool from_endgame_state(size_t endgame, EndgameType type, out CanonicalChessState result)
+    {
+        PseudoChessState s;
+        if (PseudoChessState.from_endgame_state(endgame, type, s)){
+            result = CanonicalChessState(s);
+            return true;
+        }
+        return false;
+    }
+
     string toString()
     {
         return state.toString;
@@ -1133,6 +1484,9 @@ immutable CanonicalChessState chess_initial = CanonicalChessState(
         (RANK1 | RANK8) & (AFILE | EFILE | HFILE)
     )
 );
+
+// TODO: Replace with a real thing that can represent arbitrary moves.
+alias ChessMove = Move;
 
 void examine_chess_playout(CanonicalChessState s, bool decanonize=true)
 {
@@ -1158,7 +1512,6 @@ void examine_chess_playout(CanonicalChessState s, bool decanonize=true)
         auto n = gen.front;
         gen.popFront;
         s = children[n % children.length];
-        /*
         if (decanonize){
             if (j & 1){
                 writeln(s);
@@ -1173,10 +1526,18 @@ void examine_chess_playout(CanonicalChessState s, bool decanonize=true)
         }
         else {
             writeln(s);
+            EndgameType t;
+            size_t e = s.endgame_state(t);
+            CanonicalChessState r;
+            if (CanonicalChessState.from_endgame_state(e, t, r)){
+                writeln(r);
+            }
+            else {
+                writeln(e);
+            }
         }
         writeln(s.repr);
-        */
-        //Thread.sleep(dur!("msecs")(1000));
+        Thread.sleep(dur!("msecs")(10));
         j++;
     }
 }

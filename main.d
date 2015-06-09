@@ -33,7 +33,7 @@ import local;
 import tsumego;
 
 import chess;
-
+import chess_endgame;
 
 // Lol "makefile"
 // dmd main.d utils.d board8.d board11.d bit_matrix.d state.d polyomino.d defense_state.d defense_search_state.d defense.d eyeshape.d monte_carlo.d heuristic.d fast_math.d ann.d likelyhood.d wdl_node.d direct_mc.d pattern3.d
@@ -81,6 +81,7 @@ void main()
 
     //auto s = PseudoChessState(0xef80928020000000UL, 0x801a8072002400UL, 0x800000000200800UL, 0x400800000000020UL, 0xa200000000000080UL, 0x200UL, 0x4000000000000010UL, 0x7fffffffffffff6fUL, 0x0UL);
 
+    /*
     size_t i = 0;
     while (true){
         examine_chess_playout(chess_initial, false);
@@ -89,6 +90,158 @@ void main()
             //break;
         }
     }
+    */
+
+    //examine_chess_playout(chess_initial, false);
+    //return;
+
+    Transposition[CanonicalChessState] ts;
+
+    auto s = CanonicalChessState(
+        PseudoChessState(
+            RANK1 & (CFILE | AFILE),
+            0,
+            0,
+            RANK1 & (FFILE | AFILE),
+            0,
+            0,
+            RANK1 & (CFILE | HFILE),
+            0
+        )
+    );
+
+    auto type = EndgameType(0, 0, 0, 0, 1, 0, 0, 0, 0, 0);
+    //writeln(type);
+
+    NodeValue[][EndgameType] tables;
+    size_t[EndgameType] valid;
+
+    foreach (subtype; type.subtypes.byKey){
+        writeln(subtype);
+        writeln(subtype.size);
+        tables[subtype] = [];
+        tables[subtype].length = subtype.size;
+        valid[subtype] = 0;
+    }
+
+    foreach (subtype, table; tables){
+        foreach(e; 0..table.length){
+            if (CanonicalChessState.from_endgame_state(e, subtype, s)){
+                size_t ce = s.endgame_state(subtype);
+                table[ce] = NodeValue(-float.infinity, float.infinity, float.infinity, float.infinity);
+                valid[subtype] += 1;
+            }
+        }
+    }
+
+    writeln(valid);
+
+    size_t i = 0;
+    bool changed = true;
+    while (changed) {
+        i += 1;
+        writeln("Iteration ", i);
+        changed = false;
+        foreach (subtype, table; tables){
+            foreach(e; 0..table.length){
+                auto v = table[e];
+                if (v.initialized){
+                    CanonicalChessState.from_endgame_state(e, subtype, s);
+                    float score;
+                    auto children = s.children(score);
+                    float low = -float.infinity;
+                    float high = -float.infinity;
+                    float low_distance = float.infinity;
+                    float high_distance = -float.infinity;
+                    if (children.length){
+                        foreach(child; children){
+                            EndgameType ct;
+                            auto ce = child.endgame_state(ct);
+                            auto child_v = tables[ct][ce];
+                            if (-child_v.high > low){
+                                low = -child_v.high;
+                                low_distance = child_v.high_distance;
+                            }
+                            else if (-child_v.high == low && child_v.high_distance < low_distance){
+                                low_distance = child_v.high_distance;
+                            }
+                            if (-child_v.low > high){
+                                high = -child_v.low;
+                                high_distance = child_v.low_distance;
+                            }
+                            else if (-child_v.low == high && child_v.low_distance > high_distance){
+                                high_distance = child_v.low_distance;
+                            }
+                        }
+                        low_distance += 1;
+                        high_distance += 1;
+                    }
+                    else {
+                        low = high = score;
+                        low_distance = high_distance = 0;
+                    }
+                    //writeln(low, high, low_distance, high_distance);
+                    auto new_v = NodeValue(low, high, low_distance, high_distance);
+                    if (new_v != v){
+                        changed = true;
+                    }
+                    table[e] = new_v;
+                }
+            }
+        }
+    }
+
+
+    float max_dist = 0;
+    foreach(e; 0..tables[type].length){
+        auto v = tables[type][e];
+        if (v.initialized){
+            if (v.low == 1 && v.low_distance > max_dist){
+                max_dist = v.low_distance;
+                CanonicalChessState.from_endgame_state(e, type, s);
+                writeln(s);
+                writeln(max_dist);
+            }
+        }
+    }
+
+    //writeln(max_dist);
+
+    /*
+    auto e = s.endgame_state("knn_k");
+
+    writeln(table[e]);
+
+    writeln(CanonicalChessState.from_endgame_state("knn_k", e));
+
+    float _;
+    s = s.children(_)[0];
+    writeln(s);
+    writeln(CanonicalChessState.from_endgame_state("knn_k", s.endgame_state("knn_k")));
+    */
+
+    /*
+    auto n = new GameNode!(ChessMove, CanonicalChessState)(s);
+
+    n.calculate_minimax_values(&ts);
+    writeln(n);
+    writeln(ts.length);
+    */
+
+    /*
+    foreach (k, t; ts){
+        auto state = k.state;
+        //writeln(state);
+        //writeln(t);
+        if (state.player & state.pawns){
+            if (t.low_value != 1){
+                writeln(state);
+                writeln(t);
+            }
+            //assert(t.low_value == 1);
+        }
+    }
+    */
 
     /*
     writeln(h_rays(RANK4 & HFILE, FULL).on_board);

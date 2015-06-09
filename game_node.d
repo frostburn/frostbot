@@ -8,6 +8,7 @@ import std.array;
 import utils;
 import board8;
 import state;
+import chess;
 
 
 /**
@@ -31,18 +32,25 @@ class GameNode(T, S)
     GameNode!(T, S)[] children;
     GameNode!(T, S)[] parents;
 
+    /*
     this(T playing_area)
     {
         this(S(playing_area));
     }
+    */
 
     this(S state, Transposition[S] *transpositions=null)
     {
         this.state = state;
         if (state.is_leaf){
-            is_leaf = true;
-            is_final = true;
-            low_value = high_value = state.liberty_score;
+            static if(!is(T : ChessMove)){
+                is_leaf = true;
+                is_final = true;
+                low_value = high_value = state.liberty_score;
+            }
+            else {
+                assert(false);
+            }
         }
         else if (transpositions !is null){
             auto key = state;
@@ -58,7 +66,9 @@ class GameNode(T, S)
 
     invariant
     {
-        assert(state.passes <= 2);
+        static if(!is(T : ChessMove)){
+            assert(state.passes <= 2);
+        }
         assert(low_value <= high_value);
     }
 
@@ -72,8 +82,17 @@ class GameNode(T, S)
             return;
         }
 
-        foreach (child_state; state.children){
-            assert(child_state.black_to_play);
+        float score;
+        S[] state_children;
+        static if(is(T : ChessMove)){
+            state_children = state.children(score);
+        }
+        else {
+            state_children = state.children;
+        }
+
+        foreach (child_state; state_children){
+            //assert(child_state.black_to_play);
             if (child_state in node_pool){
                 auto child = node_pool[child_state];
                 children ~= child;
@@ -85,6 +104,12 @@ class GameNode(T, S)
                 child.parents ~= this;
                 node_pool[child.state] = child;
             }
+        }
+
+        if (!state_children.length){
+            is_leaf = true;
+            is_final = true;
+            low_value = high_value = score;
         }
 
         //children.randomShuffle;
@@ -154,6 +179,9 @@ class GameNode(T, S)
 
                 foreach (child; game_node.children){
                     queue.insert(child);
+                }
+                if (game_node.is_leaf || game_node.is_final){
+                    leaf_queue.insert(game_node);
                 }
             }
         }
