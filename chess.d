@@ -116,34 +116,6 @@ ulong mirror_d(ulong x) pure nothrow @nogc @safe
    return x;
 }
 
-immutable int index64[64] = [
-    0,  1, 48,  2, 57, 49, 28,  3,
-   61, 58, 50, 42, 38, 29, 17,  4,
-   62, 55, 59, 36, 53, 51, 43, 22,
-   45, 39, 33, 30, 24, 18, 12,  5,
-   63, 47, 56, 27, 60, 41, 37, 16,
-   54, 35, 52, 21, 44, 32, 23, 11,
-   46, 26, 40, 15, 34, 20, 31, 10,
-   25, 14, 19,  9, 13,  8,  7,  6
-];
- 
-/**
- * bitScanForward
- * @author Martin Läuter (1997)
- *         Charles E. Leiserson
- *         Harald Prokop
- *         Keith H. Randall
- * "Using de Bruijn Sequences to Index a 1 in a Computer Word"
- * @param bb bitboard to scan
- * @precondition bb != 0
- * @return index (0..63) of least significant one bit
- */
-int bitScanForward(ulong bb) pure nothrow @nogc @safe
-{
-   enum debruijn64 = 0x03f79d71b4cb0a89UL;
-   assert(bb != 0);
-   return index64[((bb & -bb) * debruijn64) >> 58];
-}
 
 ulong[] separate(ulong pieces) pure nothrow @safe
 {
@@ -434,7 +406,7 @@ struct EndgameType
         return EndgameType(o_pawns, p_pawns, o_knights, p_knights, o_bishops, p_bishops, o_rooks, p_rooks, o_queens, p_queens);
     }
 
-    bool[EndgameType] subtypes()
+    bool[EndgameType] _subtypes()
     {
         bool[EndgameType] result;
         int[] members = mixin(MEMBERS);
@@ -455,13 +427,22 @@ struct EndgameType
                 }
                 auto subtype = EndgameType(submembers);
                 result[subtype] = true;
-                foreach (st; subtype.subtypes.byKey){
+                foreach (st; subtype._subtypes.byKey){
                     result[st] = true;
                 }
             }
         }
         result[this] = true;
         result[pair] = true;
+        return result;
+    }
+
+    EndgameType[] subtypes()
+    {
+        EndgameType[] result;
+        foreach (subtype; _subtypes.byKey){
+            result ~= subtype;
+        }
         return result;
     }
 
@@ -798,6 +779,10 @@ struct PseudoChessState
             // King against king
             return true;
         }
+        /*
+        // If we give non-zero score for stalemates we
+        // cannot automatically draw kn_k or kb_k,
+        // because of forceable stalemates.
         else if (piece_count == 3){
             if (knights){
                 // King against king and knigth
@@ -814,6 +799,7 @@ struct PseudoChessState
             // King and bishops against king and bishops with all bishops of the same color
             return (!w_bishops) ^ (!b_bishops);
         }
+        */
         return false;
     }
 
@@ -845,14 +831,11 @@ struct PseudoChessState
 
     PseudoChessState[] children(out float score)
     {
-        // If we give non-zero score for stalemates we
-        // cannot automatically draw kn_k or kb_k,
-        // because of forceable stalemates.
-        /*
         if (insufficient_material){
             score = 0;
             return [];
         }
+        /*
         if (book_win){
             score = 1;
             return [];
@@ -1023,7 +1006,7 @@ struct PseudoChessState
             return result;
         }
 
-        // Required if allowing for draws.
+        // This would be required to prevent non-finishable games.
         /*
         if ((kings | pawns) == ~empty){
             if ((player & pawns) && !has_pawn_move && !kings_can_capture_pawns){

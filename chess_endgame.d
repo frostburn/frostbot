@@ -6,7 +6,7 @@ import chess;
 import game_node;
 
 
-struct NodeValue
+struct ChessNodeValue
 {
     private
     {
@@ -23,7 +23,7 @@ struct NodeValue
         this.high_distance = high_distance;
     }
 
-    bool opEquals(in NodeValue rhs) const pure nothrow @nogc @safe
+    bool opEquals(in ChessNodeValue rhs) const pure nothrow @nogc @safe
     {
         return data == rhs.data && _low_distance == rhs._low_distance && _high_distance == rhs._high_distance;
     }
@@ -181,26 +181,37 @@ struct NodeValue
 
     string toString()
     {
-        return format("NodeValue(%s, %s, %s, %s)", low, high, low_distance, high_distance);
+        return format("ChessNodeValue(%s, %s, %s, %s)", low, high, low_distance, high_distance);
     }
 }
 
 /*
-    NodeValue[] table;
-    table.length = CanonicalChessState.endgame_size("knn_k");
+    CanonicalChessState s;
+    auto type = EndgameType(0, 0, 1, 0, 1, 0, 0, 0, 0, 0);
+    //writeln(type);
 
-    size_t valid = 0;
-    foreach(e; 0..table.length){
-        if (CanonicalChessState.from_endgame_state("knn_k", e, s)){
-            size_t ce = s.endgame_state("knn_k");
-            table[ce] = NodeValue(-float.infinity, float.infinity);
-            if (s.diagonal.popcount == 4){
-                valid += 1;
+    NodeValue[][EndgameType] tables;
+    size_t[EndgameType] valid;
+
+    foreach (subtype; type.subtypes.byKey){
+        writeln(subtype);
+        writeln(subtype.size);
+        tables[subtype] = [];
+        tables[subtype].length = subtype.size;
+        valid[subtype] = 0;
+    }
+
+    foreach (subtype, table; tables){
+        foreach(e; 0..table.length){
+            if (CanonicalChessState.from_endgame_state(e, subtype, s)){
+                size_t ce = s.endgame_state(subtype);
+                table[ce] = NodeValue(-float.infinity, float.infinity, float.infinity, float.infinity);
+                valid[subtype] += 1;
             }
         }
     }
-    writeln(valid);
 
+    writeln(valid);
 
     size_t i = 0;
     bool changed = true;
@@ -208,33 +219,65 @@ struct NodeValue
         i += 1;
         writeln("Iteration ", i);
         changed = false;
-        foreach(e; 0..table.length){
-            auto v = table[e];
-            if (v.initialized && v.low != v.high){
-                CanonicalChessState.from_endgame_state("knn_k", e, s);
-                float score;
-                auto children = s.children(score);
-                float low = -float.infinity;
-                float high = -float.infinity;
-                if (children.length){
-                    foreach(child; children){
-                        auto child_v = table[child.endgame_state("knn_k")];
-                        if (-child_v.high > low){
-                            low = -child_v.high;
+        foreach (subtype, table; tables){
+            foreach(e; 0..table.length){
+                auto v = table[e];
+                if (v.initialized){
+                    CanonicalChessState.from_endgame_state(e, subtype, s);
+                    float score;
+                    auto children = s.children(score);
+                    float low = -float.infinity;
+                    float high = -float.infinity;
+                    float low_distance = float.infinity;
+                    float high_distance = -float.infinity;
+                    if (children.length){
+                        foreach(child; children){
+                            EndgameType ct;
+                            auto ce = child.endgame_state(ct);
+                            auto child_v = tables[ct][ce];
+                            if (-child_v.high > low){
+                                low = -child_v.high;
+                                low_distance = child_v.high_distance;
+                            }
+                            else if (-child_v.high == low && child_v.high_distance < low_distance){
+                                low_distance = child_v.high_distance;
+                            }
+                            if (-child_v.low > high){
+                                high = -child_v.low;
+                                high_distance = child_v.low_distance;
+                            }
+                            else if (-child_v.low == high && child_v.low_distance > high_distance){
+                                high_distance = child_v.low_distance;
+                            }
                         }
-                        if (-child_v.low > high){
-                            high = -child_v.low;
-                        }
+                        low_distance += 1;
+                        high_distance += 1;
                     }
+                    else {
+                        low = high = score;
+                        low_distance = high_distance = 0;
+                    }
+                    //writeln(low, high, low_distance, high_distance);
+                    auto new_v = NodeValue(low, high, low_distance, high_distance);
+                    if (new_v != v){
+                        changed = true;
+                    }
+                    table[e] = new_v;
                 }
-                else {
-                    low = high = score;
-                }
-                auto new_v = NodeValue(low, high);
-                if (new_v != v){
-                    changed = true;
-                }
-                table[e] = new_v;
+            }
+        }
+    }
+
+
+    float max_dist = 0;
+    foreach(e; 0..tables[type].length){
+        auto v = tables[type][e];
+        if (v.initialized){
+            if (v.low == 2 && v.low_distance > max_dist){
+                max_dist = v.low_distance;
+                CanonicalChessState.from_endgame_state(e, type, s);
+                writeln(s);
+                writeln(max_dist);
             }
         }
     }

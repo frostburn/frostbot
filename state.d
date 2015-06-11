@@ -368,6 +368,20 @@ struct State(T)
         return children(_moves, clear_ko);
     }
 
+    State!T[] children(out float score)
+    {
+        if (passes == 2){
+            if (black_to_play){
+                score = liberty_score;
+            }
+            else {
+                score = -liberty_score;
+            }
+            return [];
+        }
+        return children;
+    }
+
     void children_with_pattern3(out State!T[] children, out Pattern3[] patterns)
     {
         for (int y = 0; y < T.HEIGHT; y++){
@@ -727,6 +741,157 @@ struct State(T)
         return chain.liberties(playing_area & ~player).popcount;
     }
 
+    // TODO: Reduce symmetries while respecting BoardType.
+    size_t endgame_state(out BoardType!T type)
+    {
+        assert(!player_unconditional);
+        assert(!opponent_unconditional);
+        assert(passes <= 2);
+        assert(!value_shift);
+        type = BoardType!T(playing_area);
+        size_t endgame = 0;
+        if (ko){
+            T p;
+            foreach (y; 0..T.HEIGHT){
+                foreach (x; 0..T.WIDTH){
+                    p = T(x, y);
+                    if (ko & p){
+                        break;
+                    }
+                    if (playing_area & p){
+                        endgame += 1;
+                    }
+                }
+                if (ko & p){
+                    break;
+                }
+            }
+        }
+        else {
+            endgame = playing_area.popcount;
+        }
+        if (passes == 1){
+            endgame = playing_area.popcount + 1;
+        }
+        else if (passes == 2){
+            endgame = playing_area.popcount + 2;
+        }
+        foreach (y; 0..T.HEIGHT){
+            foreach (x; 0..T.WIDTH){
+                auto p = T(x, y);
+                if (playing_area & p){
+                    endgame *= 3;
+                    if (player & p){
+                        endgame += 1;
+                    }
+                    else if (opponent & p){
+                        endgame += 2;
+                    }
+                }
+            }
+        }
+        return endgame;
+    }
+
+    static bool from_endgame_state(size_t endgame, BoardType!T type, out State!T state)
+    {
+        T playing_area = type.playing_area;
+        T player;
+        T opponent;
+        T ko;
+        int passes = 0;
+        foreach (y; 0..T.HEIGHT){
+            y = T.HEIGHT - 1 - y;
+            foreach (x; 0..T.WIDTH){
+                x = T.WIDTH - 1 - x;
+                auto p = T(x, y);
+                if (playing_area & p){
+                    auto temp = endgame % 3;
+                    if (temp == 1){
+                        player |= p;
+                    }
+                    else if (temp == 2){
+                        opponent |= p;
+                    }
+                    endgame /= 3;
+                }
+            }
+        }
+        auto size = playing_area.popcount;
+        if (endgame == size + 2){
+            passes = 2;
+        }
+        else if (endgame == size + 1){
+            passes = 1;
+        }
+        else if (endgame == size){
+            passes = 0;
+        }
+        else {
+            foreach (y; 0..T.HEIGHT){
+                foreach (x; 0..T.WIDTH){
+                    auto p = T(x, y);
+                    if (playing_area & p){
+                        endgame -= 1;
+                        if (endgame == -1){
+                            ko = p;
+                            break;
+                        }
+                    }
+                }
+                if (endgame == -1){
+                    break;
+                }
+            }
+        }
+        auto stones = player | opponent;
+        auto space = playing_area & ~stones;
+        if (ko){
+            if (stones & ko){
+                return false;
+            }
+            auto ko_libs = ko.liberties(playing_area);
+            if (ko_libs & opponent){
+                if (ko_libs & player){
+                    return false;
+                }
+                if (ko_libs & space){
+                    return false;
+                }
+                int ataris = 0;
+                foreach (stone; ko_libs.pieces){
+                    stone.flood_into(opponent);
+                    if (stone.liberties(space) == ko){
+                        if (stone.popcount == 1){
+                            ataris += 1;
+                        }
+                        else {
+                            return false;
+                        }
+                    }
+                }
+                if (ataris != 1){
+                    return false;
+                }
+            }
+            else {
+                return false;
+            }
+        }
+        foreach (chain; player.chains){
+            if (!chain.liberties(space)){
+                return false;
+            }
+        }
+        foreach (chain; opponent.chains){
+            if (!chain.liberties(space)){
+                return false;
+            }
+        }
+        state = State!T(player, opponent, playing_area, ko, true, passes, T(), T(), 0);
+        return true;
+    }
+
     string _toString(T player_defendable, T opponent_defendable, T player_secure, T opponent_secure, T mark=T.init)
     {
         //0 - Gray
@@ -1079,6 +1244,40 @@ void examine_state_playout(T)(State!T s, bool canonize=false)
         j++;
     }
 }
+
+
+struct BoardType(T)
+{
+    T playing_area;
+
+    hash_t toHash() const nothrow @safe
+    {
+        return playing_area.toHash;
+    }
+
+    bool opEquals(in BoardType!T rhs) const nothrow @safe
+    {
+        return playing_area == rhs.playing_area;
+    }
+
+    size_t size()
+    {
+        size_t playing_area_size = playing_area.popcount;
+        return (playing_area_size + 3) * (3 ^^ playing_area_size);
+    }
+
+    BoardType!T[] subtypes()
+    {
+        return [this];
+    }
+
+    string toString()
+    {
+        return playing_area.toString;
+    }
+}
+
+alias BoardType8 = BoardType!Board8;
 
 
 struct CanonicalState(T)

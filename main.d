@@ -17,6 +17,7 @@ import polyomino;
 import hl_node;
 import game_node;
 import local;
+import full_search;
 //import bounded_state;
 //import defense_state;
 //import search_state;
@@ -95,6 +96,7 @@ void main()
     //examine_chess_playout(chess_initial, false);
     //return;
 
+    /*
     Transposition[CanonicalChessState] ts;
 
     auto s = CanonicalChessState(
@@ -109,10 +111,50 @@ void main()
             0
         )
     );
+    */
 
-    auto type = EndgameType(0, 0, 0, 0, 1, 0, 0, 0, 0, 0);
-    //writeln(type);
+    /*
+    auto type = EndgameType(0, 0, 0, 0, 0, 0, 0, 0, 1, 0);
+    writeln(type);
 
+    auto fs = new FullSearch!(EndgameType, ChessNodeValue, CanonicalChessState)();
+
+    fs.initialize(type);
+    fs.calculate(true);
+    fs.decanonize;
+    */
+
+    auto fs = new FullSearch!(BoardType8, NodeValue, State8)();
+
+    auto type = BoardType8(rectangle8(4, 3));
+    auto s = State8(type.playing_area);
+    //s.opponent = Board8(1, 0);
+    //s.passes = 0;
+    auto e = s.endgame_state(type);
+
+    writeln(e);
+    writeln(type);
+    writeln(State8.from_endgame_state(e, type, s));
+    writeln(s);
+
+    fs.initialize(type);
+    fs.calculate(true);
+
+    writeln(fs.tables[type][e]);
+
+    /*
+    foreach (ee; 0..fs.tables[type].length){
+        if (fs.tables[type][ee].initialized){
+            State8.from_endgame_state(ee, type, s);
+            writeln(s);
+            writeln(fs.tables[type][ee]);
+        }
+    }
+    */
+
+    //writeln(fs.tables[type][4 + 64 * (13 + 64 * (43 + 64 * ))]);
+
+    /*
     NodeValue[][EndgameType] tables;
     size_t[EndgameType] valid;
 
@@ -196,7 +238,7 @@ void main()
     foreach(e; 0..tables[type].length){
         auto v = tables[type][e];
         if (v.initialized){
-            if (v.low == 1 && v.low_distance > max_dist){
+            if (v.low == 2 && v.low_distance > max_dist){
                 max_dist = v.low_distance;
                 CanonicalChessState.from_endgame_state(e, type, s);
                 writeln(s);
@@ -206,6 +248,7 @@ void main()
     }
 
     //writeln(max_dist);
+    */
 
     /*
     auto e = s.endgame_state("knn_k");
