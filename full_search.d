@@ -2,6 +2,7 @@ import std.conv;
 import std.stdio;
 import std.string;
 import std.math;
+import std.stream;
 
 alias distance_t = ubyte;
 
@@ -11,8 +12,8 @@ struct NodeValue
     {
         byte _low = 1;
         byte _high = -1;
-        ubyte _low_distance = distance_t.max;
-        ubyte _high_distance = distance_t.max;
+        distance_t _low_distance = distance_t.max;
+        distance_t _high_distance = distance_t.max;
     }
 
     this(float low, float high, float low_distance=float.infinity, float high_distance=float.infinity)
@@ -30,6 +31,29 @@ struct NodeValue
         this.high = high;
         this.low_distance = low_distance;
         this.high_distance = high_distance;
+    }
+
+    void to_stream(OutputStream stream)
+    {
+        stream.write(_low);
+        stream.write(_high);
+        stream.write(_low_distance);
+        stream.write(_high_distance);
+    }
+
+    static NodeValue from_stream(InputStream stream)
+    {
+        byte _low, _high;
+        distance_t _low_distance, _high_distance;
+        stream.read(_low);
+        stream.read(_high);
+        stream.read(_low_distance);
+        NodeValue v;
+        v._low = _low;
+        v._high = _high;
+        v._low_distance = _low_distance;
+        v._high_distance = _high_distance;
+        return v;
     }
 
     bool opEquals(in NodeValue rhs) const pure nothrow @nogc @safe

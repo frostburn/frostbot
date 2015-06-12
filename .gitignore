@@ -1,5 +1,7 @@
 main
+table_query
 train_6x5
 *.o
 trace.def
 trace.log
+settings.d

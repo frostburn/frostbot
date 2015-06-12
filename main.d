@@ -5,6 +5,7 @@ import std.math;
 import std.algorithm;
 import std.random;
 import std.parallelism;
+static import std.file;
 import core.thread;
 
 import utils;
@@ -140,7 +141,20 @@ void main()
     fs.initialize(type);
     fs.calculate(true);
 
+
+    std.file.write("go4x3.dat", fs.tables[type]);
+    //fs.tables[type] = cast(NodeValue[]) std.file.read("go3x2.dat");
+
     writeln(fs.tables[type][e]);
+
+    /*
+    auto f = File("go3x2.dat", "rb");
+    f.seek(e * NodeValue.sizeof);
+    NodeValue[] buf;
+    buf.length = 1;
+    f.rawRead(buf);
+    writeln(buf[0]);
+    */
 
     /*
     foreach (ee; 0..fs.tables[type].length){

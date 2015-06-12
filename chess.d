@@ -1031,6 +1031,7 @@ struct PseudoChessState
         return player_can_capture || king_can_reach(~player & kings, pawns, space);
     }
 
+    // TODO: Mark enpassant as pawn on the first rank.
     size_t endgame_state(out EndgameType type)
     {
         auto opponent = ~player;
