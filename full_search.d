@@ -4,6 +4,8 @@ import std.string;
 import std.math;
 import std.stream;
 
+static import std.file;
+
 alias distance_t = ubyte;
 
 struct NodeValue
@@ -237,6 +239,13 @@ class FullSearch(T, V, S)
                         table[e] = new_v;
                     }
                 }
+            }
+            size_t cutoff = 400000000;
+            foreach (subtype, table; tables){
+                writeln("Writing tables");
+                std.file.write("go4x4_part1.dat", table[0..cutoff]);
+                std.file.write("go4x4_part2.dat", table[cutoff..$]);
+                writeln("Done writing tables");
             }
         }
     }

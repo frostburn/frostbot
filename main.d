@@ -127,7 +127,7 @@ void main()
 
     auto fs = new FullSearch!(BoardType8, NodeValue, State8)();
 
-    auto type = BoardType8(rectangle8(3, 3));
+    auto type = BoardType8(rectangle8(4, 4));
     auto s = State8(type.playing_area);
     //s.opponent = Board8(0, 1) | Board8(1, 0);
     //s.player = Board8(2, 0) | Board8(1, 1);
@@ -145,7 +145,7 @@ void main()
     fs.initialize(type);
     fs.calculate(true);
 
-    std.file.write("go3x3.dat", fs.tables[type]);
+    //std.file.write("go3x3.dat", fs.tables[type]);
     writeln(fs.tables[type][e]);
 
     /*
