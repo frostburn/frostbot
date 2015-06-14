@@ -127,10 +127,14 @@ void main()
 
     auto fs = new FullSearch!(BoardType8, NodeValue, State8)();
 
-    auto type = BoardType8(rectangle8(4, 3));
+    auto type = BoardType8(rectangle8(3, 3));
     auto s = State8(type.playing_area);
+    //s.opponent = Board8(0, 1) | Board8(1, 0);
+    //s.player = Board8(2, 0) | Board8(1, 1);
+    //s.ko = Board8(0, 0);
     //s.opponent = Board8(1, 0);
     //s.passes = 0;
+    //writeln(s);
     auto e = s.endgame_state(type);
 
     writeln(e);
@@ -141,11 +145,23 @@ void main()
     fs.initialize(type);
     fs.calculate(true);
 
+    std.file.write("go3x3.dat", fs.tables[type]);
+    writeln(fs.tables[type][e]);
 
-    std.file.write("go4x3.dat", fs.tables[type]);
-    //fs.tables[type] = cast(NodeValue[]) std.file.read("go3x2.dat");
+    /*
+    size_t cutoff = 536869000;
+    //fs.initialize(type);
+    //fs.calculate(true);
+
+
+    fs.tables[type] = cast(NodeValue[]) std.file.read("go4x4_part1.dat");
+    fs.tables[type].length = cutoff;
+    fs.tables[type].length = type.size;
+    std.file.write("go4x4_part2.dat", fs.tables[type][cutoff..$]);
+    //writeln(fs.tables[type].length);
 
     writeln(fs.tables[type][e]);
+    */
 
     /*
     auto f = File("go3x2.dat", "rb");
