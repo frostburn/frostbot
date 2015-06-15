@@ -86,11 +86,13 @@ JSONValue process_go(string endgame_type, string endgame)
         "4x1": BoardType8(rectangle8(4, 1)),
         "4x2": BoardType8(rectangle8(4, 2)),
         "4x3": BoardType8(rectangle8(4, 3)),
+        "4x4": BoardType8(rectangle8(4, 4)),
         "5x3": BoardType8(rectangle8(5, 3)),
         "goplus": BoardType8(rectangle8(4, 2).south | rectangle8(2, 4).east)
     ];
     JSONValue result = ["status": "error"];
     if (endgame_type !in go_endgame_types){
+        result.object["error_message"] = JSONValue("Unknown endgame type");
         return result;
     }
     BoardType8 t = go_endgame_types[endgame_type];
@@ -99,9 +101,11 @@ JSONValue process_go(string endgame_type, string endgame)
         string temp = endgame;
         formattedRead(temp, "%s", &e);
     } catch (std.conv.ConvException) {
+        result.object["error_message"] = JSONValue("Invalid endgame string");
         return result;
     }
     if (e >= t.size){
+        result.object["error_message"] = JSONValue("Endgame too large");
         return result;
     }
     State8 s;
