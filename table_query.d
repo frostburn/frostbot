@@ -55,7 +55,21 @@ size_t[string] moves(T)(State!T state)
 
 NodeValue get_node_value(string endgame_type, size_t e)
 {
-    auto f = File(settings.GO_TABLE_DIR ~ "go" ~ endgame_type ~ ".dat", "rb");
+    string filename = settings.GO_TABLE_DIR ~ "go" ~ endgame_type;
+    if (endgame_type == "4x4"){
+        size_t cutoff = 400000000;
+        if (e < cutoff){
+            filename ~= "_part1.dat";
+        }
+        else {
+            e -= cutoff;
+            filename ~= "_part2.dat";
+        }
+    }
+    else {
+        filename ~= ".dat";
+    }
+    auto f = File(filename, "rb");
     f.seek(e * NodeValue.sizeof);
     NodeValue[] buf;
     buf.length = 1;
@@ -82,7 +96,8 @@ JSONValue process_go(string endgame_type, string endgame)
     BoardType8 t = go_endgame_types[endgame_type];
     size_t e;
     try {
-        formattedRead(endgame, "%s", &e);
+        string temp = endgame;
+        formattedRead(temp, "%s", &e);
     } catch (std.conv.ConvException) {
         return result;
     }
@@ -94,6 +109,8 @@ JSONValue process_go(string endgame_type, string endgame)
         result["status"] = JSONValue("invalid");
         return result;
     }
+    result.object["endgame_type"] = JSONValue(endgame_type);
+    result.object["endgame"] = JSONValue(endgame);
     result.object["playing_area"] = JSONValue(to_coord_list(s.playing_area));
     result.object["player"] = JSONValue(to_coord_list(s.player));
     result.object["opponent"] = JSONValue(to_coord_list(s.opponent));

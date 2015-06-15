@@ -143,7 +143,7 @@ ulong[] separate(ulong pieces)
 }
 */
 
-string on_board(ulong pieces)
+string on_board(ulong pieces, ulong other_pieces=0)
 {
         string r;
         foreach (j; 0..8){
@@ -156,8 +156,18 @@ string on_board(ulong pieces)
                 else {
                     r ~= "43m";
                 }
-                r ~= "\x1b[37m";
                 if (s & pieces){
+                    if (s & other_pieces){
+                        r ~= "\x1b[31m";
+                    }
+                    else{
+                        r ~= "\x1b[37m";
+                    }
+                }
+                else if (s & other_pieces){
+                    r ~= "\x1b[30m";
+                }
+                if (s & (pieces | other_pieces)){
                     r ~= "◆ ";
                 }
                 else {
@@ -168,6 +178,9 @@ string on_board(ulong pieces)
             r ~= "\n";
         }
         r ~= format("popcount=%s", pieces.popcount);
+        if (other_pieces){
+            r ~= format(", %s", other_pieces.popcount);
+        }
         return r;
 }
 

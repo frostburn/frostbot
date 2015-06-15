@@ -50,79 +50,13 @@ void main()
     auto transpositions = &loc_trans;
     auto local_transpositions = &loc_trans;
 
+    // TODO: check that the canonical counts match with CanonicalChessState
     /*
-    auto move = (RANK2 & EFILE) | (RANK4 & EFILE);
-    s.player ^= move;
-    s.pawns ^= move;
-    s.empty ^= move;
-
-    move = (RANK2 & HFILE) | (RANK4 & HFILE);
-    s.player ^= move;
-    s.pawns ^= move;
-    s.empty ^= move;
-
-    move = RANK1 & (BFILE | CFILE | DFILE);
-    s.player ^= move;
-    s.queens &= ~move;
-    s.bishops &= ~move;
-    s.knights &= ~move;
-    s.empty |= move;
-
-    s.player ^= RANK4 & EFILE;
-    */
-
-    /*
-    foreach (c; chess_initial.children){
-        //c.moved = c.true_moved;
-        //c.full_canonize;
-        writeln(c);
-        //auto cs = CanonicalChessState(c);
-        //writeln(cs);
+    foreach (kp; KingsPosition.KINGS_POSITION_TABLE){
+        ulong k1, k2;
+        kp.get_boards(k1, k2);
+        writeln(on_board(k1, k2));
     }
-    */
-
-    //auto s = PseudoChessState(0xef80928020000000UL, 0x801a8072002400UL, 0x800000000200800UL, 0x400800000000020UL, 0xa200000000000080UL, 0x200UL, 0x4000000000000010UL, 0x7fffffffffffff6fUL, 0x0UL);
-
-    /*
-    size_t i = 0;
-    while (true){
-        examine_chess_playout(chess_initial, false);
-        i++;
-        if (i > 100){
-            //break;
-        }
-    }
-    */
-
-    //examine_chess_playout(chess_initial, false);
-    //return;
-
-    /*
-    Transposition[CanonicalChessState] ts;
-
-    auto s = CanonicalChessState(
-        PseudoChessState(
-            RANK1 & (CFILE | AFILE),
-            0,
-            0,
-            RANK1 & (FFILE | AFILE),
-            0,
-            0,
-            RANK1 & (CFILE | HFILE),
-            0
-        )
-    );
-    */
-
-    /*
-    auto type = EndgameType(0, 0, 0, 0, 0, 0, 0, 0, 1, 0);
-    writeln(type);
-
-    auto fs = new FullSearch!(EndgameType, ChessNodeValue, CanonicalChessState)();
-
-    fs.initialize(type);
-    fs.calculate(true);
-    fs.decanonize;
     */
 
     auto fs = new FullSearch!(BoardType8, NodeValue, State8)();
@@ -142,11 +76,13 @@ void main()
     writeln(State8.from_endgame_state(e, type, s));
     writeln(s);
 
+    /*
     fs.initialize(type);
     fs.calculate(true);
 
     //std.file.write("go3x3.dat", fs.tables[type]);
     writeln(fs.tables[type][e]);
+    */
 
     /*
     size_t cutoff = 536869000;

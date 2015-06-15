@@ -240,6 +240,7 @@ class FullSearch(T, V, S)
                     }
                 }
             }
+            /*
             size_t cutoff = 400000000;
             foreach (subtype, table; tables){
                 writeln("Writing tables");
@@ -247,6 +248,7 @@ class FullSearch(T, V, S)
                 std.file.write("go4x4_part2.dat", table[cutoff..$]);
                 writeln("Done writing tables");
             }
+            */
         }
     }
 

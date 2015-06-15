@@ -1,10 +1,224 @@
 import std.stdio;
 import std.string;
 import std.conv;
+import std.math;
 
+import utils;
 import chess;
 import game_node;
 
+
+// Canonical legal configuration of kings
+// TODO
+/+
+struct KingsPosition
+{
+    int player;
+    int opponent;
+
+    mixin(get_kings_index_table);
+
+    size_t index() const
+    out(result)
+    {
+        assert(result < KINGS_POSITION_TABLE.length);
+    }
+    body
+    {
+        return KINGS_INDEX_TABLE[player][opponent];
+    }
+
+    static KingsPosition from_index(size_t index)
+    in
+    {
+        assert(index < KINGS_POSITION_TABLE.length);
+    }
+    body
+    {
+        return KINGS_POSITION_TABLE[index];
+    }
+
+    void get_boards(out ulong player_king, out ulong opponent_king) const
+    {
+        player_king = 1UL << player;
+        opponent_king = 1UL << opponent;
+    }
+
+    size_t piece_index(ulong piece)
+    {
+        auto transformed_index = transform(bitScanForward(piece), player, opponent);
+        return _piece_index(transformed_index, KINGS_POSITION_TABLE[index]);
+    }
+
+    ulong from_piece_index(size_t piece_index)
+    {
+        return 1UL << _from_piece_index(piece_index, this);
+    }
+}
+
+
+size_t _piece_index(size_t index, KingsPosition kp){
+    if (index < kp.player){
+        if (index < kp.opponent){
+            return index;
+        }
+        return index - 1;
+    }
+    else if (index < kp.opponent){
+        return index - 1;
+    }
+    return index - 2;
+}
+
+size_t _from_piece_index(size_t index, KingsPosition kp){
+    if (index < kp.player){
+        if (index < kp.opponent){
+            return index;
+        }
+        return index + 1;
+    }
+    else if (index < kp.opponent){
+        return index + 1;
+    }
+    return index + 2;
+}
+
+
+enum Transformation {none, mirror_v, mirror_vh, mirror_h, mirror_hd, mirror_d, mirror_vd, mirror_vhd}
+
+
+int transform(int index, int player, int opponent){
+    return 0;
+    /*
+    if (transformation == Transformation.none){
+        return index;
+    }
+    int x = index & 7;
+    int y = index >> 3;
+    if (transformation == Transformation.mirror_v){
+        return x + 8 * (7 - y);
+    }
+    else if (transformation == Transformation.mirror_vh){
+        return 7 - x + 8 * (7 - y);
+    }
+    else if (transformation == Transformation.mirror_h){
+        return 7 - x + 8 * y;
+    }
+    else if (transformation == Transformation.mirror_hd){
+        return y + 8 * (7 - x);
+    }
+    else if (transformation == Transformation.mirror_d){
+        return y + 8 * x;
+    }
+    else if (transformation == Transformation.mirror_vd){
+        return 7 - y + 8 * x;
+    }
+    else if (transformation == Transformation.mirror_vhd){
+        return 7 - y + 8 * (7 - x);
+    }
+    assert(false);
+    */
+}
+
+int canonical_index(int px, int py, int ox, int oy)
+{
+    int result = px + 8 * (py + 8 * (ox + 8 * oy));
+    int temp;
+    int tmp;
+    //auto current_transformation = Transformation.none;
+    //transformation = current_transformation;
+    enum compare_and_replace = "
+        //current_transformation++;
+        temp = px + 8 * (py + 8 * (ox + 8 * oy));
+        if (temp < result){
+            result = temp;
+            //transformation = current_transformation;
+        }
+    ";
+
+    py = 7 - py;
+    oy = 7 - oy;
+    mixin(compare_and_replace);
+    px = 7 - px;
+    ox = 7 - ox;
+    mixin(compare_and_replace);
+    py = 7 - py;
+    oy = 7 - oy;
+    mixin(compare_and_replace);
+    tmp = px;
+    px = py;
+    py = tmp;
+    tmp = ox;
+    ox = oy;
+    oy = tmp;
+    mixin(compare_and_replace);
+    py = 7 - py;
+    oy = 7 - oy;
+    mixin(compare_and_replace);
+    px = 7 - px;
+    ox = 7 - ox;
+    mixin(compare_and_replace);
+    py = 7 - py;
+    oy = 7 - oy;
+    mixin(compare_and_replace);
+    return result;
+}
+
+bool legal(int px, int py, int ox, int oy)
+{
+    return abs(px - ox) > 1 && abs(py - oy) > 1;
+}
+
+
+string get_kings_index_table()
+{
+    bool[size_t] seen;
+    size_t[] canonical_table;
+    canonical_table.length = 64 * 64;
+    canonical_table[] = 64 * 64;
+    KingsPosition[] kings_position_table;
+    kings_position_table.length = 231;
+    size_t legal_index = 0;
+    foreach (player_x; 0..8){
+        foreach (player_y; 0..8){
+            auto player_index = player_x + player_y * 8;
+            foreach (opponent_x; 0..8){
+                foreach (opponent_y; 0..8){
+                    auto opponent_index = opponent_x + opponent_y * 8;
+                    auto c = canonical_index(player_x, player_y, opponent_x, opponent_y);
+                    if (c !in seen){
+                        if (legal(player_x, player_y, opponent_x, opponent_y)){
+                            canonical_table[c] = legal_index;
+                            kings_position_table[legal_index] = KingsPosition(player_index, opponent_index);
+                            legal_index += 1;
+                        }
+                        seen[c] = true;
+                    }
+                }
+            }
+        }
+    }
+    size_t[][] kings_index_table;
+    kings_index_table.length = 64;
+    foreach (player_x; 0..8){
+        foreach (player_y; 0..8){
+            auto player_index = player_x + player_y * 8;
+            kings_index_table[player_index].length = 64;
+            foreach (opponent_x; 0..8){
+                foreach (opponent_y; 0..8){
+                    auto opponent_index = opponent_x + opponent_y * 8;
+                    auto c = canonical_index(player_x, player_y, opponent_x, opponent_y);
+                    kings_index_table[player_index][opponent_index] = canonical_table[c];
+                }
+            }
+        }
+    }
+    return "
+        static immutable KingsPosition[] KINGS_POSITION_TABLE = %s;
+        static immutable size_t[][] KINGS_INDEX_TABLE = %s;
+    ".format(kings_position_table, kings_index_table);
+}
++/
 
 struct ChessNodeValue
 {
