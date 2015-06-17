@@ -8,15 +8,13 @@ import chess;
 import game_node;
 
 
-// Canonical legal configuration of kings
-// TODO
-/+
+// Canoninable legal configuration of kings
 struct KingsPosition
 {
     int player;
     int opponent;
 
-    mixin(get_kings_index_table);
+    mixin(get_kings_index_tables);
 
     size_t index() const
     out(result)
@@ -46,8 +44,9 @@ struct KingsPosition
 
     size_t piece_index(ulong piece)
     {
-        auto transformed_index = transform(bitScanForward(piece), player, opponent);
-        return _piece_index(transformed_index, KINGS_POSITION_TABLE[index]);
+        auto kp = KINGS_POSITION_TABLE[index];
+        auto transformed_index = transform(bitScanForward(piece), this, kp);
+        return _piece_index(transformed_index, kp);
     }
 
     ulong from_piece_index(size_t piece_index)
@@ -83,40 +82,142 @@ size_t _from_piece_index(size_t index, KingsPosition kp){
     return index + 2;
 }
 
+int _transform(int index, KingsPosition original, KingsPosition canonical){
+    int ix = index & 7;
+    int iy = index >> 3;
+    int px = original.player & 7;
+    int py = original.player >> 3;
+    int cpx = canonical.player & 7;
+    int cpy = canonical.player >> 3;
+    int cox = canonical.opponent & 7;
+    int coy = canonical.opponent >> 3;
+    int temp;
 
-enum Transformation {none, mirror_v, mirror_vh, mirror_h, mirror_hd, mirror_d, mirror_vd, mirror_vhd}
+    // Depends on the specific choice of canonical representation.
+    // The extra check is for E8 that took priority.
+    if (cpx == cpy || canonical.opponent == 4){
+        // Symmetry determined by the opponent and a few other factors.
+        int ox = original.opponent & 7;
+        int oy = original.opponent >> 3;
 
+        // Ad hoc.
+        if (px == cpx && py == cpy){
+            if (ox != cox){
+                return iy | (ix << 3);
+            }
+            return index;
+        }
 
-int transform(int index, int player, int opponent){
-    return 0;
+        if (ox != cox){
+            ox = 7 - ox;
+            ix = 7 - ix;
+        }
+        if (ox != cox){
+            temp = ox;
+            ox = oy;
+            oy = temp;
+            temp = ix;
+            ix = iy;
+            iy = temp;
+        }
+        if (ox != cox){
+            ix = 7 - ix;
+        }
+        if (oy != coy){
+            // Ad hoc.
+            if (px == 7 - py && px == 7 - cpx){
+                return iy | ((7 - ix) << 3);
+            }
+            iy = 7 - iy;
+        }
+        return ix | (iy << 3);
+    }
+    // Symmetry determined by the player.
+
+    if (px != cpx){
+        px = 7 - px;
+        ix = 7 - ix;
+    }
+    if (px != cpx){
+        temp = px;
+        px = py;
+        py = temp;
+        temp = ix;
+        ix = iy;
+        iy = temp;
+    }
+    if (px != cpx){
+        ix = 7 - ix;
+    }
+    if (py != cpy){
+        iy = 7 - iy;
+    }
+    return ix | (iy << 3);
     /*
-    if (transformation == Transformation.none){
-        return index;
+    int ix = index & 7;
+    int iy = index >> 3;
+    int ox = opponent & 7;
+    int oy = opponent >> 3;
+    int temp, minx, miny;
+
+    if (ox < 4){
+        minx = ox;
     }
-    int x = index & 7;
-    int y = index >> 3;
-    if (transformation == Transformation.mirror_v){
-        return x + 8 * (7 - y);
+    else {
+        minx = 7 - ox;
     }
-    else if (transformation == Transformation.mirror_vh){
-        return 7 - x + 8 * (7 - y);
+    if (oy < 4){
+        miny = oy;
     }
-    else if (transformation == Transformation.mirror_h){
-        return 7 - x + 8 * y;
+    else{
+        miny = 7 - oy;
     }
-    else if (transformation == Transformation.mirror_hd){
-        return y + 8 * (7 - x);
+    bool flip = minx < miny;
+    if (minx == miny){
+        int px = player & 7;
+        int py = player >> 3;
+        if (oy < 4){
+            if (ox < 4){
+                flip = py > px;
+            }
+            else {
+                flip = py > 7 - px;
+            }
+        }
+        else {
+            if (ox < 4){
+                flip = 7 - py > px;
+            }
+            else {
+                flip = py < px;
+            }
+        }
     }
-    else if (transformation == Transformation.mirror_d){
-        return y + 8 * x;
+    if (flip){
+        temp = ox;
+        ox = oy;
+        oy = temp;
+        temp = ix;
+        ix = iy;
+        iy = temp;
     }
-    else if (transformation == Transformation.mirror_vd){
-        return 7 - y + 8 * x;
+
+    if (oy < 4){
+        if (ox < 4){
+            return ix | (iy << 3);
+        }
+        else {
+            return (7 - ix) | (iy << 3);
+        }
     }
-    else if (transformation == Transformation.mirror_vhd){
-        return 7 - y + 8 * (7 - x);
+    else {
+        if (ox < 4){
+            return ix | ((7 - iy) << 3);
+        }
+        else {
+            return (7 - ix) | ((7 - iy) << 3);
+        }
     }
-    assert(false);
     */
 }
 
@@ -125,14 +226,10 @@ int canonical_index(int px, int py, int ox, int oy)
     int result = px + 8 * (py + 8 * (ox + 8 * oy));
     int temp;
     int tmp;
-    //auto current_transformation = Transformation.none;
-    //transformation = current_transformation;
     enum compare_and_replace = "
-        //current_transformation++;
         temp = px + 8 * (py + 8 * (ox + 8 * oy));
         if (temp < result){
             result = temp;
-            //transformation = current_transformation;
         }
     ";
 
@@ -166,38 +263,85 @@ int canonical_index(int px, int py, int ox, int oy)
 
 bool legal(int px, int py, int ox, int oy)
 {
-    return abs(px - ox) > 1 && abs(py - oy) > 1;
+    return abs(px - ox) > 1 || abs(py - oy) > 1;
 }
 
 
-string get_kings_index_table()
+// Representation chosen so that E1 and E8 are preserved to make castling easier.
+// Diagonally symmetric positions always have x = y and never x = 7 - y.
+string get_kings_index_tables()
 {
     bool[size_t] seen;
     size_t[] canonical_table;
     canonical_table.length = 64 * 64;
     canonical_table[] = 64 * 64;
     KingsPosition[] kings_position_table;
-    kings_position_table.length = 231;
+    kings_position_table.length = 462;
     size_t legal_index = 0;
+
+    enum collect_legal_representative = "
+        auto c = canonical_index(player_x, player_y, opponent_x, opponent_y);
+        if (c !in seen){
+            if (legal(player_x, player_y, opponent_x, opponent_y)){
+                canonical_table[c] = legal_index;
+                kings_position_table[legal_index] = KingsPosition(player_index, opponent_index);
+                legal_index += 1;
+            }
+            seen[c] = true;
+        }
+    ";
+
+    // E1
+    foreach (opponent_x; 0..8){
+        foreach (opponent_y; 0..8){
+            auto player_x = 4;
+            auto player_y = 7;
+            auto player_index = player_x + player_y * 8;
+            auto opponent_index = opponent_x + opponent_y * 8;
+            mixin(collect_legal_representative);
+        }
+    }
+
+    // E8
+    foreach (player_x; 0..8){
+        foreach (player_y; 0..8){
+            auto player_index = player_x + player_y * 8;
+            auto opponent_x = 4;
+            auto opponent_y = 0;
+            auto opponent_index = opponent_x + opponent_y * 8;
+            mixin(collect_legal_representative);
+        }
+    }
+
+    // Diagonally symmetric positions and a few others
+    foreach (player_x; 0..8){
+        auto player_y = player_x;
+        auto player_index = player_x + player_y * 8;
+        foreach (opponent_x; 0..8){
+            foreach (opponent_y; 0..8){
+                auto opponent_index = opponent_x + opponent_y * 8;
+                mixin(collect_legal_representative);
+            }
+        }
+    }
+
+    // Everything else
     foreach (player_x; 0..8){
         foreach (player_y; 0..8){
             auto player_index = player_x + player_y * 8;
             foreach (opponent_x; 0..8){
                 foreach (opponent_y; 0..8){
                     auto opponent_index = opponent_x + opponent_y * 8;
-                    auto c = canonical_index(player_x, player_y, opponent_x, opponent_y);
-                    if (c !in seen){
-                        if (legal(player_x, player_y, opponent_x, opponent_y)){
-                            canonical_table[c] = legal_index;
-                            kings_position_table[legal_index] = KingsPosition(player_index, opponent_index);
-                            legal_index += 1;
-                        }
-                        seen[c] = true;
-                    }
+                    mixin(collect_legal_representative);
                 }
             }
         }
     }
+
+    if (!__ctfe){
+        writeln(legal_index);
+    }
+
     size_t[][] kings_index_table;
     kings_index_table.length = 64;
     foreach (player_x; 0..8){
@@ -218,7 +362,6 @@ string get_kings_index_table()
         static immutable size_t[][] KINGS_INDEX_TABLE = %s;
     ".format(kings_position_table, kings_index_table);
 }
-+/
 
 struct ChessNodeValue
 {
@@ -497,6 +640,23 @@ struct ChessNodeValue
     }
 */
 
+unittest
+{
+    foreach (player_x; 0..8){
+        foreach (player_y; 0..8){
+            auto player_index = player_x + player_y * 8;
+            foreach (opponent_x; 0..8){
+                foreach (opponent_y; 0..8){
+                    auto opponent_index = opponent_x + opponent_y * 8;
+                    auto c = canonical_index(player_x, player_y, opponent_x, opponent_y);
+                    auto canonical_player_index = transform(player_index, player_index, opponent_index);
+                    auto canonical_opponent_index = transform(opponent_index, player_index, opponent_index);
+                    assert(c == canonical_player_index + 64 * canonical_opponent_index);
+                }
+            }
+        }
+    }
+}
 
 unittest
 {

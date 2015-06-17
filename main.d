@@ -50,15 +50,44 @@ void main()
     auto transpositions = &loc_trans;
     auto local_transpositions = &loc_trans;
 
-    // TODO: check that the canonical counts match with CanonicalChessState
+    //get_kings_index_tables;
+
+    foreach (p; 0..64){
+        foreach (o; 0..64){
+            if (legal(p & 7, p >> 3, o & 7, o >> 3)){
+                auto kp = KingsPosition(p, o);
+                auto ckp = KingsPosition.KINGS_POSITION_TABLE[kp.index];
+                p = transform(p, kp, ckp);
+                o = transform(o, kp, ckp);
+                if (p != ckp.player || o != ckp.opponent){
+                    ulong k1, k2;
+                    writeln(kp.player, ", ", kp.opponent);
+                    kp.get_boards(k1, k2);
+                    writeln(on_board(k1, k2));
+                    writeln(ckp.player, ", ", ckp.opponent);
+                    ckp.get_boards(k1, k2);
+                    writeln(on_board(k1, k2));
+                    writeln(p, ", ", o);
+                    writeln;
+                }
+            }
+        }
+    }
+
     /*
     foreach (kp; KingsPosition.KINGS_POSITION_TABLE){
         ulong k1, k2;
         kp.get_boards(k1, k2);
-        writeln(on_board(k1, k2));
+        int ox = kp.opponent & 7;
+        int oy = kp.opponent >> 3;
+        int px = kp.player & 7;
+        int py = kp.player >> 3;
+        if (px == 7 - py){
+            writeln(on_board(k1, k2));
+        }
     }
     */
-
+    /*
     auto fs = new FullSearch!(BoardType8, NodeValue, State8)();
 
     auto type = BoardType8(rectangle8(4, 4));
@@ -75,6 +104,7 @@ void main()
     writeln(type);
     writeln(State8.from_endgame_state(e, type, s));
     writeln(s);
+    */
 
     /*
     fs.initialize(type);
