@@ -64,6 +64,7 @@ size_t[string] player_edits(T)(State!T state)
             auto p = T(x, y);
             auto child = state;
             if ((state.playing_area & p) && child.make_move(p)){
+                child.ko.clear;
                 child.swap_turns;
                 auto endgame = child.endgame_state(type);
                 result[to_coord(x, y)] = endgame;
@@ -84,8 +85,10 @@ size_t[string] opponent_edits(T)(State!T state)
         foreach (x; 0..T.WIDTH){
             auto p = T(x, y);
             auto child = state;
+            child.ko.clear;
             child.swap_turns;
             if ((state.playing_area & p) && child.make_move(p)){
+                child.ko.clear;
                 auto endgame = child.endgame_state(type);
                 result[to_coord(x, y)] = endgame;
             }
@@ -142,14 +145,27 @@ NodeValue get_node_value(string endgame_type, size_t e)
 JSONValue process_go(string endgame_type, string endgame)
 {
     auto go_endgame_types = [
+        "2x1": BoardType8(rectangle8(2, 1)),
+        "2x2": BoardType8(rectangle8(2, 2)),
+        "3x1": BoardType8(rectangle8(3, 1)),
         "3x2": BoardType8(rectangle8(3, 2)),
         "3x3": BoardType8(rectangle8(3, 3)),
         "4x1": BoardType8(rectangle8(4, 1)),
         "4x2": BoardType8(rectangle8(4, 2)),
         "4x3": BoardType8(rectangle8(4, 3)),
         "4x4": BoardType8(rectangle8(4, 4)),
+        "5x1": BoardType8(rectangle8(5, 1)),
+        "5x2": BoardType8(rectangle8(5, 2)),
         "5x3": BoardType8(rectangle8(5, 3)),
-        "goplus": BoardType8(rectangle8(4, 2).south | rectangle8(2, 4).east)
+        "6x1": BoardType8(rectangle8(6, 1)),
+        "6x2": BoardType8(rectangle8(6, 2)),
+        "7x1": BoardType8(rectangle8(7, 1)),
+        "7x2": BoardType8(rectangle8(7, 2)),
+        "plus": BoardType8(rectangle8(4, 2).south | rectangle8(2, 4).east),
+        "petal": BoardType8(Board8(0, 0) | rectangle8(4, 2).south | rectangle8(2, 4).east),
+        "twist": BoardType8(rectangle8(3, 3) | rectangle8(3, 3).south.east),
+        "hassock": BoardType8(rectangle8(4, 3) | rectangle8(2, 4).east),
+        "notch": BoardType8(rectangle8(4, 4) ^ Board8(3, 3))
     ];
     JSONValue result = ["status": "error"];
     if (endgame_type !in go_endgame_types){

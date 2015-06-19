@@ -52,6 +52,7 @@ void main()
 
     //get_kings_index_tables;
 
+    /*
     bool[EndgameType] ets;
     foreach(et; EndgameType(2, 1, 0, 0, 0, 0, 0, 0, 0, 0).subtypes){
         ets[et] = true;
@@ -63,6 +64,43 @@ void main()
         writeln(et);
     }
     writeln(ets.length);
+    */
+
+    auto go_endgame_types = [
+        "2x1": BoardType8(rectangle8(2, 1)),
+        "2x2": BoardType8(rectangle8(2, 2)),
+        "3x1": BoardType8(rectangle8(3, 1)),
+        "3x2": BoardType8(rectangle8(3, 2)),
+        //"3x3": BoardType8(rectangle8(3, 3)),
+        "4x1": BoardType8(rectangle8(4, 1)),
+        "4x2": BoardType8(rectangle8(4, 2)),
+        //"4x3": BoardType8(rectangle8(4, 3)),
+        //"4x4": BoardType8(rectangle8(4, 4)),
+        "5x1": BoardType8(rectangle8(5, 1)),
+        "5x2": BoardType8(rectangle8(5, 2)),
+        //"5x3": BoardType8(rectangle8(5, 3)),
+        "6x1": BoardType8(rectangle8(6, 1)),
+        "6x2": BoardType8(rectangle8(6, 2)),
+        "7x1": BoardType8(rectangle8(7, 1))
+        //"7x2": BoardType8(rectangle8(7, 2)),
+        /*
+        "plus": BoardType8(rectangle8(4, 2).south | rectangle8(2, 4).east),
+        "petal": BoardType8(Board8(0, 0) | rectangle8(4, 2).south | rectangle8(2, 4).east),
+        "twist": BoardType8(rectangle8(3, 3) | rectangle8(3, 3).south.east),
+        "hassock": BoardType8(rectangle8(4, 3) | rectangle8(2, 4).east),
+        "notch": BoardType8(rectangle8(4, 4) ^ Board8(3, 3))
+        */
+    ];
+
+    foreach (key, bt; go_endgame_types){
+        auto s = State8(bt.playing_area);
+        //writeln("\"", key, "\" : ", s.endgame_state(bt), ",");
+        writeln(s);
+        auto fs = new FullSearch!(BoardType8, NodeValue, State8)();
+        fs.initialize(bt);
+        fs.calculate(true);
+        std.file.write("go" ~ key ~ ".dat", fs.tables[bt]);
+    }
 
     /*
     foreach (kp; KingsPosition.KINGS_POSITION_TABLE){
