@@ -52,6 +52,67 @@ size_t[string] moves(T)(State!T state)
     return result;
 }
 
+size_t[string] player_edits(T)(State!T state)
+{
+    size_t[string] result;
+    BoardType!T type;
+    if (state.is_leaf){
+        return result;
+    }
+    foreach (y; 0..T.HEIGHT){
+        foreach (x; 0..T.WIDTH){
+            auto p = T(x, y);
+            auto child = state;
+            if ((state.playing_area & p) && child.make_move(p)){
+                child.swap_turns;
+                auto endgame = child.endgame_state(type);
+                result[to_coord(x, y)] = endgame;
+            }
+        }
+    }
+    return result;
+}
+
+size_t[string] opponent_edits(T)(State!T state)
+{
+    size_t[string] result;
+    BoardType!T type;
+    if (state.is_leaf){
+        return result;
+    }
+    foreach (y; 0..T.HEIGHT){
+        foreach (x; 0..T.WIDTH){
+            auto p = T(x, y);
+            auto child = state;
+            child.swap_turns;
+            if ((state.playing_area & p) && child.make_move(p)){
+                auto endgame = child.endgame_state(type);
+                result[to_coord(x, y)] = endgame;
+            }
+        }
+    }
+    return result;
+}
+
+size_t[string] deletes(T)(State!T state){
+    size_t[string] result;
+    BoardType!T type;
+    foreach (y; 0..T.HEIGHT){
+        foreach (x; 0..T.WIDTH){
+            auto p = T(x, y);
+            if ((state.player | state.opponent) & p){
+                auto edit = state;
+                edit.ko.clear;
+                edit.player &= ~p;
+                edit.opponent &= ~p;
+                auto endgame = edit.endgame_state(type);
+                result[to_coord(x, y)] = endgame;
+            }
+        }
+    }
+    return result;
+}
+
 
 NodeValue get_node_value(string endgame_type, size_t e)
 {
@@ -123,6 +184,10 @@ JSONValue process_go(string endgame_type, string endgame)
 
     auto move_map = moves(s);
     result.object["moves"] = JSONValue(move_map);
+
+    result.object["player_edits"] = JSONValue(player_edits(s));
+    result.object["opponent_edits"] = JSONValue(opponent_edits(s));
+    result.object["deletes"] = JSONValue(deletes(s));
 
     auto v = get_node_value(endgame_type, e);
     result.object["low"] = v.low;

@@ -52,27 +52,17 @@ void main()
 
     //get_kings_index_tables;
 
-    foreach (p; 0..64){
-        foreach (o; 0..64){
-            if (legal(p & 7, p >> 3, o & 7, o >> 3)){
-                auto kp = KingsPosition(p, o);
-                auto ckp = KingsPosition.KINGS_POSITION_TABLE[kp.index];
-                p = transform(p, kp, ckp);
-                o = transform(o, kp, ckp);
-                if (p != ckp.player || o != ckp.opponent){
-                    ulong k1, k2;
-                    writeln(kp.player, ", ", kp.opponent);
-                    kp.get_boards(k1, k2);
-                    writeln(on_board(k1, k2));
-                    writeln(ckp.player, ", ", ckp.opponent);
-                    ckp.get_boards(k1, k2);
-                    writeln(on_board(k1, k2));
-                    writeln(p, ", ", o);
-                    writeln;
-                }
-            }
-        }
+    bool[EndgameType] ets;
+    foreach(et; EndgameType(2, 1, 0, 0, 0, 0, 0, 0, 0, 0).subtypes){
+        ets[et] = true;
     }
+    foreach(et; EndgameType(3, 0, 0, 0, 0, 0, 0, 0, 0, 0).subtypes){
+        ets[et] = true;
+    }
+    foreach(et; ets.byKey){
+        writeln(et);
+    }
+    writeln(ets.length);
 
     /*
     foreach (kp; KingsPosition.KINGS_POSITION_TABLE){

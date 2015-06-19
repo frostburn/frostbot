@@ -16,6 +16,18 @@ struct KingsPosition
 
     mixin(get_kings_index_tables);
 
+    this(int player, int opponent, bool dummy)
+    {
+        this.player = player;
+        this.opponent = opponent;
+    }
+
+    this(ulong player, ulong opponent)
+    {
+        this.player = bitScanForward(player);
+        this.opponent = bitScanForward(opponent);
+    }
+
     size_t index() const
     out(result)
     {
@@ -33,7 +45,8 @@ struct KingsPosition
     }
     body
     {
-        return KINGS_POSITION_TABLE[index];
+        auto indices = KINGS_POSITION_TABLE[index];
+        return KingsPosition(indices[0], indices[1], true);
     }
 
     void get_boards(out ulong player_king, out ulong opponent_king) const
@@ -44,19 +57,25 @@ struct KingsPosition
 
     size_t piece_index(ulong piece)
     {
-        auto kp = KINGS_POSITION_TABLE[index];
-        auto transformed_index = transform(bitScanForward(piece), this, kp);
-        return _piece_index(transformed_index, kp);
+        auto ckp = from_index(index);
+        auto transformed_index = _transform(bitScanForward(piece), this, ckp);
+        return _piece_index(transformed_index, ckp);
     }
 
     ulong from_piece_index(size_t piece_index)
     {
         return 1UL << _from_piece_index(piece_index, this);
     }
+
+    string toString()
+    {
+        return format("KingsPosition(%d, %d, true)", player, opponent);
+    }
 }
 
 
-size_t _piece_index(size_t index, KingsPosition kp){
+size_t _piece_index(size_t index, KingsPosition kp)
+{
     if (index < kp.player){
         if (index < kp.opponent){
             return index;
@@ -69,17 +88,23 @@ size_t _piece_index(size_t index, KingsPosition kp){
     return index - 2;
 }
 
-size_t _from_piece_index(size_t index, KingsPosition kp){
-    if (index < kp.player){
-        if (index < kp.opponent){
-            return index;
+size_t _from_piece_index(size_t index, KingsPosition kp)
+{
+    if (index >= kp.player){
+        index += 1;
+        if (index >= kp.opponent){
+            return index + 1;
         }
-        return index + 1;
+        return index;
     }
-    else if (index < kp.opponent){
-        return index + 1;
+    else if (index >= kp.opponent){
+        index += 1;
+        if (index >= kp.player){
+            return index + 1;
+        }
+        return index;
     }
-    return index + 2;
+    return index;
 }
 
 int _transform(int index, KingsPosition original, KingsPosition canonical){
@@ -93,20 +118,10 @@ int _transform(int index, KingsPosition original, KingsPosition canonical){
     int coy = canonical.opponent >> 3;
     int temp;
 
-    // Depends on the specific choice of canonical representation.
-    // The extra check is for E8 that took priority.
-    if (cpx == cpy || canonical.opponent == 4){
-        // Symmetry determined by the opponent and a few other factors.
+    // The extra check is for E8 that took priority in the representation.
+    if (canonical.opponent == 4){
         int ox = original.opponent & 7;
         int oy = original.opponent >> 3;
-
-        // Ad hoc.
-        if (px == cpx && py == cpy){
-            if (ox != cox){
-                return iy | (ix << 3);
-            }
-            return index;
-        }
 
         if (ox != cox){
             ox = 7 - ox;
@@ -124,16 +139,30 @@ int _transform(int index, KingsPosition original, KingsPosition canonical){
             ix = 7 - ix;
         }
         if (oy != coy){
-            // Ad hoc.
-            if (px == 7 - py && px == 7 - cpx){
-                return iy | ((7 - ix) << 3);
-            }
             iy = 7 - iy;
         }
         return ix | (iy << 3);
     }
-    // Symmetry determined by the player.
 
+    // Depends on the specific choice of canonical representation.
+    if (cpx == cpy){
+        // Mirror symmetries determined by player.
+        int ox = original.opponent & 7;
+        if (px != cpx){
+            ox = 7 - ox;
+            ix = 7 - ix;
+        }
+        if (py != cpy){
+            iy = 7 - iy;
+        }
+        // Flip symmetry determined by opponent.
+        if (ox != cox){
+            return iy | (ix << 3);
+        }
+        return ix | (iy << 3);
+    }
+
+    // Symmetry determined by the player.
     if (px != cpx){
         px = 7 - px;
         ix = 7 - ix;
@@ -153,72 +182,6 @@ int _transform(int index, KingsPosition original, KingsPosition canonical){
         iy = 7 - iy;
     }
     return ix | (iy << 3);
-    /*
-    int ix = index & 7;
-    int iy = index >> 3;
-    int ox = opponent & 7;
-    int oy = opponent >> 3;
-    int temp, minx, miny;
-
-    if (ox < 4){
-        minx = ox;
-    }
-    else {
-        minx = 7 - ox;
-    }
-    if (oy < 4){
-        miny = oy;
-    }
-    else{
-        miny = 7 - oy;
-    }
-    bool flip = minx < miny;
-    if (minx == miny){
-        int px = player & 7;
-        int py = player >> 3;
-        if (oy < 4){
-            if (ox < 4){
-                flip = py > px;
-            }
-            else {
-                flip = py > 7 - px;
-            }
-        }
-        else {
-            if (ox < 4){
-                flip = 7 - py > px;
-            }
-            else {
-                flip = py < px;
-            }
-        }
-    }
-    if (flip){
-        temp = ox;
-        ox = oy;
-        oy = temp;
-        temp = ix;
-        ix = iy;
-        iy = temp;
-    }
-
-    if (oy < 4){
-        if (ox < 4){
-            return ix | (iy << 3);
-        }
-        else {
-            return (7 - ix) | (iy << 3);
-        }
-    }
-    else {
-        if (ox < 4){
-            return ix | ((7 - iy) << 3);
-        }
-        else {
-            return (7 - ix) | ((7 - iy) << 3);
-        }
-    }
-    */
 }
 
 int canonical_index(int px, int py, int ox, int oy)
@@ -275,7 +238,7 @@ string get_kings_index_tables()
     size_t[] canonical_table;
     canonical_table.length = 64 * 64;
     canonical_table[] = 64 * 64;
-    KingsPosition[] kings_position_table;
+    int[][] kings_position_table;
     kings_position_table.length = 462;
     size_t legal_index = 0;
 
@@ -284,7 +247,7 @@ string get_kings_index_tables()
         if (c !in seen){
             if (legal(player_x, player_y, opponent_x, opponent_y)){
                 canonical_table[c] = legal_index;
-                kings_position_table[legal_index] = KingsPosition(player_index, opponent_index);
+                kings_position_table[legal_index] = [player_index, opponent_index];
                 legal_index += 1;
             }
             seen[c] = true;
@@ -358,9 +321,180 @@ string get_kings_index_tables()
         }
     }
     return "
-        static immutable KingsPosition[] KINGS_POSITION_TABLE = %s;
+        static immutable int[][] KINGS_POSITION_TABLE = %s;
         static immutable size_t[][] KINGS_INDEX_TABLE = %s;
     ".format(kings_position_table, kings_index_table);
+}
+
+struct EndgameType
+{
+    int p_pawns;
+    int o_pawns;
+    int p_knights;
+    int o_knights;
+    int p_bishops;
+    int o_bishops;
+    int p_rooks;
+    int o_rooks;
+    int p_queens;
+    int o_queens;
+
+    enum MEMBERS = "[p_pawns, o_pawns, p_knights, o_knights, p_bishops, o_bishops, p_rooks, o_rooks, p_queens, o_queens]";
+
+    this(int p_pawns, int o_pawns, int p_knights, int o_knights, int p_bishops, int o_bishops, int p_rooks, int o_rooks, int p_queens, int o_queens)
+    {
+        this.p_pawns = p_pawns;
+        this.o_pawns = o_pawns;
+        this.p_knights = p_knights;
+        this.o_knights = o_knights;
+        this.p_bishops = p_bishops;
+        this.o_bishops = o_bishops;
+        this.p_rooks = p_rooks;
+        this.o_rooks = o_rooks;
+        this.p_queens = p_queens;
+        this.o_queens = o_queens;
+    }
+
+    this(int[] members)
+    {
+        p_pawns = members[0];
+        o_pawns = members[1];
+        p_knights = members[2];
+        o_knights = members[3];
+        p_bishops = members[4];
+        o_bishops = members[5];
+        p_rooks = members[6];
+        o_rooks = members[7];
+        p_queens = members[8];
+        o_queens = members[9];
+    }
+
+    hash_t toHash() const nothrow @safe
+    {
+        static assert(hash_t.sizeof > 4);
+        hash_t result = 0;
+        foreach (member; mixin(MEMBERS)){
+            result = 16 * result + member;
+        }
+        return result;
+    }
+
+    bool opEquals(in EndgameType rhs) const nothrow @safe
+    {
+        return toHash == rhs.toHash;
+    }
+
+    size_t size()
+    {
+        size_t result = 64 * 64;
+        foreach (member; mixin(MEMBERS)){
+            foreach (i; 0..member){
+                result *= 64;
+            }
+        }
+        return result;
+    }
+
+    EndgameType pair()
+    {
+        return EndgameType(o_pawns, p_pawns, o_knights, p_knights, o_bishops, p_bishops, o_rooks, p_rooks, o_queens, p_queens);
+    }
+
+    bool[EndgameType] _subtypes()
+    {
+        bool[EndgameType] result;
+        int[] members = mixin(MEMBERS);
+        foreach (i, member; members){
+            if (member > 0){
+                int[] submembers;
+                foreach (j, submember; members){
+                    if (i == j){
+                        submembers ~= submember - 1;
+                    }
+                    else {
+                        submembers ~= submember;
+                    }
+                }
+                auto subtype = EndgameType(submembers);
+                foreach (st; subtype._subtypes.byKey){
+                    result[st] = true;
+                }
+                // Pawn promotions
+                if (i <= 1){
+                    foreach (k; 2..10){
+                        if (k % 2 != i){
+                            continue;
+                        }
+                        submembers.length = 0;
+                        foreach (j, submember; members){
+                            if (i == j){
+                                submembers ~= submember - 1;
+                            }
+                            else if (k == j){
+                                submembers ~= submember + 1;
+                            }
+                            else {
+                                submembers ~= submember;
+                            }
+                        }
+                        subtype = EndgameType(submembers);
+                        foreach (st; subtype._subtypes.byKey){
+                            result[st] = true;
+                        }
+                    }
+                }
+            }
+        }
+        result[this] = true;
+        result[pair] = true;
+        return result;
+    }
+
+    EndgameType[] subtypes()
+    {
+        EndgameType[] result;
+        foreach (subtype; _subtypes.byKey){
+            result ~= subtype;
+        }
+        return result;
+    }
+
+    string toString()
+    {
+        string r = "k";
+        foreach (i; 0..p_pawns){
+            r ~= "p";
+        }
+        foreach (i; 0..p_knights){
+            r ~= "n";
+        }
+        foreach (i; 0..p_bishops){
+            r ~= "b";
+        }
+        foreach (i; 0..p_rooks){
+            r ~= "r";
+        }
+        foreach (i; 0..p_queens){
+            r ~= "q";
+        }
+        r ~= "_k";
+        foreach (i; 0..o_pawns){
+            r ~= "p";
+        }
+        foreach (i; 0..o_knights){
+            r ~= "n";
+        }
+        foreach (i; 0..o_bishops){
+            r ~= "b";
+        }
+        foreach (i; 0..o_rooks){
+            r ~= "r";
+        }
+        foreach (i; 0..o_queens){
+            r ~= "q";
+        }
+        return r;
+    }
 }
 
 struct ChessNodeValue
@@ -543,89 +677,6 @@ struct ChessNodeValue
 }
 
 /*
-    CanonicalChessState s;
-    auto type = EndgameType(0, 0, 1, 0, 1, 0, 0, 0, 0, 0);
-    //writeln(type);
-
-    NodeValue[][EndgameType] tables;
-    size_t[EndgameType] valid;
-
-    foreach (subtype; type.subtypes.byKey){
-        writeln(subtype);
-        writeln(subtype.size);
-        tables[subtype] = [];
-        tables[subtype].length = subtype.size;
-        valid[subtype] = 0;
-    }
-
-    foreach (subtype, table; tables){
-        foreach(e; 0..table.length){
-            if (CanonicalChessState.from_endgame_state(e, subtype, s)){
-                size_t ce = s.endgame_state(subtype);
-                table[ce] = NodeValue(-float.infinity, float.infinity, float.infinity, float.infinity);
-                valid[subtype] += 1;
-            }
-        }
-    }
-
-    writeln(valid);
-
-    size_t i = 0;
-    bool changed = true;
-    while (changed) {
-        i += 1;
-        writeln("Iteration ", i);
-        changed = false;
-        foreach (subtype, table; tables){
-            foreach(e; 0..table.length){
-                auto v = table[e];
-                if (v.initialized){
-                    CanonicalChessState.from_endgame_state(e, subtype, s);
-                    float score;
-                    auto children = s.children(score);
-                    float low = -float.infinity;
-                    float high = -float.infinity;
-                    float low_distance = float.infinity;
-                    float high_distance = -float.infinity;
-                    if (children.length){
-                        foreach(child; children){
-                            EndgameType ct;
-                            auto ce = child.endgame_state(ct);
-                            auto child_v = tables[ct][ce];
-                            if (-child_v.high > low){
-                                low = -child_v.high;
-                                low_distance = child_v.high_distance;
-                            }
-                            else if (-child_v.high == low && child_v.high_distance < low_distance){
-                                low_distance = child_v.high_distance;
-                            }
-                            if (-child_v.low > high){
-                                high = -child_v.low;
-                                high_distance = child_v.low_distance;
-                            }
-                            else if (-child_v.low == high && child_v.low_distance > high_distance){
-                                high_distance = child_v.low_distance;
-                            }
-                        }
-                        low_distance += 1;
-                        high_distance += 1;
-                    }
-                    else {
-                        low = high = score;
-                        low_distance = high_distance = 0;
-                    }
-                    //writeln(low, high, low_distance, high_distance);
-                    auto new_v = NodeValue(low, high, low_distance, high_distance);
-                    if (new_v != v){
-                        changed = true;
-                    }
-                    table[e] = new_v;
-                }
-            }
-        }
-    }
-
-
     float max_dist = 0;
     foreach(e; 0..tables[type].length){
         auto v = tables[type][e];
@@ -642,16 +693,54 @@ struct ChessNodeValue
 
 unittest
 {
-    foreach (player_x; 0..8){
-        foreach (player_y; 0..8){
-            auto player_index = player_x + player_y * 8;
-            foreach (opponent_x; 0..8){
-                foreach (opponent_y; 0..8){
-                    auto opponent_index = opponent_x + opponent_y * 8;
-                    auto c = canonical_index(player_x, player_y, opponent_x, opponent_y);
-                    auto canonical_player_index = transform(player_index, player_index, opponent_index);
-                    auto canonical_opponent_index = transform(opponent_index, player_index, opponent_index);
-                    assert(c == canonical_player_index + 64 * canonical_opponent_index);
+    foreach (p; 0..64){
+        foreach (o; 0..64){
+            if (legal(p & 7, p >> 3, o & 7, o >> 3)){
+                auto kp = KingsPosition(p, o, true);
+                auto ckp = KingsPosition.from_index(kp.index);
+                auto tp = _transform(p, kp, ckp);
+                auto to = _transform(o, kp, ckp);
+                if (tp != ckp.player || to != ckp.opponent){
+                    ulong k1, k2;
+                    kp.get_boards(k1, k2);
+                    writeln(on_board(k1, k2));
+                    ckp.get_boards(k1, k2);
+                    writeln(on_board(k1, k2));
+                    writeln(on_board(1UL << tp, 1UL << to));
+                    writeln;
+                }
+                assert(tp == ckp.player && to == ckp.opponent);
+            }
+        }
+    }
+}
+
+unittest
+{
+    foreach (p; 0..64){
+        foreach (o; 0..64){
+            if (legal(p & 7, p >> 3, o & 7, o >> 3)){
+                auto kp = KingsPosition(p, o, true);
+                auto ckp = KingsPosition.from_index(kp.index);
+                auto tp = _transform(p, kp, ckp);
+                auto to = _transform(o, kp, ckp);
+                assert(tp == ckp.player && to == ckp.opponent);
+                foreach (n; 0..64){
+                    if (n != p && n != o){
+                        auto i = kp.piece_index(1UL << n);
+                        auto n1 = ckp.from_piece_index(i);
+                        ulong k1, k2;
+                        ckp.get_boards(k1, k2);
+                        auto s = PseudoChessState((1UL << p) | (1UL << n), 0, 1UL << n, 0, 0, 0, (1UL << p) | (1UL << o), 0);
+                        auto cs = PseudoChessState(k1 | n1, 0, n1, 0, 0, 0, k1 | k2, 0);
+                        if (CanonicalChessState(s) != CanonicalChessState(cs)){
+                            writeln(_transform(o, kp, ckp));
+                            writeln(_transform(n, kp, ckp));
+                            writeln(s);
+                            writeln(cs);
+                        }
+                        assert(CanonicalChessState(s) == CanonicalChessState(cs));
+                    }
                 }
             }
         }
