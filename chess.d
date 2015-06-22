@@ -1,5 +1,8 @@
+import std.format;
+import std.range;
 import std.stdio;
 import std.string;
+import std.uni;
 
 import utils;
 import chess_endgame;
@@ -130,19 +133,17 @@ ulong[] separate(ulong pieces) pure nothrow @safe
     return result;
 }
 
-/*
-ulong[] separate(ulong pieces)
+int[] indices(ulong pieces) pure nothrow @safe
 {
-    ulong[] result;
-    foreach (i; 0..64){
-        auto piece = 1UL << i;
-        if (piece & pieces){
-            result ~= piece;
-        }
+    int[] result;
+    while (pieces){
+        auto index = bitScanForward(pieces);
+        auto piece = (1UL << index);
+        result ~= index;
+        pieces ^= piece;
     }
     return result;
 }
-*/
 
 string on_board(ulong pieces, ulong other_pieces=0)
 {
@@ -383,6 +384,18 @@ struct PseudoChessState
         */
     }
 
+    void canonize_enpassant_raw()
+    {
+        auto temp = (~player & pawns).south;
+        enpassant &= RANK3 & (temp.east | temp.west);
+    }
+
+    void canonize_enpassant()
+    {
+        auto temp = (player & pawns).north;
+        enpassant &= RANK6 & (temp.east | temp.west);
+    }
+
     /*
     invariant
     {
@@ -400,7 +413,8 @@ struct PseudoChessState
     }
     */
 
-    bool valid_before()
+    // Requires the board to be in standard orientation
+    bool valid()
     {
         if (player & empty){
             return false;
@@ -414,9 +428,24 @@ struct PseudoChessState
         if (pawns.mirror_v + knights.mirror_v + bishops.mirror_v + rooks.mirror_v + queens.mirror_v + kings.mirror_v != ~empty.mirror_v){
             return false;
         }
-        // This actually checks that the opposing king cannot be taken
-        // because valid_before is called prior to canonical conversion.
-        return !king_in_check;
+        if (pawns & (RANK1 | RANK8)){
+            return false;
+        }
+        if (enpassant){
+            if (enpassant & (~empty | ~RANK6)){
+                return false;
+            }
+            if (enpassant.popcount != 1){
+                return false;
+            }
+            if (enpassant.north & ~empty){
+                return false;
+            }
+            if (!(enpassant.south & ~player & pawns)){
+                return false;
+            }
+        }
+        return !opponent_king_in_check;
     }
 
     bool king_in_check()
@@ -435,7 +464,7 @@ struct PseudoChessState
     bool opponent_king_in_check()
     {
         auto king = ~player & kings;
-        return !(
+        return (
             wpawn_attacks(player & pawns, king) ||
             knight_attacks(player & knights, king) ||
             rook_attacks(player & (rooks | queens), king, empty) ||
@@ -452,10 +481,8 @@ struct PseudoChessState
             actions ~= PawnPush(pawn | pawn.north, 0);
         }
         pushable_pawns &= RANK2 & empty.south2;
-        auto temp = (~player & pawns).south;
-        auto valid_enpassant = RANK3 & (temp.east | temp.west);
         foreach (pawn; pushable_pawns.separate){
-            actions ~= PawnPush(pawn | pawn.north2, pawn.north & valid_enpassant);
+            actions ~= PawnPush(pawn | pawn.north2, pawn.north);
         }
         return actions;
     }
@@ -868,15 +895,13 @@ struct PseudoChessState
             return result;
         }
 
-        // This would be required to prevent non-finishable games.
-        /*
+        // This is required to prevent non-finishable games.
         if ((kings | pawns) == ~empty){
             if ((player & pawns) && !has_pawn_move && !kings_can_capture_pawns){
                 score = 0;
                 return [];
             }
         }
-        */
 
         return result;
     }
@@ -886,14 +911,14 @@ struct PseudoChessState
         auto pawns = ~player & this.pawns;
         auto temp = pawns.south;
         auto space = empty & ~(temp.east | temp.west);
-        bool player_can_capture = king_can_reach(player & kings, pawns, space);
+        bool player_can_capture = king_can_reach(player & kings, pawns, space | pawns);
         pawns = player & this.pawns;
         temp = pawns.north;
         space = empty & ~(temp.east | temp.west);
-        return player_can_capture || king_can_reach(~player & kings, pawns, space);
+        return player_can_capture || king_can_reach(~player & kings, pawns, space | pawns);
     }
 
-    // TODO: For pawns canonize player king to the east and mark enpassant as pawn on the first rank.
+    // TODO: For pawns canonize player king to the east
     size_t endgame_state(out EndgameType type)
     {
         auto opponent = ~player;
@@ -920,80 +945,260 @@ struct PseudoChessState
             popcount(o_queens)
         );
         size_t endgame = 0;
-        string serialize_member(string member){
-            return "
-                while (" ~ member ~ "){
-                    size_t index = bitScanForward(" ~ member ~ ");
-                    endgame = index + 64 * endgame;
-                    " ~ member ~ " ^= (1UL << index);
+        if (pawns){
+            size_t p_king = bitScanForward(player & kings);
+            size_t o_king = bitScanForward(opponent & kings);
+            string serialize_member(string member){
+                return "
+                    foreach (index; " ~ member ~ ".indices){
+                        endgame = _piece_index(index, p_king, o_king) + 62 * endgame;
+                    }
+                ";
+            }
+            string serialize_rook(string member){
+                return "
+                    foreach (rook; " ~ member ~ ".separate){
+                        if (rook & unmoved){
+                            if (rook & HFILE){
+                                endgame = 62 + 64 * endgame;
+                            }
+                            else if (rook & AFILE){
+                                endgame = 63 + 64 * endgame;
+                            }
+                            else {
+                                assert(false);
+                            }
+                        }
+                        else {
+                            endgame = _piece_index(bitScanForward(rook), p_king, o_king) + 64 * endgame;
+                        }
+                    }
+                ";
+            }
+            foreach (index; p_pawns.indices){
+                assert(index >= 8);
+                endgame = index - 8 + 48 * endgame;
+            }
+            foreach (index; o_pawns.indices){
+                if ((1UL << (index - 8)) & enpassant){
+                    index -= 24;
                 }
-            ";
+                endgame = index + 56 * endgame;
+            }
+            mixin(serialize_member("p_knights"));
+            mixin(serialize_member("o_knights"));
+            mixin(serialize_member("p_bishops"));
+            mixin(serialize_member("o_bishops"));
+            mixin(serialize_rook("p_rooks"));
+            mixin(serialize_rook("o_rooks"));
+            mixin(serialize_member("p_queens"));
+            mixin(serialize_member("o_queens"));
+
+            endgame = p_king + 64 * endgame;
+            endgame = o_king + 64 * endgame;
         }
-        mixin(serialize_member("p_pawns"));
-        mixin(serialize_member("o_pawns"));
-        mixin(serialize_member("p_knights"));
-        mixin(serialize_member("o_knights"));
-        mixin(serialize_member("p_bishops"));
-        mixin(serialize_member("o_bishops"));
-        mixin(serialize_member("p_rooks"));
-        mixin(serialize_member("o_rooks"));
-        mixin(serialize_member("p_queens"));
-        mixin(serialize_member("o_queens"));
-        endgame = bitScanForward(player & kings) + 64 * endgame;
-        endgame = bitScanForward(opponent & kings) + 64 * endgame;
+        else {
+            auto kp = KingsPosition(player & kings, opponent & kings);
+            string serialize_member_(string member){
+                return "
+                    foreach (index; " ~ member ~ ".indices){
+                        endgame = kp.piece_index(index) + 62 * endgame;
+                    }
+                ";
+            }
+            string serialize_rook_(string member){
+                return "
+                    foreach (rook; " ~ member ~ ".separate){
+                        if (rook & unmoved){
+                            if (rook & HFILE){
+                                endgame = 62 + 64 * endgame;
+                            }
+                            else if (rook & AFILE){
+                                endgame = 63 + 64 * endgame;
+                            }
+                            else {
+                                assert(false);
+                            }
+                        }
+                        else {
+                            endgame = kp.piece_index(bitScanForward(rook)) + 64 * endgame;
+                        }
+                    }
+                ";
+            }
+            mixin(serialize_member_("p_knights"));
+            mixin(serialize_member_("o_knights"));
+            mixin(serialize_member_("p_bishops"));
+            mixin(serialize_member_("o_bishops"));
+            mixin(serialize_rook_("p_rooks"));
+            mixin(serialize_rook_("o_rooks"));
+            mixin(serialize_member_("p_queens"));
+            mixin(serialize_member_("o_queens"));
+            endgame = kp.index + KingsPosition.size * endgame;
+        }
         return endgame;
     }
 
     static bool from_endgame_state(size_t endgame, EndgameType type, out PseudoChessState state)
     {
+        size_t original_endgame = endgame;
+
         ulong player;
         ulong pawns;
         ulong knights;
         ulong bishops;
         ulong rooks;
         ulong queens;
-        ulong kings = 1UL << (endgame % 64);
-        endgame /= 64;
-        player |= kings;
-        kings |= 1UL << (endgame % 64);
-        endgame /= 64;
-        if (kings.popcount != 2){
-            return false;
-        }
-        string unravel_member(string member){
+        ulong kings;
+        ulong unmoved;
+        ulong enpassant;
+
+        string unravel_member(string member, string indexer="_from_piece_index(endgame % 62, p_king, o_king)"){
             return "
                 foreach (i; 0..type.o_" ~ member ~ "){
-                    " ~ member ~ " |= (1UL << (endgame % 64));
-                    endgame /= 64;
+                    " ~ member ~ " |= 1UL << " ~ indexer ~ ";
+                    endgame /= 62;
                 }
                 if (" ~ member ~ ".popcount != type.o_" ~ member ~ "){
                     return false;
                 }
                 player |= " ~ member ~ ";
                 foreach (i; 0..type.p_" ~ member ~ "){
-                    " ~ member ~ " |= (1UL << (endgame % 64));
-                    endgame /= 64;
+                    " ~ member ~ " |= 1UL << " ~ indexer ~ ";
+                    endgame /= 62;
                 }
                 if (" ~ member ~ ".popcount != type.p_" ~ member ~ " + type.o_" ~ member ~ "){
                     return false;
                 }
+                player ^= " ~ member ~ ";
             ";
         }
 
-        mixin(unravel_member("queens"));
-        mixin(unravel_member("rooks"));
-        mixin(unravel_member("bishops"));
-        mixin(unravel_member("knights"));
-        mixin(unravel_member("pawns"));
+        string unravel_rooks(string indexer="_from_piece_index(index, p_king, o_king)"){
+            return "
+                foreach (i; 0..type.o_rooks){
+                    auto index = endgame % 64;
+                    if (index >= 62 && !(~player & kings & EFILE & RANK8)){
+                        return false;
+                    }
+                    if (index == 62){
+                        rooks |= HFILE & RANK8;
+                        unmoved |= (EFILE | HFILE) & RANK8;
+                    }
+                    else if (index == 63){
+                        rooks |= AFILE & RANK8;
+                        unmoved |= (AFILE | EFILE) & RANK8;
+                    }
+                    else {
+                        rooks |= 1UL << " ~ indexer ~ ";
+                    }
+                    endgame /= 64;
+                }
+                if (rooks.popcount != type.o_rooks){
+                    return false;
+                }
+                player |= rooks;
+                foreach (i; 0..type.p_rooks){
+                    auto index = endgame % 64;
+                    if (index >= 62 && !(player & kings & EFILE & RANK1)){
+                        return false;
+                    }
+                    if (index == 62){
+                        rooks |= HFILE & RANK1;
+                        unmoved |= (EFILE | HFILE) & RANK1;
+                    }
+                    else if (index == 63){
+                        rooks |= AFILE & RANK1;
+                        unmoved |= (AFILE | EFILE) & RANK1;
+                    }
+                    else {
+                        rooks |= 1UL << " ~ indexer ~ ";
+                    }
+                    endgame /= 64;
+                }
+                if (rooks.popcount != type.p_rooks + type.o_rooks){
+                    return false;
+                }
+                player ^= rooks;
+            ";
+        }
 
-        state = PseudoChessState(player, pawns, knights, bishops, rooks, queens, kings, 0);
-        return state.valid_before;
+        if (type.p_pawns || type.o_pawns){
+            size_t o_king = endgame % 64;
+            kings = 1UL << o_king;
+            endgame /= 64;
+            player |= kings;
+            size_t p_king = endgame % 64;
+            kings |= 1UL << p_king;
+            endgame /= 64;
+            player ^= kings;
+            if (kings.popcount != 2){
+                return false;
+            }
+
+            mixin(unravel_member("queens"));
+            mixin(unravel_rooks);
+            mixin(unravel_member("bishops"));
+            mixin(unravel_member("knights"));
+
+            foreach (i; 0..type.o_pawns){
+                auto index = endgame % 56;
+                if (index < 8){
+                    pawns |= 1UL << (index + 24);
+                    enpassant |= 1UL << (index + 16);
+                }
+                else {
+                    pawns |= 1UL << index;
+                }
+                endgame /= 56;
+            }
+            if (pawns.popcount != type.o_pawns){
+                return false;
+            }
+            player |= pawns;
+            foreach (i; 0..type.p_pawns){
+                auto index = endgame % 48;
+                pawns |= 1UL << (index + 8);
+                endgame /= 48;
+            }
+            if (pawns.popcount != type.p_pawns + type.o_pawns){
+                return false;
+            }
+            player ^= pawns;
+
+            /*
+            player = player.mirror_v;
+            pawns = pawns.mirror_v;
+            knights = knights.mirror_v;
+            bishops = bishops.mirror_v;
+            rooks = rooks.mirror_v;
+            queens = queens.mirror_v;
+            kings = kings.mirror_v;
+            enpassant = enpassant.mirror_v;
+            */
+        }
+        else {
+            auto kp = KingsPosition.from_index(endgame % KingsPosition.size);
+            endgame /= KingsPosition.size;
+            kp.get_boards(player, kings);
+            kings |= player;
+
+            mixin(unravel_member("queens", "kp.from_piece_index(endgame % 62)"));
+            mixin(unravel_rooks("kp.from_piece_index(index)"));
+            mixin(unravel_member("bishops", "kp.from_piece_index(endgame % 62)"));
+            mixin(unravel_member("knights", "kp.from_piece_index(endgame % 62)"));
+        }
+        state = PseudoChessState(player, pawns, knights, bishops, rooks, queens, kings, unmoved, enpassant);
+        return state.valid;
     }
 
-    void pseudo_decanonize()
+    void swap_turns()
     {
-        // This is just a visual trick
         player = ~player & ~empty;
+    }
+
+    void mirror_v()
+    {
         player = player.mirror_v;
         pawns = pawns.mirror_v;
         knights = knights.mirror_v;
@@ -1075,6 +1280,307 @@ struct PseudoChessState
 }
 
 
+struct ChessState
+{
+    PseudoChessState state;
+    bool white_to_play = true;
+    int halfmove_clock = 0;
+    int fullmove_number = 1;
+
+    this(PseudoChessState state, bool white_to_play=true, int halfmove_clock=0, int fullmove_number=1)
+    {
+        this.state = state;
+        this.white_to_play = white_to_play;
+        this.halfmove_clock = halfmove_clock;
+        this.fullmove_number = fullmove_number;
+    }
+
+    this(string fen)
+    {
+        ulong player;
+        ulong white;
+        ulong black;
+        ulong pawns;
+        ulong knights;
+        ulong bishops;
+        ulong rooks;
+        ulong queens;
+        ulong kings;
+        ulong unmoved;
+        ulong enpassant;
+        foreach (i, part; fen.split(" ")){
+            if (i == 0){
+                part = part.replace("8", "11111111");
+                part = part.replace("7", "1111111");
+                part = part.replace("6", "111111");
+                part = part.replace("5", "11111");
+                part = part.replace("4", "1111");
+                part = part.replace("3", "111");
+                part = part.replace("2", "11");
+                part = part.replace("/", "");
+                ulong p = 1;
+                foreach (piece_; part){
+                    if (piece_.isUpper){
+                        white |= p;
+                    }
+                    else if (piece_.isLower){
+                        black |= p;
+                    }
+                    auto piece = piece_.toLower;
+                    if (piece == 'p'){
+                        pawns |= p;
+                    }
+                    else if (piece == 'n'){
+                        knights |= p;
+                    }
+                    else if (piece == 'b'){
+                        bishops |= p;
+                    }
+                    else if (piece == 'r'){
+                        rooks |= p;
+                    }
+                    else if (piece == 'q'){
+                        queens |= p;
+                    }
+                    else if (piece == 'k'){
+                        kings |= p;
+                    }
+                    p <<= 1;
+                }
+                player = white;
+            }
+            if (i == 1 && part == "b"){
+                player = black;
+                white_to_play = false;
+            }
+            // Castling rights. Errors are ignored.
+            if (i == 2){
+                foreach (right; part){
+                    if (white & kings & EFILE & RANK1){
+                        if (right == 'K'){
+                            if (white & rooks & HFILE & RANK1){
+                                unmoved |= (EFILE | HFILE) & RANK1;
+                            }
+                        }
+                        else if (right == 'Q'){
+                            if (white & rooks & AFILE & RANK1){
+                                unmoved |= (AFILE | EFILE) & RANK1;
+                            }
+                        }
+                    }
+                    if (black & kings & EFILE & RANK8){
+                        if (right == 'k'){
+                            if (black & rooks & HFILE & RANK8){
+                                unmoved |= (EFILE | HFILE) & RANK8;
+                            }
+                        }
+                        else if (right == 'q'){
+                            if (black & rooks & AFILE & RANK8){
+                                unmoved |= (AFILE | EFILE) & RANK8;
+                            }
+                        }
+                    }
+                }
+            }
+            // Enpassant
+            if (i == 3){
+                foreach (coord; part){
+                    foreach (f, file; zip("abcdefgh", [AFILE, BFILE, CFILE, DFILE, EFILE, FFILE, GFILE, HFILE])){
+                        if (coord == f){
+                            enpassant = file;
+                        }
+                    }
+                    if (white_to_play){
+                        enpassant &= RANK6;
+                    }
+                    else {
+                        enpassant &= RANK3;
+                    }
+                    /*
+                    foreach (r, rank; zip("12345678", [RANK1, RANK2, RANK3, RANK4, RANK5, RANK6, RANK7, RANK8])){
+                        if (coord == r){
+                            enpassant &= rank;
+                        }
+                    }
+                    */
+                }
+            }
+            // Halfmove clock
+            if (i == 4){
+                try {
+                    formattedRead(part, "%s", &halfmove_clock);
+                } catch (std.conv.ConvException) {
+                    halfmove_clock = 0;
+                }
+            }
+            // Fullmove number
+            if (i == 5){
+                try {
+                    formattedRead(part, "%s", &fullmove_number);
+                } catch (std.conv.ConvException) {
+                    fullmove_number = 1;
+                }
+            }
+        }
+        this.state = PseudoChessState(player, pawns, knights, bishops, rooks, queens, kings, unmoved, enpassant);
+    }
+
+    string fen()
+    {
+        ulong white;
+        if (white_to_play){
+            white = state.player;
+        }
+        else {
+            white = ~state.player;
+        }
+        string r = "";
+        foreach (i; 0..64){
+            ulong s = 1UL << i;
+            string p;
+            if (s & state.pawns){
+                p = "p";
+            }
+            else if (s & state.knights){
+                p = "n";
+            }
+            else if (s & state.bishops){
+                p = "b";
+            }
+            else if (s & state.rooks){
+                p = "r";
+            }
+            else if (s & state.queens){
+                p = "q";
+            }
+            else if (s & state.kings){
+                p = "k";
+            }
+            else {
+                p = "1";
+            }
+            if (s & white){
+                r ~= p.toUpper;
+            }
+            else {
+                r ~= p;
+            }
+            if (i != 63 && i % 8 == 7){
+                r ~= "/";
+            }
+        }
+        r = r.replace("11111111", "8");
+        r = r.replace("1111111", "7");
+        r = r.replace("111111", "6");
+        r = r.replace("11111", "5");
+        r = r.replace("1111", "4");
+        r = r.replace("111", "3");
+        r = r.replace("11", "2");
+
+        if (white_to_play){
+            r ~= " w ";
+        }
+        else {
+            r ~= " b ";
+        }
+
+        if (state.unmoved){
+            if (state.unmoved & HFILE & RANK1){
+                r ~= "K";
+            }
+            if (state.unmoved & AFILE & RANK1){
+                r ~= "Q";
+            }
+            if (state.unmoved & HFILE & RANK8){
+                r ~= "k";
+            }
+            if (state.unmoved & AFILE & RANK8){
+                r ~= "q";
+            }
+            r ~= " ";
+        }
+        else {
+            r ~= "- ";
+        }
+        if (state.enpassant){
+            foreach (f, file; zip("abcdefgh", [AFILE, BFILE, CFILE, DFILE, EFILE, FFILE, GFILE, HFILE])){
+                if (state.enpassant & file){
+                    r ~= f;
+                }
+            }
+            foreach (r_, rank; zip("12345678", [RANK1, RANK2, RANK3, RANK4, RANK5, RANK6, RANK7, RANK8])){
+                if (state.enpassant & rank){
+                    r ~= r_;
+                }
+            }
+            r ~= " ";
+        }
+        else {
+            r ~= "- ";
+        }
+        r ~= format("%d %d", halfmove_clock, fullmove_number);
+        return r;
+    }
+
+    // TODO: Update halfmove_clock
+    ChessState[] children(out float score)
+    {
+        ChessState[] result;
+        auto flip = state;
+        if (white_to_play){
+            foreach (child; flip.children(score)){
+                child.swap_turns;
+                result ~= ChessState(child, false, 0, fullmove_number);
+            }
+        }
+        else {
+            flip.mirror_v;
+            foreach (child; flip.children(score)){
+                child.mirror_v;
+                child.swap_turns;
+                result ~= ChessState(child, true, 0, fullmove_number + 1);
+            }
+            score = -score;
+        }
+        return result;
+    }
+
+    PseudoChessState oriented_state()
+    {
+        if (white_to_play){
+            return state;
+        }
+        else {
+            auto temp = state;
+            temp.mirror_v;
+            return temp;
+        }
+    }
+
+    CanonicalChessState canonical_state()
+    {
+        auto temp = state;
+        if (!white_to_play){
+            temp.mirror_v;
+        }
+        return CanonicalChessState(temp, false);
+    }
+
+    string toString()
+    {
+        if (white_to_play){
+            return state.toString;
+        }
+        else {
+            auto s = state;
+            s.swap_turns;
+            auto r = s.toString;
+            return r[0..$ - "White to play".length] ~ "Black to play";
+        }
+    }
+}
+
+
 struct CanonicalChessState
 {
     // 1. pawn
@@ -1104,8 +1610,14 @@ struct CanonicalChessState
         this.special = special;
     }
 
-    this(PseudoChessState state)
+    this(PseudoChessState state, bool raw=true)
     {
+        if (raw){
+            state.canonize_enpassant_raw;
+        }
+        else {
+            state.canonize_enpassant;
+        }
         auto unmoved = state.unmoved;
         auto moved_kings = state.kings & ~unmoved;
         auto moved_rooks = state.rooks & ~unmoved;
@@ -1120,7 +1632,9 @@ struct CanonicalChessState
 
         // PseudoChessState doesn't swap turns.
         // Do part of it here.
-        player = ~player & (straight | diagonal | special);
+        if (raw){
+            player = ~player & (straight | diagonal | special);
+        }
 
         // Enpassant is special empty square.
         special |= state.enpassant;
@@ -1132,7 +1646,9 @@ struct CanonicalChessState
         if (!unmoved){
             if (state.pawns){
                 // Finish swapping turns by flipping the board;
-                mirror_v;
+                if (raw){
+                    mirror_v;
+                }
                 mirror_canonize;
             }
             else {
@@ -1142,7 +1658,9 @@ struct CanonicalChessState
         }
         else{
             // Finish swapping turns by flipping the board;
-            mirror_v;
+            if (raw){
+                mirror_v;
+            }
         }
     }
 
@@ -1301,7 +1819,7 @@ struct CanonicalChessState
     {
         PseudoChessState s;
         if (PseudoChessState.from_endgame_state(endgame, type, s)){
-            result = CanonicalChessState(s);
+            result = CanonicalChessState(s, false);
             return true;
         }
         return false;
@@ -1331,10 +1849,12 @@ immutable CanonicalChessState chess_initial = CanonicalChessState(
     )
 );
 
+immutable ChessState chess_start = ChessState(chess_initial.state, true, 0, 1);
+
 // TODO: Replace with a real thing that can represent arbitrary moves.
 alias ChessMove = Move;
 
-void examine_chess_playout(CanonicalChessState s, bool decanonize=true)
+void examine_chess_playout(ChessState s)
 {
     import std.random;
     import core.thread;
@@ -1343,6 +1863,7 @@ void examine_chess_playout(CanonicalChessState s, bool decanonize=true)
     auto seed = uniform!uint;
     //seed = 2880884799;
     //seed = 3403945820;
+    //seed = 2005321215;
     writeln("Seed=", seed);
     gen.seed(seed);
 
@@ -1358,6 +1879,23 @@ void examine_chess_playout(CanonicalChessState s, bool decanonize=true)
         auto n = gen.front;
         gen.popFront;
         s = children[n % children.length];
+
+        if (popcount(~s.state.empty) <= 10){
+            auto cs = s.canonical_state;
+            EndgameType t;
+            auto e = cs.endgame_state(t);
+            CanonicalChessState ss;
+            bool valid = CanonicalChessState.from_endgame_state(e, t, ss);
+            if (!valid || cs != ss){
+                writeln(s);
+                writeln(cs);
+                writeln(t, ", ", e);
+                writeln(ss);
+            }
+            assert(valid);
+            assert(cs == ss);
+        }
+        /*
         if (decanonize){
             if (j & 1){
                 writeln(s);
@@ -1383,7 +1921,9 @@ void examine_chess_playout(CanonicalChessState s, bool decanonize=true)
             }
         }
         writeln(s.repr);
-        Thread.sleep(dur!("msecs")(10));
+        */
+        //writeln(s);
+        //Thread.sleep(dur!("msecs")(10));
         j++;
     }
 }
@@ -1417,4 +1957,25 @@ unittest
 {
     auto c = CanonicalChessState(0x8402900000000UL, 0x8406929100000UL, 0x8000000100000UL, 0x8406929100000UL);
     assert(!c.state.kings_can_capture_pawns);
+}
+
+unittest
+{
+    auto cs = ChessState("r3k2r/8/8/8/8/8/8/R3K2R w KQk").canonical_state;
+    EndgameType t;
+    auto e = cs.endgame_state(t);
+    CanonicalChessState ss;
+    assert(CanonicalChessState.from_endgame_state(e, t, ss));
+    assert(cs == ss);
+}
+
+unittest
+{
+    auto s = CanonicalChessState(0x804000000UL, 0xa06000000UL, 0xa00000000UL, 0xa06020000UL);
+    EndgameType t;
+    auto e = s.endgame_state(t);
+    auto original_s = s;
+    assert(CanonicalChessState.from_endgame_state(e, t, s));
+    assert(s == original_s);
+    assert(e == s.endgame_state(t));
 }

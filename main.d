@@ -5,6 +5,7 @@ import std.math;
 import std.algorithm;
 import std.random;
 import std.parallelism;
+import std.uni;
 static import std.file;
 import core.thread;
 
@@ -37,6 +38,8 @@ import tsumego;
 import chess;
 import chess_endgame;
 
+static import settings;
+
 // Lol "makefile"
 // dmd main.d utils.d board8.d board11.d bit_matrix.d state.d polyomino.d defense_state.d defense_search_state.d defense.d eyeshape.d monte_carlo.d heuristic.d fast_math.d ann.d likelyhood.d wdl_node.d direct_mc.d pattern3.d
 // -O -release -inline -noboundscheck
@@ -50,6 +53,173 @@ void main()
     auto transpositions = &loc_trans;
     auto local_transpositions = &loc_trans;
 
+    /*
+    ChessState s = chess_start;
+    //writeln(chess_start.children(score));
+    //writeln(s);
+    while (true){
+        examine_chess_playout(s);
+    }
+    */
+
+    /*
+    auto s = ChessState("r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq e6 1 2");
+    writeln(s);
+    writeln(s.fen);
+    writeln(s.canonical_state);
+    */
+
+
+    /*
+    auto et = EndgameType("kr_k");
+    CanonicalChessState s;
+    CanonicalChessState.from_endgame_state(28644, et, s);
+    writeln(s);
+    auto ee = s.endgame_state(et);
+    writeln(ee);
+    CanonicalChessState.from_endgame_state(ee, et, s);
+    writeln(s);
+    return;
+    */
+
+    // TODO: unittests for castling endgames
+
+    //8/6p1/8/5P2/4K1k1/8/8/8 b - - 0 1
+
+
+    auto t = EndgameType("kp_kb");
+    auto fs = new FullSearch!(EndgameType, ChessNodeValue, CanonicalChessState);
+
+    fs.initialize(t);
+    foreach (st; t.subtypes){
+        string filename = settings.CHESS_TABLE_DIR ~ "chess" ~ st.toString ~ ".dat";
+        if (std.file.exists(filename)){
+            writeln("Reading data for ", st);
+            fs.tables[st] = cast(ChessNodeValue[]) std.file.read(filename);
+        }
+    }
+    //fs.reinitialize;
+    fs.calculate(true);
+    fs.decanonize;
+
+    string[] fens;
+    fens.length = 6;
+    float[] ds;
+    ds.length = 6;
+    string[] hfens;
+    hfens.length = 6;
+    float[] hds;
+    hds.length = 6;
+    foreach (st; t.subtypes){
+        fens[] = "";
+        hfens[] = "";
+        ds[] = -1;
+        hds[] = -1;
+        foreach (e, v; fs.tables[st]){
+            foreach (i; 0..6){
+                if (i <= 4){
+                    if (v.low == i - 2 && v.low_distance > ds[i]){
+                        ds[i] = v.low_distance;
+                        CanonicalChessState cs;
+                        CanonicalChessState.from_endgame_state(e, st, cs);
+                        fens[i] = ChessState(cs.state).fen;
+                    }
+                    if (v.high == i - 2 && v.high_distance > hds[i]){
+                        hds[i] = v.high_distance;
+                        CanonicalChessState cs;
+                        CanonicalChessState.from_endgame_state(e, st, cs);
+                        hfens[i] = ChessState(cs.state).fen;
+                    }
+                }
+                else {
+                    if (v.low == -float.infinity){
+                        ds[i] = -2;
+                        CanonicalChessState cs;
+                        CanonicalChessState.from_endgame_state(e, st, cs);
+                        fens[i] = ChessState(cs.state).fen;
+                    }
+                    if (v.high == float.infinity){
+                        hds[i] = -2;
+                        CanonicalChessState cs;
+                        CanonicalChessState.from_endgame_state(e, st, cs);
+                        hfens[i] = ChessState(cs.state).fen;
+                    }
+                }
+            }
+        }
+        writeln(st);
+        writeln(ds);
+        writeln(fens);
+        writeln(hds);
+        writeln(hfens);
+        /*
+        if (st == t){
+            foreach (state; fs.principal_path(st, es[4])){
+                writeln(state);
+            }
+        }
+        */
+        std.file.write(settings.CHESS_TABLE_DIR ~ "chess" ~ st.toString ~ ".dat", fs.tables[st]);
+    }
+
+
+    /*
+    k_k
+    [-1, -1, 0, -1, -1]
+    ["", "", "3K4/8/8/8/8/8/8/7k w - - 0 1", "", ""]
+    [-1, -1, 0, -1, -1]
+    ["", "", "3K4/8/8/8/8/8/8/7k w - - 0 1", "", ""]
+    kn_k
+    [-1, -1, 14, 27, -1]
+    ["", "", "k7/8/6N1/3K4/8/8/8/8 w - - 0 1", "8/k7/8/K5N1/8/8/8/8 w - - 0 1", ""]
+    [-1, -1, 4, 1, -1]
+    ["", "", "7N/8/5k2/8/K7/8/8/8 w - - 0 1", "k1K5/N7/8/8/8/8/8/8 w - - 0 1", ""]
+    k_kn
+    [-1, 0, 5, -1, -1]
+    ["", "K1k5/8/8/1n6/8/8/8/8 w - - 0 1", "n4k2/8/8/3K4/8/8/8/8 w - - 0 1", "8/k7/8/K5N1/8/8/8/8 w - - 0 1", ""]
+    [-1, 26, 13, -1, -1]
+    ["", "1K1k4/8/8/8/2n5/8/8/8 w - - 0 1", "K7/3k4/1n6/8/8/8/8/8 w - - 0 1", "k1K5/N7/8/8/8/8/8/8 w - - 0 1", ""]
+    kb_k
+    [-1, -1, 34, 17, -1]
+    ["", "K1k5/8/8/1n6/8/8/8/8 w - - 0 1", "K1B5/8/1k6/8/8/8/8/8 w - - 0 1", "4B3/8/8/3K4/8/k7/8/8 w - - 0 1", ""]
+    [-1, -1, -1, 1, -1]
+    ["", "1K1k4/8/8/8/2n5/8/8/8 w - - 0 1", "K7/3k4/1n6/8/8/8/8/8 w - - 0 1", "k1K5/B7/8/8/8/8/8/8 w - - 0 1", ""]
+    k_kb
+    [-1, 2, 1, -1, -1]
+    ["", "1K6/b7/1k6/8/8/8/8/8 w - - 0 1", "Kb2k3/8/8/8/8/8/8/8 w - - 0 1", "4B3/8/8/3K4/8/k7/8/8 w - - 0 1", ""]
+    [-1, 16, 35, -1, -1]
+    ["", "1K1bk3/8/8/8/8/8/8/8 w - - 0 1", "k1b5/8/2K5/8/8/8/8/8 w - - 0 1", "k1K5/B7/8/8/8/8/8/8 w - - 0 1", ""]
+    kr_k
+    [-1, -1, -1, -1, 31]
+    ["", "1K6/b7/1k6/8/8/8/8/8 w - - 0 1", "Kb2k3/8/8/8/8/8/8/8 w - - 0 1", "4B3/8/8/3K4/8/k7/8/8 w - - 0 1", "K7/1R6/2k5/8/8/8/8/8 w - - 0 1"]
+    [-1, -1, -1, -1, -1]
+    ["", "1K1bk3/8/8/8/8/8/8/8 w - - 0 1", "k1b5/8/2K5/8/8/8/8/8 w - - 0 1", "k1K5/B7/8/8/8/8/8/8 w - - 0 1", ""]
+    k_kr
+    [0, 0, 1, -1, -1]
+    ["r1K5/8/2k5/8/8/8/8/8 w - - 0 1", "K1k5/1r6/8/8/8/8/8/8 w - - 0 1", "Kr2k3/8/8/8/8/8/8/8 w - - 0 1", "4B3/8/8/3K4/8/k7/8/8 w - - 0 1", "K7/1R6/2k5/8/8/8/8/8 w - - 0 1"]
+    [32, 0, 1, -1, -1]
+    ["r7/8/2K5/8/8/8/8/7k w - - 0 1", "K1k5/1r6/8/8/8/8/8/8 w - - 0 1", "Kr2k3/8/8/8/8/8/8/8 w - - 0 1", "k1K5/B7/8/8/8/8/8/8 w - - 0 1", ""]
+    kq_k
+    [-1, -1, -1, -1, 19]
+    ["r1K5/8/2k5/8/8/8/8/8 w - - 0 1", "K1k5/1r6/8/8/8/8/8/8 w - - 0 1", "Kr2k3/8/8/8/8/8/8/8 w - - 0 1", "4B3/8/8/3K4/8/k7/8/8 w - - 0 1", "K7/1Q6/8/8/5k2/8/8/8 w - - 0 1"]
+    [-1, -1, -1, -1, -1]
+    ["r7/8/2K5/8/8/8/8/7k w - - 0 1", "K1k5/1r6/8/8/8/8/8/8 w - - 0 1", "Kr2k3/8/8/8/8/8/8/8 w - - 0 1", "k1K5/B7/8/8/8/8/8/8 w - - 0 1", ""]
+    kp_k
+    [-1, 4, 16, 41, 55]
+    ["r1K5/8/2k5/8/8/8/8/8 w - - 0 1", "8/K1k5/P7/8/8/8/8/8 w - - 0 1", "1k5K/8/8/8/8/P7/8/8 w - - 0 1", "k7/7K/8/8/8/8/P7/8 w - - 0 1", "8/8/8/6k1/8/7K/1P6/8 w - - 0 1"]
+    [-1, 0, 12, 3, -1]
+    ["r7/8/2K5/8/8/8/8/7k w - - 0 1", "K1k5/P7/8/8/8/8/8/8 w - - 0 1", "5k1K/8/8/8/8/P7/8/8 w - - 0 1", "8/1Pk5/8/K7/8/8/8/8 w - - 0 1", ""]
+    k_kp
+    [-1, 4, 13, 1, -1]
+    ["r1K5/8/2k5/8/8/8/8/8 w - - 0 1", "8/8/8/8/k7/3K4/1p6/8 w - - 0 1", "8/K5p1/8/8/8/8/k7/8 w - - 0 1", "8/8/8/8/8/1K6/p7/k7 w - - 0 1", "8/8/8/6k1/8/7K/1P6/8 w - - 0 1"]
+    [56, 42, 17, 5, -1]
+    ["8/6p1/k7/8/K7/8/8/8 w - - 0 1", "k7/7p/1K6/8/8/8/8/8 w - - 0 1", "8/p7/K7/8/8/8/8/7k w - - 0 1", "8/8/8/8/8/p1K5/k7/8 w - - 0 1", ""]
+    k_kq
+    [0, 0, 1, -1, -1]
+    ["q1K5/8/2k5/8/8/8/8/8 w - - 0 1", "2K5/q3k3/8/8/8/8/8/8 w - - 0 1", "Kq2k3/8/8/8/8/8/8/8 w - - 0 1", "8/8/8/8/8/1K6/p7/k7 w - - 0 1", "8/8/8/6k1/8/7K/1P6/8 w - - 0 1"]
+    [20, 0, 1, -1, -1]
+    ["8/3K4/8/8/8/8/1q6/k7 w - - 0 1", "2K5/q3k3/8/8/8/8/8/8 w - - 0 1", "Kq2k3/8/8/8/8/8/8/8 w - - 0 1", "8/8/8/8/8/p1K5/k7/8 w - - 0 1", ""]
+    */
     //get_kings_index_tables;
 
     /*
@@ -65,42 +235,6 @@ void main()
     }
     writeln(ets.length);
     */
-
-    auto go_endgame_types = [
-        "2x1": BoardType8(rectangle8(2, 1)),
-        "2x2": BoardType8(rectangle8(2, 2)),
-        "3x1": BoardType8(rectangle8(3, 1)),
-        "3x2": BoardType8(rectangle8(3, 2)),
-        //"3x3": BoardType8(rectangle8(3, 3)),
-        "4x1": BoardType8(rectangle8(4, 1)),
-        "4x2": BoardType8(rectangle8(4, 2)),
-        //"4x3": BoardType8(rectangle8(4, 3)),
-        //"4x4": BoardType8(rectangle8(4, 4)),
-        "5x1": BoardType8(rectangle8(5, 1)),
-        "5x2": BoardType8(rectangle8(5, 2)),
-        //"5x3": BoardType8(rectangle8(5, 3)),
-        "6x1": BoardType8(rectangle8(6, 1)),
-        "6x2": BoardType8(rectangle8(6, 2)),
-        "7x1": BoardType8(rectangle8(7, 1))
-        //"7x2": BoardType8(rectangle8(7, 2)),
-        /*
-        "plus": BoardType8(rectangle8(4, 2).south | rectangle8(2, 4).east),
-        "petal": BoardType8(Board8(0, 0) | rectangle8(4, 2).south | rectangle8(2, 4).east),
-        "twist": BoardType8(rectangle8(3, 3) | rectangle8(3, 3).south.east),
-        "hassock": BoardType8(rectangle8(4, 3) | rectangle8(2, 4).east),
-        "notch": BoardType8(rectangle8(4, 4) ^ Board8(3, 3))
-        */
-    ];
-
-    foreach (key, bt; go_endgame_types){
-        auto s = State8(bt.playing_area);
-        //writeln("\"", key, "\" : ", s.endgame_state(bt), ",");
-        writeln(s);
-        auto fs = new FullSearch!(BoardType8, NodeValue, State8)();
-        fs.initialize(bt);
-        fs.calculate(true);
-        std.file.write("go" ~ key ~ ".dat", fs.tables[bt]);
-    }
 
     /*
     foreach (kp; KingsPosition.KINGS_POSITION_TABLE){

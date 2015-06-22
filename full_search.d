@@ -174,8 +174,31 @@ class FullSearch(T, V, S)
             foreach(e; 0..table.length){
                 if (S.from_endgame_state(e, subtype, s)){
                     auto canonical_e = s.endgame_state(subtype);
+                    version (assert){
+                        auto original_s = s;
+                        assert(S.from_endgame_state(canonical_e, subtype, s));
+                        assert(original_s == s);
+                    }
                     table[canonical_e] = V(-float.infinity, float.infinity, float.infinity, float.infinity);
                     valid[subtype] += 1;
+                }
+            }
+        }
+    }
+
+    void reinitialize()
+    {
+        S s;
+        foreach (subtype, table; tables){
+            foreach(e; 0..table.length){
+                if (S.from_endgame_state(e, subtype, s)){
+                    if (!table[e].initialized){
+                        auto canonical_e = s.endgame_state(subtype);
+                        table[canonical_e] = V(-float.infinity, float.infinity, float.infinity, float.infinity);
+                    }
+                }
+                else{
+                    table[e] = V.init;
                 }
             }
         }
@@ -186,6 +209,10 @@ class FullSearch(T, V, S)
         S s;
         size_t i = 0;
         bool changed = true;
+        bool[T] dones;
+        foreach (subtype; tables.byKey){
+            dones[subtype] = false;
+        }
         while (changed) {
             i += 1;
             if (noisy){
@@ -193,9 +220,21 @@ class FullSearch(T, V, S)
             }
             changed = false;
             foreach (subtype, table; tables){
+                if (dones[subtype]){
+                    if (noisy){
+                        writeln("Skipping ", subtype);
+                    }
+                    continue;
+                }
+                bool done = true;
                 foreach(e; 0..table.length){
                     auto v = table[e];
                     if (v.initialized){
+                        /*
+                        if (v.low == v.high && v.low_distance == 0 && v.high_distance == 0){
+                            continue;
+                        }
+                        */
                         S.from_endgame_state(e, subtype, s);
                         float score;
                         auto children = s.children(score);
@@ -235,10 +274,12 @@ class FullSearch(T, V, S)
                         assert(new_v.initialized);
                         if (new_v != v){
                             changed = true;
+                            done = false;
                         }
                         table[e] = new_v;
                     }
                 }
+                dones[subtype] = done;
             }
             /*
             size_t cutoff = 400000000;
@@ -263,5 +304,32 @@ class FullSearch(T, V, S)
                 }
             }
         }
+    }
+
+    S[] principal_path(string path_type="low")(T type, size_t e)
+    {
+        static if (path_type == "low"){
+            enum other_type = "high";
+        }
+        else {
+            enum other_type = "low";
+        }
+        S[] result;
+        S s;
+        float score;
+        if (S.from_endgame_state(e, type, s)){
+            auto v = tables[type][e];
+            result ~= s;
+            foreach(child; s.children(score)){
+                T ct;
+                auto ce = child.endgame_state(ct);
+                auto child_v = tables[ct][ce];
+                if (mixin("-child_v." ~ other_type ~ " == v." ~ path_type ~ " && child_v." ~ other_type ~ "_distance == v." ~ path_type ~ "_distance - 1")){
+                    result ~= principal_path!other_type(ct, ce);
+                    break;
+                }
+            }
+        }
+        return result;
     }
 }

@@ -2,10 +2,13 @@ import std.json;
 import std.stdio;
 import std.string;
 import std.format;
+static import std.file;
 
 import board8;
 import state;
 import full_search;
+import chess;
+import chess_endgame;
 static import settings;
 
 
@@ -244,12 +247,120 @@ JSONValue process_go(string endgame_type, string endgame)
 }
 
 
+bool get_chess_node_value(EndgameType t, size_t e, out ChessNodeValue v)
+{
+    string filename = settings.CHESS_TABLE_DIR ~ "chess" ~ t.toString ~ ".dat";
+    if (std.file.exists(filename)){
+        auto f = File(filename, "rb");
+        f.seek(e * ChessNodeValue.sizeof);
+        ChessNodeValue[] buf;
+        buf.length = 1;
+        f.rawRead(buf);
+        v = buf[0];
+        return true;
+    }
+    return false;
+}
+
+
+JSONValue process_chess(string fen)
+{
+    JSONValue result = ["status": "error"];
+    auto s = ChessState(fen);
+    if (!s.oriented_state.valid){
+        result.object["error_message"] = "Illegal position.";
+        return result;
+    }
+    EndgameType t;
+    auto e = s.canonical_state.endgame_state(t);
+    ChessNodeValue v;
+    if (!get_chess_node_value(t, e, v)){
+        result.object["error_message"] = "Position not found.";
+        return result;
+    }
+    result.object["fen"] = s.fen;
+    result.object["low"] = v.low;
+    result.object["high"] = v.high;
+    result.object["low_distance"] = v.low_distance;
+    result.object["high_distance"] = v.high_distance;
+
+    string[] strong_low_children;
+    string[] weak_low_children;
+    string[] strong_high_children;
+    string[] weak_high_children;
+    float score;
+    debug (chess){
+        writeln(v);
+        foreach (child; s.canonical_state.children(score)){
+            EndgameType ct;
+            auto ce = child.endgame_state(ct);
+            CanonicalChessState ccc;
+            writeln(CanonicalChessState.from_endgame_state(ce, ct, ccc));
+            writeln(ccc);
+            writeln(ccc.repr);
+            ChessNodeValue child_v;
+            writeln(get_chess_node_value(ct, ce, child_v));
+            writeln(child);
+            writeln(child.repr);
+            writeln(child_v);
+        }
+    }
+    foreach (child; s.children(score)){
+        EndgameType ct;
+        auto ce = child.canonical_state.endgame_state(ct);
+        ChessNodeValue child_v;
+        if (!get_chess_node_value(ct, ce, child_v)){
+            result.object["error_message"] = "Child position not found.";
+            return result;
+        }
+        if (-child_v.high == v.low){
+            if (child_v.high_distance == v.low_distance - 1){
+                strong_low_children ~= child.fen;
+            }
+            else {
+                weak_low_children ~= child.fen;
+            }
+        }
+        if (-child_v.low == v.high){
+            if (child_v.low_distance == v.high_distance - 1){
+                strong_high_children ~= child.fen;
+            }
+            else {
+                weak_high_children ~= child.fen;
+            }
+        }
+    }
+    if (v.low_distance){
+        assert(strong_low_children.length);
+    }
+    if (v.high_distance){
+        assert(strong_high_children.length);
+    }
+    result.object["strong_low_children"] = JSONValue(strong_low_children);
+    result.object["weak_low_children"] = JSONValue(weak_low_children);
+    result.object["strong_high_children"] = JSONValue(strong_high_children);
+    result.object["weak_high_children"] = JSONValue(weak_high_children);
+
+    result["status"] = JSONValue("OK");
+    return result;
+}
+
+
 void main(string args[])
 {
-    if (args.length != 4){
-        writeln("Incorrect args");
+    if (args.length == 3){
+        JSONValue result;
+        auto game_type = args[1];
+        auto fen = args[2];
+        if (game_type == "chess"){
+            result = process_chess(fen);
+        }
+        auto output = result.toString;
+        // Ugly hack to work around D's non-standard values.
+        output = output.replace(":-inf", ":null").replace(":inf", ":null");
+        writeln(output);
     }
-    else {
+    else if (args.length == 4){
         JSONValue result;
         auto game_type = args[1];
         auto endgame_type = args[2];
@@ -259,4 +370,13 @@ void main(string args[])
         }
         writeln(result.toString);
     }
+    else {
+        writeln("Incorrect args");
+    }
+}
+
+
+unittest
+{
+    main(["dummy", "chess" "8/6p1/8/5P2/4K1k1/8/8/8 b - - 0 1"]);
 }

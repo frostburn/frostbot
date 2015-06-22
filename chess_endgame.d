@@ -28,6 +28,11 @@ struct KingsPosition
         this.opponent = bitScanForward(opponent);
     }
 
+    static size_t size()
+    {
+        return KINGS_POSITION_TABLE.length;
+    }
+
     size_t index() const
     out(result)
     {
@@ -55,16 +60,16 @@ struct KingsPosition
         opponent_king = 1UL << opponent;
     }
 
-    size_t piece_index(ulong piece)
+    size_t piece_index(int index)
     {
-        auto ckp = from_index(index);
-        auto transformed_index = _transform(bitScanForward(piece), this, ckp);
-        return _piece_index(transformed_index, ckp);
+        auto ckp = from_index(this.index);
+        auto transformed_index = _transform(index, this, ckp);
+        return _piece_index(transformed_index, ckp.player, ckp.opponent);
     }
 
-    ulong from_piece_index(size_t piece_index)
+    size_t from_piece_index(size_t piece_index)
     {
-        return 1UL << _from_piece_index(piece_index, this);
+        return _from_piece_index(piece_index, player, opponent);
     }
 
     string toString()
@@ -74,32 +79,32 @@ struct KingsPosition
 }
 
 
-size_t _piece_index(size_t index, KingsPosition kp)
+size_t _piece_index(size_t index, size_t player, size_t opponent)
 {
-    if (index < kp.player){
-        if (index < kp.opponent){
+    if (index < player){
+        if (index < opponent){
             return index;
         }
         return index - 1;
     }
-    else if (index < kp.opponent){
+    else if (index < opponent){
         return index - 1;
     }
     return index - 2;
 }
 
-size_t _from_piece_index(size_t index, KingsPosition kp)
+size_t _from_piece_index(size_t index, size_t player, size_t opponent)
 {
-    if (index >= kp.player){
+    if (index >= player){
         index += 1;
-        if (index >= kp.opponent){
+        if (index >= opponent){
             return index + 1;
         }
         return index;
     }
-    else if (index >= kp.opponent){
+    else if (index >= opponent){
         index += 1;
-        if (index >= kp.player){
+        if (index >= player){
             return index + 1;
         }
         return index;
@@ -386,10 +391,33 @@ struct EndgameType
 
     size_t size()
     {
-        size_t result = 64 * 64;
-        foreach (member; mixin(MEMBERS)){
-            foreach (i; 0..member){
-                result *= 64;
+        size_t result;
+        if (p_pawns || o_pawns){
+            result = 64 * 64;
+            foreach (i, member; mixin(MEMBERS)){
+                if (i == 0){
+                    result *= 48 ^^ member;
+                }
+                else if (i == 1){
+                    result *= 56 ^^ member;
+                }
+                else if (i == 6 || i == 7){
+                    result *= 64 ^^ member;
+                }
+                else {
+                    result *= 62 ^^ member;
+                }
+            }
+        }
+        else {
+            result = KingsPosition.size;
+            foreach (i, member; mixin(MEMBERS)){
+                if (i == 6 || i == 7){
+                    result *= 64 ^^ member;
+                }
+                else {
+                    result *= 62 ^^ member;
+                }
             }
         }
         return result;
@@ -494,6 +522,20 @@ struct EndgameType
             r ~= "q";
         }
         return r;
+    }
+
+    this(string s)
+    {
+        auto temp = split(s, '_');
+        auto player = temp[0];
+        auto opponent = temp[1];
+        this(
+            cast(int)countchars(player, "p"), cast(int)countchars(opponent, "p"),
+            cast(int)countchars(player, "n"), cast(int)countchars(opponent, "n"),
+            cast(int)countchars(player, "b"), cast(int)countchars(opponent, "b"),
+            cast(int)countchars(player, "r"), cast(int)countchars(opponent, "r"),
+            cast(int)countchars(player, "q"), cast(int)countchars(opponent, "q")
+        );
     }
 }
 
