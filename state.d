@@ -4,6 +4,7 @@ import std.stdio;
 import std.string;
 import std.stream;
 import std.conv;
+import std.range;
 
 import bit_matrix;
 import board_common;
@@ -350,10 +351,11 @@ struct State(T)
         T[] _moves;
         auto y_max = playing_area.vertical_extent;
         auto x_max = playing_area.horizontal_extent;
+        auto legal = playing_area & ~(player | opponent | player_unconditional | opponent_unconditional);
         foreach (y; 0..y_max){
             foreach (x; 0..x_max){
                 auto move = T(x, y);
-                if (move & playing_area & ~(player_unconditional | opponent_unconditional)){
+                if (move & legal){
                     _moves ~= move;
                 }
             }
@@ -1413,15 +1415,21 @@ struct CanonicalState(T)
 
     CanonicalState!T[] children(ref T[] moves, bool clear_ko=false)
     {
+        T[] _moves;
         CanonicalState!T[] _children;
         bool[CanonicalState!T] seen;
-        foreach (child; state.children(moves, clear_ko)){
+        auto __children = state.children(moves, clear_ko);
+        foreach (e; zip(__children, moves)){
+            auto child = e[0];
+            auto move = e[1];
             auto canonical_child = CanonicalState!T(child);
             if (canonical_child !in seen){
                 seen[canonical_child] = true;
                 _children ~= canonical_child;
+                _moves ~= move;
             }
         }
+        moves = _moves;
         return _children;
     }
 

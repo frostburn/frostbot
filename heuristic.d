@@ -1,12 +1,19 @@
 module heuristic;
 
+import std.exception : assumeUnique;
 import std.stdio;
+import std.file;
 import std.string;
 import std.math;
+import std.algorithm;
+import std.range;
 
+import utils;
 import board8;
+import board11;
 import state;
-import ann;
+//import ann;
+import linalg;
 
 struct Grid
 {
@@ -273,6 +280,7 @@ void divide_by_influence(T)(T playing_area, ref T player, ref T opponent)
 }
 
 
+/*
 static Network8 network_4x4;
 static playing_area_4x4 = rectangle8(4, 4);
 
@@ -304,6 +312,389 @@ float heuristic_value(T)(T playing_area, T player, T opponent)
     divide_by_influence(playing_area, player, opponent);
     return player.popcount - opponent.popcount + 0.4 * (opponent.euler - player.euler) + 0.25 * initial_score - 0.017 * first_line_penalty;
 }
+*/
+
+
+static immutable int[Board11] move_to_index9;
+static float[] likelyhood9_params;
+
+static this()
+{
+    int[Board11] temp;
+    temp[Board11.init] = 0;
+    foreach (x; 0..9){
+        foreach (y; 0..9){
+            temp[Board11(x, y)] = 2 + x + 9 * y;
+        }
+    }
+    temp.rehash;
+    move_to_index9 = assumeUnique(temp);
+    likelyhood9_params = cast(float[])read("networks/likelyhood9.dat");
+    //likelyhood9_params = assumeUnique(temp2);
+}
+
+float[] move_likelyhoods9(S)(in S state, in Board11[] moves)
+{
+    float[] p_vec;
+    float[] o_vec;
+    foreach (y; 0..9){
+        foreach (x; 0..9){
+            auto p = Board11(x, y);
+            if (p & state.player){
+                p_vec ~= 1;
+            }
+            else {
+                p_vec ~= 0;
+            }
+            if (p & state.opponent){
+                o_vec ~= 1;
+            }
+            else {
+                o_vec ~= 0;
+            }
+        }
+    }
+    //immutable float[] w0, b0, w1, b1, w2, b2, w3, b3;
+    float[] w0 = likelyhood9_params[0..97200];
+    float[] b0 = likelyhood9_params[97200..97800];
+    float[] w1 = likelyhood9_params[97800..277800];
+    float[] b1 = likelyhood9_params[277800..278100];
+    float[] w2 = likelyhood9_params[278100..323100];
+    float[] b2 = likelyhood9_params[323100..323250];
+    float[] w3 = likelyhood9_params[323250..335700];
+    float[] b3 = likelyhood9_params[335700..335783];
+    float[] x = p_vec ~ o_vec;
+    float[] y;
+    int n = cast(int)x.length;
+    int m = cast(int)w0.length / n;
+    y.length = m;
+    gemv('N', m, n, 1.0f, w0.ptr, m, x.ptr, 1, 0.0f, y.ptr, 1);
+    //y = dot(x, w0);
+    y[] += b0[];
+    foreach (ref v; y) v = tanh(v);
+    n = m;
+    m = cast(int)w1.length / n;
+    x = y;
+    y = new float[m];
+    gemv('N', m, n, 1.0f, w1.ptr, m, x.ptr, 1, 0.0f, y.ptr, 1);
+    //y = dot(y, w1);
+    y[] += b1[];
+    foreach (ref v; y) v = tanh(v);
+    n = m;
+    m = cast(int)w2.length / n;
+    x = y;
+    y = new float[m];
+    gemv('N', m, n, 1.0f, w2.ptr, m, x.ptr, 1, 0.0f, y.ptr, 1);
+    //y = dot(y, w2);
+    y[] += b2[];
+    foreach (ref v; y) v = tanh(v);
+    n = m;
+    m = cast(int)w3.length / n;
+    x = y;
+    y = new float[m];
+    gemv('N', m, n, 1.0f, w3.ptr, m, x.ptr, 1, 0.0f, y.ptr, 1);
+    //y = dot(y, w3);
+    y[] += b3[];
+    foreach (ref v; y) v = exp(v);
+
+    float[] result;
+    float sum = 0;
+    foreach (move; moves){
+        result ~= y[move_to_index9[move]];
+        sum += y[move_to_index9[move]];
+    }
+    result[] /= sum;
+    return result;
+}
+
+
+class HeuristicNode(T, S)
+{
+    //TODO: Factor eliminated symmetries into likelyhoods.
+    S state;
+    float[] likelyhoods;
+    float low = -float.infinity;
+    float high = float.infinity;
+    float score = float.nan;
+    float certainty = 0;
+    float coverage = 0;
+    bool is_leaf = false;
+    HeuristicNode!(T, S)[] children;
+    HeuristicNode!(T, S)[] parents;
+
+    ulong tag;
+
+    this(S state)
+    {
+        assert(state.black_to_play);
+        this.state = state;
+        if (state.is_leaf){
+            is_leaf = true;
+            low = high = score = state.liberty_score;
+            certainty = coverage = 1;
+        }
+        else {
+            state.get_score_bounds(low, high);
+            if (low == high){
+                score = low;
+                certainty = coverage = 1;
+            }
+            if (score < low){
+                score = low;
+            }
+            if (score > high){
+                score = high;
+            }
+        }
+    }
+
+    invariant
+    {
+        assert(state.passes <= 2);
+        assert(low <= high);
+        //assert(low <= score);
+        //assert(score <= high);
+    }
+
+    void make_children(ref HeuristicNode!(T, S)[S] node_pool)
+    {
+        assert(!is_leaf);
+        if (children.length){
+            return;
+        }
+
+        auto moves = state.moves;
+        auto child_states = state.children(moves);  // Prunes moves
+        likelyhoods = move_likelyhoods9(state, moves);
+        foreach (child_state; child_states){
+            if (!child_state.black_to_play){
+                child_state.flip_colors;
+            }
+            //assert(child_state.black_to_play);
+            auto key = child_state;
+            //key.canonize;
+            if (key in node_pool){
+                auto child = node_pool[key];
+                children ~= child;
+                child.parents ~= this;
+            }
+            else{
+                auto child = new HeuristicNode!(T, S)(child_state);
+                node_pool[key] = child;
+                children ~= child;
+                child.parents ~= this;
+            }
+        }
+        assert(likelyhoods.length == children.length);
+        sort!("a[0] > b[0]")(zip(likelyhoods, children));
+    }
+
+    bool update_value(float target)
+    {
+        if (low == high || !children.length){
+            return false;
+        }
+
+        float new_low = low;
+        float new_high = -float.infinity;
+        float new_score = -float.infinity;
+        float new_certainty = 0;
+        float new_coverage = 0;
+        foreach (e; zip(children, likelyhoods)){
+            auto child = e[0];
+            auto likelyhood = e[1];
+            if (-child.high > new_low){
+                new_low = -child.high;
+            }
+            if (-child.low > new_high){
+                new_high = -child.low;
+            }
+            if (-child.score > new_score){
+                new_score = -child.score;
+            }
+            new_certainty += likelyhood * child.certainty;
+            if (child.coverage >= target){
+                new_coverage += likelyhood;
+            }
+        }
+        if (new_coverage > target){
+            new_coverage = target;
+        }
+        if (new_score == -float.infinity){
+            new_score = float.nan;
+        }
+
+        if (new_high > high){
+            new_high = high;
+        }
+        assert(new_low <= new_high);
+
+        bool changed = (new_low != low || new_high != high || new_score != score || new_certainty != certainty || new_coverage != coverage);
+        low = new_low;
+        high = new_high;
+        score = new_score;
+        certainty = new_certainty;
+        coverage = new_coverage;
+
+        if (score < low){
+            score = low;
+        }
+        if (score > high){
+            score = high;
+        }
+
+        return changed;
+    }
+
+    HeuristicNode!(T, S) promising_child()
+    {
+        auto best_promise = -float.infinity;
+        HeuristicNode!(T, S) best_child = null;
+        foreach (e; zip(likelyhoods, children)){
+            auto likelyhood = e[0];
+            auto child = e[1];
+            if (child.tag == tag){
+                continue;
+            }
+            auto promise = likelyhood * (1 - child.certainty);
+            if (promise > best_promise){
+                best_promise = promise;
+                best_child = child;
+            }
+        }
+        return best_child;
+    }
+
+    override string toString()
+    {
+        return format(
+            "%s\nlow=%s, high=%s\nscore=%s, certainty=%s, coverage=%s\nnumber of children=%s",
+            state,
+            low, high,
+            score, certainty, coverage,
+            children.length
+        );
+    }
+}
+
+alias HeuristicNode9 = HeuristicNode!(Board11, State11);
+
+
+class HeuristicManager(T, S)
+{
+    HeuristicNode!(T, S) root;
+    HeuristicNode!(T, S)[S] node_pool;
+
+    private {
+        SetQueue!(HeuristicNode!(T, S)) queue;
+    }
+
+    this(S state)
+    {
+        root = new HeuristicNode!(T, S)(state);
+        auto key = state;
+        //key.canonize;
+        node_pool[key] = root;
+        queue.insert(root);
+    }
+
+    bool expand(float target)
+    {
+        auto tag = root.tag + 1;
+        while (!queue.empty){
+            auto node = queue.removeFront;
+            if (node.tag == tag){
+                continue;
+            }
+            if (node.update_value(target)){
+                foreach (parent; node.parents){
+                    queue.insertBack(parent);
+                }
+            }
+            node.tag = tag;
+        }
+        root.tag = tag;
+
+        root.tag += 1;
+        auto node = root;
+        bool done = false;
+        while (!done){
+            done = true;
+            node.make_children(node_pool);
+            foreach (child; node.children){
+                if (child.tag == root.tag){
+                    continue;
+                }
+                if (child.coverage < target){
+                    node = child;
+                    node.tag = root.tag;
+                    done = false;
+                    break;
+                }
+            }
+            //writeln(node);
+        }
+        queue.insertBack(node);
+        return true;
+    }
+
+    /*
+    bool expand_certainty(float limit=float.infinity)
+    {
+        assert(limit >= 1);
+        while (!queue.empty){
+            auto node = queue.removeFront;
+            if (node.update_value){
+                foreach (parent; node.parents){
+                    queue.insertBack(parent);
+                }
+            }
+        }
+
+        root.tag += 1;
+        auto node = root;
+        bool done = false;
+        while (true){
+            if (node.is_leaf){
+                break;
+            }
+            if (!node.children){
+                node.make_children(node_pool);
+                foreach (child; node.children){
+                    if (child.is_leaf){
+                        done = true;
+                    }
+                }
+                if (done){
+                    break;
+                }
+            }
+            node = node.promising_child;
+            if (node is null){
+                break;
+            }
+            node.tag = root.tag;
+        }
+        if (node is null){
+            return false;
+        }
+        writeln(node);
+        if (node.is_leaf){
+            foreach (parent; node.parents){
+                queue.insertBack(parent);
+            }
+        }
+        else {
+            queue.insertBack(node);
+        }
+
+        return true;
+    }
+    */
+}
+
+
+alias HeuristicManager9 = HeuristicManager!(Board11, State11);
 
 
 /*

@@ -3,6 +3,7 @@ import std.string;
 import std.format;
 import std.math;
 import std.algorithm;
+import std.range;
 import std.random;
 import std.parallelism;
 import std.uni;
@@ -27,7 +28,7 @@ import full_search;
 //import defense;
 //import eyeshape;
 //static import monte_carlo;
-//import heuristic;
+import heuristic;
 //import fast_math;
 //import ann;
 //import likelyhood;
@@ -49,9 +50,69 @@ void main()
 {
     writeln("main");
 
+    /*
+    HeuristicNode9[State11] node_pool;
+
+    auto n = new HeuristicNode9(State11(rectangle11(9, 9)));
+    while (!n.is_leaf){
+        n.make_children(node_pool);
+        n = n.children[0];
+        writeln(n);
+    }
+    while (n.parents.length){
+        n = n.parents[0];
+        n.update_value;
+        writeln(n);
+        //Thread.sleep(dur!("msecs")(1000));
+    }
+    */
+
+    auto m = new HeuristicManager9(State11(rectangle11(9, 9)));
+    foreach (i; 0..5000){
+        m.expand(0.17);
+        writeln(i);
+        writeln(m.root);
+    }
+
+    foreach (child; m.root.children){
+        writeln(child.coverage);
+    }
+
+
+    /*
+    foreach (k; 0..1){
+        auto s = State11(rectangle11(9, 9));
+
+        foreach (i; 0..100){
+            auto m = s.moves;
+            if (m.length > 1){
+                m = m[0..$-1];
+            }
+            s.children(m);
+            auto l = move_likelyhoods9(s, m);
+
+            foreach (ref v; l) v += uniform01!float() * 0.0;
+
+            sort(zip(l,m));
+
+            s.make_move(m[$-1]);
+            s.analyze_unconditional;
+            //writeln(s);
+        }
+        writeln(s);
+        writeln(s.liberty_score);
+    }
+    */
+
+    return;
+
+    /*
     Transposition[LocalState8] loc_trans;
     auto transpositions = &loc_trans;
     auto local_transpositions = &loc_trans;
+    */
+
+    // TODO: Japanese rules using graph arrow weights and area control game after two passes.
 
     /*
     ChessState s = chess_start;
@@ -87,9 +148,10 @@ void main()
     //8/6p1/8/5P2/4K1k1/8/8/8 b - - 0 1
 
 
-    auto t = EndgameType("kp_kb");
-    auto fs = new FullSearch!(EndgameType, ChessNodeValue, CanonicalChessState);
+    //auto t = EndgameType("kpp_k");
+    //auto fs = new FullSearch!(EndgameType, ChessNodeValue, CanonicalChessState);
 
+    /*
     fs.initialize(t);
     foreach (st; t.subtypes){
         string filename = settings.CHESS_TABLE_DIR ~ "chess" ~ st.toString ~ ".dat";
@@ -101,7 +163,9 @@ void main()
     //fs.reinitialize;
     fs.calculate(true);
     fs.decanonize;
+    */
 
+    /*
     string[] fens;
     fens.length = 6;
     float[] ds;
@@ -110,7 +174,12 @@ void main()
     hfens.length = 6;
     float[] hds;
     hds.length = 6;
-    foreach (st; t.subtypes){
+    foreach (st; [EndgameType("kpp_k")]){
+        string filename = settings.CHESS_TABLE_DIR ~ "chess" ~ st.toString ~ ".dat";
+        if (std.file.exists(filename)){
+            writeln("Reading data for ", st);
+            fs.tables[st] = cast(ChessNodeValue[]) std.file.read(filename);
+        }
         fens[] = "";
         hfens[] = "";
         ds[] = -1;
@@ -152,15 +221,14 @@ void main()
         writeln(fens);
         writeln(hds);
         writeln(hfens);
-        /*
         if (st == t){
             foreach (state; fs.principal_path(st, es[4])){
                 writeln(state);
             }
         }
-        */
-        std.file.write(settings.CHESS_TABLE_DIR ~ "chess" ~ st.toString ~ ".dat", fs.tables[st]);
+        //std.file.write(settings.CHESS_TABLE_DIR ~ "chess" ~ st.toString ~ ".dat", fs.tables[st]);
     }
+    */
 
 
     /*
