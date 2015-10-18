@@ -31,9 +31,10 @@ import full_search;
 import heuristic;
 //import fast_math;
 //import ann;
-//import likelyhood;
+import likelyhood;
 //import wdl_node;
 //import direct_mc;
+//import monte_carlo;
 import tsumego;
 
 import chess;
@@ -49,6 +50,66 @@ static import settings;
 void main()
 {
     writeln("main");
+
+    HeuristicNode9[State11] node_pool;
+    auto n = new HeuristicNode9(State11(rectangle11(9, 9)));
+
+    n.make_children(node_pool);
+    ulong tag = 0;
+    float vv = 0;
+    foreach (ee; zip(n.children, n.likelyhoods)) {
+        ee[0].make_children(node_pool);
+        float v = 0;
+        foreach (e; zip(ee[0].children, ee[0].likelyhoods)){
+            tag += 1;
+            auto c = e[0];
+            c.tag = tag;
+            auto sign = -e[1];
+            while (!c.is_leaf) {
+                c.make_children(node_pool);
+                bool found = false;
+                foreach (cc; c.children){
+                    if (cc.tag != tag){
+                        c = cc;
+                        c.tag = tag;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    break;
+                }
+                sign = -sign;
+            }
+            v += sign * area_score(c.state);
+        }
+        writeln(ee[0]);
+        writeln(v, " @ ", ee[1]);
+        vv -= ee[1] * v;
+    }
+    writeln(vv);
+
+    /*
+    auto s = State11(rectangle11(9, 9));
+    foreach (j; 0..100){
+        auto children = s.children;
+        float[] scores;
+        foreach (child; children){
+            scores ~= 0;
+            foreach (i; 0..1000){
+                scores[$-1] += playout(child);
+            }
+        }
+        sort(zip(scores, children));
+        if (s.black_to_play){
+            s = children[$-1];
+        }
+        else {
+            s = children[0];
+        }
+        writeln(s);
+    }
+    */
 
     /*
     HeuristicNode9[State11] node_pool;
@@ -67,16 +128,34 @@ void main()
     }
     */
 
-    auto m = new HeuristicManager9(State11(rectangle11(9, 9)));
-    foreach (i; 0..5000){
-        m.expand(0.17);
+    /*
+    HeuristicNode9[State11] node_pool;
+    auto n = new HeuristicNode9(State11(rectangle11(9, 9)));
+    while (!n.is_leaf){
+        n.make_children(node_pool);
+        n = n.children[0];
+    }
+    */
+
+    /*
+    writeln(n);
+    writeln(area_score(n.state));
+    return;
+    */
+
+    /*
+    //auto m = new HeuristicManager9(State11(rectangle11(9, 9)));
+    auto m = new HeuristicManager9(n.parents[0].state);
+    foreach (i; 0..10000){
+        m.expand(0.2);
         writeln(i);
         writeln(m.root);
     }
 
     foreach (child; m.root.children){
-        writeln(child.coverage);
+        writeln(child.low, ", ", child.high);
     }
+    */
 
 
     /*

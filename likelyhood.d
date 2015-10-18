@@ -13,10 +13,10 @@ import std.parallelism;
 import utils;
 import board8;
 import state;
-import defense_state;
-import defense_search_state;
-import defense;
-import monte_carlo;
+//import defense_state;
+//import defense_search_state;
+//import defense;
+//import monte_carlo;
 
 
 struct Likelyhood
@@ -298,7 +298,7 @@ Likelyhood negamax_root(ref Likelyhood likelyhood, double n, ulong confidence, d
     return result;
 }
 
-
+/+
 class LikelyhoodNode(T, S, C)
 {
     C state;
@@ -618,3 +618,4 @@ class LikelyhoodNode(T, S, C)
 }
 
 alias LikelyhoodNode8 = LikelyhoodNode!(Board8, State8, CanonicalState8);
++/
