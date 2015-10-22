@@ -147,6 +147,25 @@ struct Likelyhood
         }
     }
 
+    double variance(double mu=double.nan)
+    {
+        if (mu.isNaN){
+            mu = mean;
+        }
+        double e = 0.0;
+        double total = 0.0;
+        foreach (index, bin; bins){
+            e += (to!double(index) - shift - mu) ^^ 2 * bin;
+            total += bin;
+        }
+        if (total == 0.0){
+            return 0;
+        }
+        else{
+            return e / total;
+        }
+    }
+
     void normalize()
     {
         double total = 0.0;
@@ -229,7 +248,8 @@ struct Likelyhood
             }
             r ~= "\n";
         }
-        return format("%sMean=%s", r, mean);
+        auto mu = mean;
+        return format("%sMean=%s, Variance=%s, Samples=%s", r, mu, variance(mu), confidence);
     }
 }
 

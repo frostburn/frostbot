@@ -322,16 +322,50 @@ static float[] likelyhood9_params;
 static this()
 {
     int[Board11] temp;
-    temp[Board11.init] = 0;
+    temp[Board11.init] = 9 * 9;
     foreach (x; 0..9){
         foreach (y; 0..9){
-            temp[Board11(x, y)] = 2 + x + 9 * y;
+            temp[Board11(x, y)] = x + 9 * y;
         }
     }
     temp.rehash;
     move_to_index9 = assumeUnique(temp);
     likelyhood9_params = cast(float[])read("networks/likelyhood9.dat");
-    //likelyhood9_params = assumeUnique(temp2);
+}
+
+void add_ataris9(S)(in S state, in Board11[] moves, ref float[] y)
+{
+    float point = 1.0;
+    foreach (move; moves){
+        auto index = move_to_index9[move];
+        Board11 chain = move;
+        chain.flood_into(state.player | move);
+        auto num_libs = chain.liberties(state.playing_area & ~state.opponent).popcount;
+        // Self atari.  // TODO: Nakade?
+        if (num_libs == 1) {
+            y[index] -= point;
+        }
+        // Escape from atari.
+        if (num_libs >= 2){
+            if ((chain ^ move).liberties(state.playing_area & ~state.opponent).popcount == 1){
+                y[index] += point;
+            }
+        }
+        Board11 o = state.opponent;
+        foreach (o_chain; [move.north, move.east, move.west, move.south]){
+            o_chain.flood_into(o);
+            num_libs = o_chain.liberties(state.playing_area & ~(state.player | move)).popcount;
+            // Kill
+            if (num_libs == 0){
+                y[index] += point;
+            }
+            // Giving atari
+            else if (num_libs == 1){
+                y[index] += point;
+            }
+            o ^= o_chain;
+        }
+    }
 }
 
 float[] move_likelyhoods9(S)(in S state, in Board11[] moves)
@@ -355,15 +389,38 @@ float[] move_likelyhoods9(S)(in S state, in Board11[] moves)
             }
         }
     }
-    //immutable float[] w0, b0, w1, b1, w2, b2, w3, b3;
-    float[] w0 = likelyhood9_params[0..97200];
-    float[] b0 = likelyhood9_params[97200..97800];
-    float[] w1 = likelyhood9_params[97800..277800];
-    float[] b1 = likelyhood9_params[277800..278100];
-    float[] w2 = likelyhood9_params[278100..323100];
-    float[] b2 = likelyhood9_params[323100..323250];
-    float[] w3 = likelyhood9_params[323250..335700];
-    float[] b3 = likelyhood9_params[335700..335783];
+    auto stones = max(state.player.popcount, state.opponent.popcount);
+    float[] w0, b0, w1, b1, w2, b2, w3, b3;
+    if (state.ko){
+        w0 = likelyhood9_params[0..97200];
+        b0 = likelyhood9_params[97200..97800];
+        w1 = likelyhood9_params[97800..277800];
+        b1 = likelyhood9_params[277800..278100];
+        w2 = likelyhood9_params[278100..308100];
+        b2 = likelyhood9_params[308100..308200];
+        w3 = likelyhood9_params[308200..316400];
+        b3 = likelyhood9_params[316400..316482];
+    }
+    else if (stones < 12){
+        w0 = likelyhood9_params[316482..413682];
+        b0 = likelyhood9_params[413682..414282];
+        w1 = likelyhood9_params[414282..594282];
+        b1 = likelyhood9_params[594282..594582];
+        w2 = likelyhood9_params[594582..624582];
+        b2 = likelyhood9_params[624582..624682];
+        w3 = likelyhood9_params[624682..632882];
+        b3 = likelyhood9_params[632882..632964];
+    }
+    else {
+        w0 = likelyhood9_params[632964..730164];
+        b0 = likelyhood9_params[730164..730764];
+        w1 = likelyhood9_params[730764..910764];
+        b1 = likelyhood9_params[910764..911064];
+        w2 = likelyhood9_params[911064..941064];
+        b2 = likelyhood9_params[941064..941164];
+        w3 = likelyhood9_params[941164..949364];
+        b3 = likelyhood9_params[949364..949446];
+    }
     float[] x = p_vec ~ o_vec;
     float[] y;
     int n = cast(int)x.length;
@@ -398,6 +455,8 @@ float[] move_likelyhoods9(S)(in S state, in Board11[] moves)
     y[] += b3[];
     foreach (ref v; y) v = exp(v);
 
+    add_ataris9(state, moves, y);
+
     float[] result;
     float sum = 0;
     foreach (move; moves){
@@ -409,7 +468,7 @@ float[] move_likelyhoods9(S)(in S state, in Board11[] moves)
 }
 
 
-float playout(State11 state)
+float playout9(State11 state)
 {
     while (!state.is_leaf){
         auto moves = state.moves;
@@ -425,7 +484,8 @@ float playout(State11 state)
         state = children[i];
         state.analyze_unconditional;
     }
-    return state.liberty_score;
+    return area_score(state);
+    //return state.liberty_score;
 }
 
 
@@ -444,11 +504,16 @@ float area_score(State11 state)
         }
         auto likelyhoods = move_likelyhoods9(state, moves);
         sort!("a[0] > b[0]")(zip(likelyhoods, children));
-        foreach (child; state.children){
+        bool found = false;
+        foreach (child; children){
             if (child !in seen){
                 state = child;
+                found = true;
                 break;
             }
+        }
+        if (!found){
+            break;
         }
         //writeln(state);
     }
@@ -509,6 +574,8 @@ class HeuristicNode(T, S)
         auto moves = state.moves;
         auto child_states = state.children(moves);  // Prunes moves
         likelyhoods = move_likelyhoods9(state, moves);
+        size_t index = 0;
+        size_t[S] seen;
         foreach (child_state; child_states){
             if (!child_state.black_to_play){
                 child_state.flip_colors;
@@ -517,6 +584,14 @@ class HeuristicNode(T, S)
             //assert(child_state.black_to_play);
             auto key = child_state;
             key.canonize;
+            if (key in seen){
+                likelyhoods[seen[key]] += likelyhoods[index];
+                likelyhoods[index] = 0;
+            }
+            else {
+                seen[key] = index;
+            }
+            index += 1;
             if (key in node_pool){
                 auto child = node_pool[key];
                 children ~= child;

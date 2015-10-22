@@ -51,53 +51,83 @@ void main()
 {
     writeln("main");
 
-    HeuristicNode9[State11] node_pool;
-    auto n = new HeuristicNode9(State11(rectangle11(9, 9)));
-
-    n.make_children(node_pool);
-    ulong tag = 0;
-    float vv = 0;
-    foreach (ee; zip(n.children, n.likelyhoods)) {
-        ee[0].make_children(node_pool);
-        float v = 0;
-        foreach (e; zip(ee[0].children, ee[0].likelyhoods)){
-            tag += 1;
-            auto c = e[0];
-            c.tag = tag;
-            auto sign = -e[1];
-            while (!c.is_leaf) {
-                c.make_children(node_pool);
-                bool found = false;
-                foreach (cc; c.children){
-                    if (cc.tag != tag){
-                        c = cc;
-                        c.tag = tag;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    break;
-                }
-                sign = -sign;
-            }
-            v += sign * area_score(c.state);
+    /*
+    auto s = State11(rectangle11(9, 9));
+    s.make_move(Board11(0, 0));
+    auto l = Likelyhood(-81, 81);
+    foreach (i; 0..10000){
+        float[] values;
+        values.length = totalCPUs;
+        foreach (ref v; parallel(values)){
+            v = playout9(s);
         }
-        writeln(ee[0]);
-        writeln(v, " @ ", ee[1]);
-        vv -= ee[1] * v;
+        foreach (v; values){
+            l.add_value(v);
+        }
+        writeln(l);
     }
-    writeln(vv);
+    writeln(s);
+    */
 
     /*
+    HeuristicNode9[State11] node_pool;
+    auto n = new HeuristicNode9(State11(rectangle11(9, 9)));
+    auto s = n.state;
+
+    float komi = -7;
+    while(!n.is_leaf){
+        n.make_children(node_pool);
+        float best_score = -float.infinity;
+        HeuristicNode9 best_child;
+        float vv = 0;
+        foreach (ee; zip(n.children, n.likelyhoods)) {
+            if (ee[1] < 0.01){
+                continue;
+            }
+            float v = 0;
+            if (ee[0].is_leaf){
+                v = area_score(ee[0].state);
+            }
+            else{
+                ee[0].make_children(node_pool);
+                foreach (e; zip(ee[0].children, ee[0].likelyhoods)){
+                    if (e[1] < 0.01){
+                        continue;
+                    }
+                    v -= e[1] * area_score(e[0].state);
+                }
+            }
+            //writeln(ee[0]);
+            //writeln(v, " @ ", ee[1]);
+            v = sgn(v + komi);
+            vv -= ee[1] * v;
+            auto score = 0.5 * ee[1] - v;
+            if (score > best_score){
+                best_score = score;
+                best_child = ee[0];
+            }
+        }
+        writeln(s);
+        writeln(vv);
+        n = best_child;
+        komi = -komi;
+        s = decanonize(s, n.state);
+    }
+    */
+
     auto s = State11(rectangle11(9, 9));
     foreach (j; 0..100){
         auto children = s.children;
         float[] scores;
         foreach (child; children){
             scores ~= 0;
-            foreach (i; 0..1000){
-                scores[$-1] += playout(child);
+            float[] values;
+            values.length = 100;
+            foreach (ref v; parallel(values)){
+                v = sgn(playout9(child) - 7);
+            }
+            foreach (v; values){
+                scores[$-1] += v;
             }
         }
         sort(zip(scores, children));
@@ -109,7 +139,6 @@ void main()
         }
         writeln(s);
     }
-    */
 
     /*
     HeuristicNode9[State11] node_pool;

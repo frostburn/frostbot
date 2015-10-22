@@ -1470,6 +1470,7 @@ alias CanonicalState11 = CanonicalState!Board11;
 
 State!T decanonize(T)(State!T parent, State!T child)
 {
+    child.canonize;
     foreach (child_; parent.children){
         auto canonical_child = child_;
         canonical_child.canonize;
