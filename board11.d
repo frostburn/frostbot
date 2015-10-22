@@ -727,7 +727,7 @@ struct Board11
         return result;
     }
 
-    Board11[] chains()
+    Board11[] chains() const
     in
     {
         assert(valid);

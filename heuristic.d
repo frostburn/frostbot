@@ -335,7 +335,7 @@ static this()
 
 void add_ataris9(S)(in S state, in Board11[] moves, ref float[] y)
 {
-    float point = 1.0;
+    float point = 0.25;
     foreach (move; moves){
         auto index = move_to_index9[move];
         Board11 chain = move;
@@ -372,16 +372,53 @@ float[] move_likelyhoods9(S)(in S state, in Board11[] moves)
 {
     float[] p_vec;
     float[] o_vec;
+    Board11 p1, p2, p3, o1, o2, o3;
+    foreach (chain; state.player.chains){
+        auto num_libs = chain.liberties(state.playing_area & ~state.opponent).popcount;
+        if (num_libs == 1){
+            p1 |= chain;
+        }
+        else if (num_libs == 2){
+            p2 |= chain;
+        }
+        else {
+            p3 |= chain;
+        }
+    }
+    foreach (chain; state.opponent.chains){
+        auto num_libs = chain.liberties(state.playing_area & ~state.player).popcount;
+        if (num_libs == 1){
+            o1 |= chain;
+        }
+        else if (num_libs == 2){
+            o2 |= chain;
+        }
+        else {
+            o3 |= chain;
+        }
+    }
     foreach (y; 0..9){
         foreach (x; 0..9){
             auto p = Board11(x, y);
-            if (p & state.player){
+            if (p & p1){
+                p_vec ~= 0.5;
+            }
+            else if (p & p2){
+                p_vec ~= 0.75;
+            }
+            else if (p & p3){
                 p_vec ~= 1;
             }
             else {
                 p_vec ~= 0;
             }
-            if (p & state.opponent){
+            if (p & o1){
+                o_vec ~= 0.5;
+            }
+            else if (p & o2){
+                o_vec ~= 0.75;
+            }
+            else if (p & o3){
                 o_vec ~= 1;
             }
             else {
@@ -411,7 +448,7 @@ float[] move_likelyhoods9(S)(in S state, in Board11[] moves)
         w3 = likelyhood9_params[624682..632882];
         b3 = likelyhood9_params[632882..632964];
     }
-    else {
+    else if (stones < 20){
         w0 = likelyhood9_params[632964..730164];
         b0 = likelyhood9_params[730164..730764];
         w1 = likelyhood9_params[730764..910764];
@@ -420,6 +457,16 @@ float[] move_likelyhoods9(S)(in S state, in Board11[] moves)
         b2 = likelyhood9_params[941064..941164];
         w3 = likelyhood9_params[941164..949364];
         b3 = likelyhood9_params[949364..949446];
+    }
+    else {
+        w0 = likelyhood9_params[949446..1046646];
+        b0 = likelyhood9_params[1046646..1047246];
+        w1 = likelyhood9_params[1047246..1227246];
+        b1 = likelyhood9_params[1227246..1227546];
+        w2 = likelyhood9_params[1227546..1257546];
+        b2 = likelyhood9_params[1257546..1257646];
+        w3 = likelyhood9_params[1257646..1265846];
+        b3 = likelyhood9_params[1265846..1265928];
     }
     float[] x = p_vec ~ o_vec;
     float[] y;
@@ -455,7 +502,7 @@ float[] move_likelyhoods9(S)(in S state, in Board11[] moves)
     y[] += b3[];
     foreach (ref v; y) v = exp(v);
 
-    add_ataris9(state, moves, y);
+    //add_ataris9(state, moves, y);
 
     float[] result;
     float sum = 0;
@@ -475,29 +522,73 @@ float playout9(State11 state)
         auto children = state.children(moves);
         auto likelyhoods = move_likelyhoods9(state, moves);
         sort!("a[0] > b[0]")(zip(likelyhoods, children));
-        float x = uniform01;
-        size_t i = 0;
-        while (x > likelyhoods[i]){
-            x -= likelyhoods[i];
-            i += 1;
+        // Only pass if it is considered the best move.
+        if (children[0].passes){
+            // Make sure there are no obvious moves left.
+            auto dames = state.player_unconditional.liberties(state.playing_area & ~state.opponent);
+            Board11 atari_libs;
+            foreach (chain; state.player.chains){
+                auto libs = chain.liberties(state.playing_area & ~state.opponent);
+                if (libs.popcount == 1){
+                    atari_libs |= libs;
+                }
+            }
+            bool found = false;
+            auto num_opponent = state.opponent.popcount;
+            foreach (child; children){
+                bool killed = child.player.popcount < num_opponent;
+                if (killed || child.opponent & (dames | atari_libs)){
+                    state = child;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                state = children[0];
+            }
         }
-        state = children[i];
+        else {
+            float x = uniform01;
+            size_t i = 0;
+            while (x > likelyhoods[i]){
+                x -= likelyhoods[i];
+                i += 1;
+            }
+            if (children[i].passes){
+                state = children[i-1];
+            }
+            else {
+                state = children[i];
+            }
+        }
         state.analyze_unconditional;
     }
-    return area_score(state);
+    return area_score9(state);
     //return state.liberty_score;
 }
 
 
-float area_score(State11 state)
+float area_score9(State11 state)
 {
-    // TODO: handle seki somehow
-    //auto empty = state.playing_area & ~(state.player | state.opponent);
+    auto empty = state.playing_area & ~(state.player, state.opponent);
+    foreach (chain; (state.opponent & ~state.player_unconditional).chains){
+        auto libs = chain.liberties(state.playing_area & ~state.player);
+        if (libs.popcount == 1){
+            
+        }
+    }
+
     bool[State11] seen;
     while (true){
         state.analyze_unconditional;
         seen[state] = true;
-        auto moves = state.moves[0..$-1];
+        Board11[] moves;
+        foreach (move; state.moves[0..$-1]){
+            // Skip self-ataris to preserve seki.
+            if ((move | state.player).liberties(state.playing_area & ~state.opponent).popcount != 1){
+                moves ~= move;
+            }
+        }
         auto children = state.children(moves);
         if (!children.length){
             break;
@@ -528,6 +619,7 @@ float area_score(State11 state)
     else {
         return state.value_shift - score;
     }*/
+    //writeln(state);
     return state.liberty_score;
 }
 
@@ -553,7 +645,7 @@ class HeuristicNode(T, S)
         this.state = state;
         if (state.is_leaf){
             is_leaf = true;
-            low = high = area_score(state);
+            low = high = area_score9(state);
             low_confidence = high_confidence = 1;
         }
     }

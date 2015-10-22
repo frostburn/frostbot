@@ -53,7 +53,8 @@ void main()
 
     /*
     auto s = State11(rectangle11(9, 9));
-    s.make_move(Board11(0, 0));
+    s.make_move(Board11(3, 2));
+    //playout9(s);
     auto l = Likelyhood(-81, 81);
     foreach (i; 0..10000){
         float[] values;
@@ -64,9 +65,10 @@ void main()
         foreach (v; values){
             l.add_value(v);
         }
+        writeln(s);
         writeln(l);
     }
-    writeln(s);
+    //writeln(s);
     */
 
     /*

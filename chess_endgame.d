@@ -14,7 +14,9 @@ struct KingsPosition
     int player;
     int opponent;
 
-    mixin(get_kings_index_tables);
+    //mixin(get_kings_index_tables);
+    static immutable int[][] KINGS_POSITION_TABLE;
+    static immutable size_t[][] KINGS_INDEX_TABLE;
 
     this(int player, int opponent, bool dummy)
     {
