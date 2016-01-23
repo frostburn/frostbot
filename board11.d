@@ -6,7 +6,6 @@ import std.stream;
 import core.simd;
 
 import utils;
-import polyomino;
 import board_common;
 
 
@@ -315,6 +314,7 @@ struct Board11
     }
     body
     {
+        assert(0);  // TODO: Fix the "+" hack.
         static if (is(ulong2) && false){  // Disabled because this is actually slower thatn the non-vectorized version
             ulong2 bits, target_bits;
             bits.array[0] = north_bits;

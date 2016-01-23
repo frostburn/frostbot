@@ -636,6 +636,51 @@ struct State(T)
     }
 
     /**
+    * 4-Canonizes pre-snapped rectangular boards without unconditional stones.
+    */
+    void canonize_rectangular()
+    in
+    {
+        assert(!player_unconditional);
+        assert(!opponent_unconditional);
+    }
+    body
+    {
+        if (!black_to_play){
+            flip_colors;
+        }
+        auto width = playing_area.horizontal_extent;
+        auto height = playing_area.vertical_extent;
+        auto temp = this;
+
+        // TODO: Only compare relevant members.
+        enum compare_and_replace = "
+            if (temp < this){
+                this = temp;
+            }
+        ";
+        enum do_mirror_v = "
+            temp.player.mirror_v;
+            temp.opponent.mirror_v;
+            temp.ko.mirror_v;
+            temp.player.fix(0, T.HEIGHT - height);
+            temp.opponent.fix(0, T.HEIGHT - height);
+            temp.ko.fix(0, T.HEIGHT - height);
+        ";
+        mixin(do_mirror_v);
+        mixin(compare_and_replace);
+        temp.player.mirror_h;
+        temp.opponent.mirror_h;
+        temp.ko.mirror_h;
+        temp.player.fix(T.WIDTH - width, 0);
+        temp.opponent.fix(T.WIDTH - width, 0);
+        temp.ko.fix(T.WIDTH - width, 0);
+        mixin(compare_and_replace);
+        mixin(do_mirror_v);
+        mixin(compare_and_replace);
+    }
+
+    /**
     * Analyzes the state for unconditional life.
     * Pre-calculated unconditional regions that are to be extended.
     */
@@ -1097,7 +1142,11 @@ bool can_become_seki(T)(T chain, T liberties)
 // Under weird rulesets it may be even possible to live in seki while in atari.
 bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unconditional)
 {
-    // return false;
+    // For bug catching.
+    // T original_region = region;
+    // T original_player = player;
+    // T original_opponent = opponent;
+    // T original_player_unconditional = player_unconditional;
     debug (territory){
         writeln("Arguments:");
         writeln("region");
@@ -1108,6 +1157,11 @@ bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unco
         writeln(opponent);
         writeln("player_unconditional");
         writeln(player_unconditional);
+    }
+    opponent |= player_unconditional.liberties(region);
+    debug (territory){
+        writeln("After filling the border:");
+        writeln(opponent);
     }
     foreach (chain; player.chains){
         auto liberties = chain.liberties(region & ~opponent);
@@ -1121,21 +1175,15 @@ bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unco
         opponent |= liberties;
     }
     debug (territory){
-        writeln("After initial kills:");
+        writeln("After kills:");
         writeln("player");
         writeln(player);
         writeln("opponent");
         writeln(opponent);
     }
-    opponent |= player_unconditional.liberties(region);
-    debug (territory){
-        writeln("After filling the border:");
-        writeln(opponent);
-    }
     auto inside = region & ~player_unconditional;
     foreach (chain; opponent.chains){
         while (true){
-            chain.flood_into(opponent);
             debug (territory){
                 writeln("Crawling with:");
                 writeln(chain);
@@ -1189,6 +1237,7 @@ bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unco
                 writeln("Crawled:");
                 writeln(opponent);
             }
+            chain.flood_into(opponent);
         }
     }
     debug (territory){
@@ -1197,6 +1246,10 @@ bool is_unconditional_territory(T)(T region, T player, T opponent, T player_unco
         writeln(player);
         writeln("opponent");
         writeln(opponent);
+    }
+    // More than one sekiable chain means no seki.
+    if (player.chains.length > 1){
+        return false;
     }
     auto eyes = (inside & ~opponent).chains;
     if (eyes.length > 1){
@@ -1862,4 +1915,33 @@ unittest
     stream.position = 0;
     auto c = State8.from_stream(stream);
     assert(s == c);
+}
+
+
+unittest
+{
+    auto r = Board11(0x1F01F01F00F01FUL, 0xF00F007000000UL, true);
+    auto p = Board11(0x2004004000000UL, 0x2000000000000UL, true);
+    auto o = Board11(0x0UL, 0x1000000000UL, true);
+    auto pu = Board11(0x10010010008010UL, 0x8008007000000UL, true);
+    auto s = State11();
+    s.player = p | pu;
+    s.opponent = o;
+    s.player_unconditional = pu;
+    s.analyze_unconditional;
+}
+
+unittest
+{
+    auto r = Board11(0x1FF0FF07F07F0FFUL, 0x1FF1FF1FF1FF000UL, true);
+    auto p = Board11(0x6000000000UL, 0x4004000000000UL, true);
+    auto o = Board11(0x1001001C010060UL, 0xF0040008000000UL, true);
+    auto pu = Board11(0x1E0080060060080UL, 0x0UL, true);
+    auto s = State11();
+    s.playing_area = r | pu;
+    s.player = p | pu;
+    s.opponent = o;
+    s.player_unconditional = pu;
+    writeln(s);
+    s.analyze_unconditional;
 }

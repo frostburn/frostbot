@@ -8,19 +8,21 @@ import std.random;
 import std.parallelism;
 import std.uni;
 static import std.file;
+static import std.stream;
 import core.thread;
 
 import utils;
 import board8;
 import board11;
 import bit_matrix;
+//import largenum;
 import state;
 import pattern3;
-import polyomino;
-import hl_node;
-import game_node;
-import local;
-import full_search;
+//import polyomino;
+//import hl_node;
+//import game_node;
+//import local;
+//import full_search;
 //import bounded_state;
 //import defense_state;
 //import search_state;
@@ -28,17 +30,17 @@ import full_search;
 //import defense;
 //import eyeshape;
 //static import monte_carlo;
-import heuristic;
+//import heuristic;
 //import fast_math;
 //import ann;
-import likelyhood;
+//import likelyhood;
 //import wdl_node;
 //import direct_mc;
 //import monte_carlo;
-import tsumego;
+//import tsumego;
 
-import chess;
-import chess_endgame;
+//import chess;
+//import chess_endgame;
 
 static import settings;
 
@@ -46,30 +48,113 @@ static import settings;
 // dmd main.d utils.d board8.d board11.d bit_matrix.d state.d polyomino.d defense_state.d defense_search_state.d defense.d eyeshape.d monte_carlo.d heuristic.d fast_math.d ann.d likelyhood.d wdl_node.d direct_mc.d pattern3.d
 // -O -release -inline -noboundscheck
 
-
 void main()
 {
     writeln("main");
+    stdout.flush;
+
+    BoardType8 t;
+    auto s = State8(rectangle8(4, 4));
+    s.endgame_state(t);
+    writeln(t);
+    writeln(t.size);
+    size_t total = 0;
+    bool[size_t] pool;
+    foreach (e; 0..t.size) {
+        if (State8.from_endgame_state(e, t, s)){
+            total += 1;
+            s.canonize_rectangular;
+            e = s.endgame_state(t);
+            pool[e] = true;
+        }
+    }
+    writeln(total);
+    writeln(pool.length);
 
     /*
     auto s = State11(rectangle11(9, 9));
-    s.make_move(Board11(3, 2));
-    //playout9(s);
+    s.make_move(Board11(4, 4));
+    s.make_move(Board11(6, 2));
+    s.make_move(Board11(6, 4));
+    s.make_move(Board11(4, 1));
+    foreach (y; 0..9){
+        foreach (x; 0..9){
+            auto c = s;
+            if (c.make_move(Board11(x, y))){
+                c.black_to_play = true;
+                auto l = Likelyhood(-81, 81);
+                foreach (_; 0..1000){
+                    float[] values;
+                    values.length = totalCPUs;
+                    foreach (ref v; parallel(values)){
+                        v = playout9(c);
+                    }
+                    foreach (v; values){
+                        l.add_value(v);
+                    }
+                }
+                writeln("b = Board(9); b.make_move(4, 4); b.make_move(6, 2); b.make_move(6, 4); b.make_move(4, 1); b.make_move(", x, ", ", y, ")");
+                writeln("bins = ", l.bins);
+                writeln("add(b, bins)");
+                stdout.flush;
+            }
+        }
+    }
+    */
+    /*
+    auto s = State11(rectangle11(9, 9));
+    s.make_move(Board11(2, 3));
+    foreach (y; 0..9){
+        foreach (x; 0..9){
+            if ((y == 0) || (y == 1 && x <= 3)){
+                continue;
+            }
+            auto c = s;
+            if (c.make_move(Board11(x, y))){
+                c.black_to_play = true;
+                auto l = Likelyhood(-81, 81);
+                foreach (_; 0..10000){
+                    float[] values;
+                    values.length = totalCPUs;
+                    foreach (ref v; parallel(values)){
+                        v = playout9(c);
+                    }
+                    foreach (v; values){
+                        l.add_value(v);
+                    }
+                }
+                writeln("b = Board(9); b.make_move(2, 3); b.make_move(", x, ", ", y, ")");
+                writeln("bins = ", l.bins);
+                writeln("add(b, bins)");
+            }
+        }
+    }
+    */
+    /*
+    s.black_to_play = true;
     auto l = Likelyhood(-81, 81);
-    foreach (i; 0..10000){
+    foreach (_; 0..10000){
         float[] values;
         values.length = totalCPUs;
         foreach (ref v; parallel(values)){
             v = playout9(s);
         }
+        double bin;
         foreach (v; values){
-            l.add_value(v);
+            bin = l.add_value(v);
         }
         writeln(s);
         writeln(l);
     }
-    //writeln(s);
+    writeln(l.bins);
     */
+    //writeln(s);
+    //auto stream = new std.stream.File("likelyhoods.dat", std.stream.FileMode.OutNew);
+    //l.to_stream(stream);
+    //stream.position = 0;
+    //auto stream = new std.stream.File("likelyhoods.dat", std.stream.FileMode.In);
+    //auto l2 = Likelyhood.from_stream(stream);
+    //writeln(l2);
 
     /*
     HeuristicNode9[State11] node_pool;
@@ -117,6 +202,7 @@ void main()
     }
     */
 
+    /*
     auto s = State11(rectangle11(9, 9));
     foreach (j; 0..100){
         auto children = s.children;
@@ -141,6 +227,7 @@ void main()
         }
         writeln(s);
     }
+    */
 
     /*
     HeuristicNode9[State11] node_pool;

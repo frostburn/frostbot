@@ -5,3 +5,4 @@ train_6x5
 trace.def
 trace.log
 settings.d
+*.dat

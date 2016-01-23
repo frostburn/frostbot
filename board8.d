@@ -5,9 +5,11 @@ import std.string;
 import std.stream;
 
 import utils;
-import polyomino;
 import board_common;
 
+version(polyomino){
+    import polyomino;
+}
 
 struct Board8
 {
@@ -257,17 +259,15 @@ struct Board8
             return this;
         }
 
-        // The "+" operation can be thought as an infinite inverting horizontal flood with a garbage bit at each end.
-        // Here we invert it back and clear the garbage bits by "&":ing with the target.
-        bits |= (~(bits + target_bits)) & target_bits;
+        // TODO: Figure out why the "+" hack didn't work.
         do{
             temp = bits;
             bits |= (
+                (bits << H_SHIFT) |
                 (bits >> H_SHIFT) |
                 (bits << V_SHIFT) |
                 (bits >> V_SHIFT)
             ) & target_bits;
-            bits |= (~(bits + target_bits)) & target_bits;
         } while(bits != temp);
 
         return this;
@@ -425,6 +425,22 @@ struct Board8
         version(assert){
             auto old_bits = bits;
         }
+
+        enum WEST_BLOCK = WEST_WALL | (WEST_WALL << H_SHIFT) | (WEST_WALL << (2 * H_SHIFT)) | (WEST_WALL << (3 * H_SHIFT));
+        enum WEST_STRIP = WEST_WALL | (WEST_WALL << H_SHIFT) | (WEST_WALL << (4 * H_SHIFT)) | (WEST_WALL << (5 * H_SHIFT));
+        enum WEST_GRID = WEST_WALL | (WEST_WALL << (2 * H_SHIFT)) | (WEST_WALL << (4 * H_SHIFT)) | (WEST_WALL << (6 * H_SHIFT));
+
+        bits = ((bits & WEST_BLOCK) << (4 * H_SHIFT)) | ((bits >> (4 * H_SHIFT)) & WEST_BLOCK);
+        bits = ((bits & WEST_STRIP) << (2 * H_SHIFT)) | ((bits >> (2 * H_SHIFT)) & WEST_STRIP);
+        bits = ((bits & WEST_GRID) << H_SHIFT) | ((bits >> H_SHIFT) & WEST_GRID);
+
+        version(assert){
+            assert(old_bits.popcount == bits.popcount);
+        }
+    }
+
+    void mirror_h_alt()
+    {
         bits = (
             (bits & (WEST_WALL << (0 * H_SHIFT))) << ((WIDTH - 1) * H_SHIFT) |
             (bits & (WEST_WALL << (1 * H_SHIFT))) << ((WIDTH - 3) * H_SHIFT) |
@@ -435,9 +451,6 @@ struct Board8
             (bits & (WEST_WALL << (6 * H_SHIFT))) >> (5 * H_SHIFT) |
             (bits & (WEST_WALL << (7 * H_SHIFT))) >> (7 * H_SHIFT)
         );
-        version(assert){
-            assert(old_bits.popcount == bits.popcount);
-        }
     }
 
     void mirror_v() pure nothrow @nogc @safe
@@ -454,6 +467,23 @@ struct Board8
         version(assert){
             auto old_bits = bits;
         }
+
+        enum NORTH_BLOCK = NORTH_WALL | (NORTH_WALL << V_SHIFT) | (NORTH_WALL << (2 * V_SHIFT));
+        enum CENTER = NORTH_WALL << (3 * V_SHIFT);
+        enum NORTH_GRID = NORTH_WALL | (NORTH_WALL << (4 * V_SHIFT));
+        enum GRID_CENTERS = (NORTH_WALL << V_SHIFT) | CENTER | (NORTH_WALL << (5 * V_SHIFT));
+
+        auto center = bits & CENTER;
+        bits = ((bits & NORTH_BLOCK) << (4 * V_SHIFT)) | (bits >> (4 * V_SHIFT)) | (bits & CENTER);
+        bits = ((bits & NORTH_GRID) << (2 * V_SHIFT)) | ((bits >> (2 * V_SHIFT)) & NORTH_GRID) | (bits & GRID_CENTERS);
+
+        version(assert){
+            assert(old_bits.popcount == bits.popcount);
+        }
+    }
+
+    void mirror_v_alt()
+    {
         bits = (
             (bits & (NORTH_WALL << (0 * V_SHIFT))) << ((HEIGHT - 1) * V_SHIFT) |
             (bits & (NORTH_WALL << (1 * V_SHIFT))) << ((HEIGHT - 3) * V_SHIFT) |
@@ -463,9 +493,6 @@ struct Board8
             (bits & (NORTH_WALL << (5 * V_SHIFT))) >> (4 * V_SHIFT) |
             (bits & (NORTH_WALL << (6 * V_SHIFT))) >> (6 * V_SHIFT)
         );
-        version(assert){
-            assert(old_bits.popcount == bits.popcount);
-        }
     }
 
     void transform(Transformation transformation) nothrow @nogc @safe
@@ -759,50 +786,51 @@ struct Board8
     alias toBool this;
 }
 
-
-Board8 from_piece(T)(Piece piece)
-in
-{
-    assert(piece.x >= 0);
-    assert(piece.y >= 0);
-    assert(piece.x < T.WIDTH);
-    assert(piece.y < T.HEIGHT);
-}
-out(result)
-{
-    assert(result.valid);
-}
-body
-{
-    return T(piece.x, piece.y);
-}
-
-
-Board8 from_shape(T)(Shape shape)
-in
-{
-    assert(shape.west_extent >= 0);
-    assert(shape.north_extent >= 0);
-    assert(shape.east_extent < T.WIDTH);
-    assert(shape.south_extent < T.HEIGHT);
-}
-out(result)
-{
-    assert(result.valid);
-}
-body
-{
-    auto result = T();
-    foreach (piece; shape.piece_set.byKey){
-        result |= from_piece!T(piece);
+version(polyomino){
+    Board8 from_piece(T)(Piece piece)
+    in
+    {
+        assert(piece.x >= 0);
+        assert(piece.y >= 0);
+        assert(piece.x < T.WIDTH);
+        assert(piece.y < T.HEIGHT);
     }
-    return result;
-}
+    out(result)
+    {
+        assert(result.valid);
+    }
+    body
+    {
+        return T(piece.x, piece.y);
+    }
 
+
+    Board8 from_shape(T)(Shape shape)
+    in
+    {
+        assert(shape.west_extent >= 0);
+        assert(shape.north_extent >= 0);
+        assert(shape.east_extent < T.WIDTH);
+        assert(shape.south_extent < T.HEIGHT);
+    }
+    out(result)
+    {
+        assert(result.valid);
+    }
+    body
+    {
+        auto result = T();
+        foreach (piece; shape.piece_set.byKey){
+            result |= from_piece!T(piece);
+        }
+        return result;
+    }
+
+    alias from_piece8 = from_piece!Board8;
+    alias from_shape8 = from_shape!Board8;
+}
 
 alias rectangle8 = rectangle!Board8;
-alias from_piece8 = from_piece!Board8;
-alias from_shape8 = from_shape!Board8;
 
 
 immutable Board8 full8 = Board8(Board8.FULL);
@@ -993,4 +1021,19 @@ unittest
     auto a = Board8(b.naive_rotate);
     b.rotate;
     assert(a == b);
+}
+
+unittest
+{
+    auto a = Board8(1239892183798712983 & Board8.FULL);
+    auto b = a;
+    a.mirror_h;
+    b.mirror_h_alt;
+    assert(a == b);
+
+    auto c = Board8(1297234234123987123 & Board8.FULL);
+    auto d = c;
+    c.mirror_v;
+    d.mirror_v_alt;
+    assert(c == d);
 }
